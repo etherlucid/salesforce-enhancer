@@ -6003,7 +6003,7 @@
         const emptyHint = document.createElement('div');
         emptyHint.className = 'sf-quick-empty-hint';
         emptyHint.style.cssText = 'padding: 8px 12px; font-size: 11px; color: var(--sf-qv-muted, #706e6b); font-style: italic; user-select: none; line-height: 1.4;';
-        emptyHint.textContent = 'Click the ☆ star on any list view below to pin it here.';
+        emptyHint.innerHTML = `Click the bookmark icon <span style="display:inline-flex; vertical-align:middle; margin:0 2px;">${getBookmarkSVG(false)}</span> on any list view below to pin it here.`;
         container.appendChild(emptyHint);
         return;
       }
