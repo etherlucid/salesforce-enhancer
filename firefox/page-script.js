@@ -538,11 +538,9 @@
       } catch (_) {}
     }
 
-    if (focusedIsNonRecord) {
-      return null;
-    }
-
-    return currentParentId || lastNonSearchParentTabId;
+    if (currentParentId) return currentParentId;
+    if (lastNonSearchParentTabId) return lastNonSearchParentTabId;
+    return null;
   }
 
   /**
@@ -586,6 +584,13 @@
         }
       } catch (_) {}
 
+      try {
+        const pInfo = await ws.getTabInfo({ tabId: parentTabId }).catch(() => null);
+        if (pInfo && pInfo.isSubtab && pInfo.parentTabId) {
+          parentTabId = pInfo.parentTabId;
+        }
+      } catch (_) {}
+
       if (!parentTabId) {
         // If there is no parent tab capable of hosting subtabs (e.g. currently viewing a List View or Search),
         // route directly into ws.openTab(). Salesforce Console Navigation Manager will automatically open or locate
@@ -619,10 +624,20 @@
           }
         }
 
-        if (!openInBackground && newSubtabId && ws.focusTab) {
-          await ws.focusTab({ tabId: newSubtabId }).catch(() => {});
-          setTimeout(() => {
-            ws.focusTab({ tabId: newSubtabId }).catch(() => {});
+        if (!openInBackground && ws.focusTab) {
+          if (parentTabId) {
+            await ws.focusTab({ tabId: parentTabId }).catch(() => {});
+          }
+          if (newSubtabId) {
+            await ws.focusTab({ tabId: newSubtabId }).catch(() => {});
+          }
+          setTimeout(async () => {
+            if (parentTabId) {
+              await ws.focusTab({ tabId: parentTabId }).catch(() => {});
+            }
+            if (newSubtabId) {
+              await ws.focusTab({ tabId: newSubtabId }).catch(() => {});
+            }
           }, 80);
         } else if (openInBackground && ws.focusTab) {
           const tabToPreserve = preClickFocusedTabId || explicitParentTabId;
@@ -641,8 +656,21 @@
               if (!fallbackSubtabId && target.url && target.recordId) {
                 fallbackSubtabId = await ws.openSubtab({ parentTabId: fallbackParentId, url: target.url, focus: !openInBackground });
               }
-              if (!openInBackground && fallbackSubtabId && ws.focusTab) {
-                await ws.focusTab({ tabId: fallbackSubtabId }).catch(() => {});
+              if (!openInBackground && ws.focusTab) {
+                if (fallbackParentId) {
+                  await ws.focusTab({ tabId: fallbackParentId }).catch(() => {});
+                }
+                if (fallbackSubtabId) {
+                  await ws.focusTab({ tabId: fallbackSubtabId }).catch(() => {});
+                }
+                setTimeout(async () => {
+                  if (fallbackParentId) {
+                    await ws.focusTab({ tabId: fallbackParentId }).catch(() => {});
+                  }
+                  if (fallbackSubtabId) {
+                    await ws.focusTab({ tabId: fallbackSubtabId }).catch(() => {});
+                  }
+                }, 80);
               } else if (openInBackground && ws.focusTab) {
                 const tabToPreserve = preClickFocusedTabId || explicitParentTabId;
                 if (tabToPreserve) {
@@ -1394,8 +1422,7 @@
         .sf-native-bookmark-btn.is-bookmarked:hover {
           background: ${accentTint} !important;
         }
-        .sf-quick-control-btn:hover,
-        .sf-quick-settings-btn:hover {
+        .sf-quick-control-btn:hover {
           color: ${accent} !important;
         }
       `;
@@ -1877,8 +1904,7 @@
           }
           .sf-quick-header-title,
           .sf-quick-count,
-          .sf-quick-control-btn,
-          .sf-quick-settings-btn {
+          .sf-quick-control-btn {
             color: ${baseTheme.textMuted} !important;
           }
           .sf-quick-item-label {
@@ -3923,864 +3949,6 @@
     return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="${accent}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><polyline points="20 6 9 17 4 12"/></svg>`;
   }
 
-  function getSettingsGearSVG() {
-    return `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`;
-  }
-
-  /**
-   * Streamlined, modular in-page settings modal
-   */
-  function openAppearanceSettingsModal() {
-    const existingBackdrop = document.getElementById('sf-appearance-backdrop');
-    if (existingBackdrop) existingBackdrop.remove();
-    const existingModal = document.getElementById('sf-appearance-modal');
-    if (existingModal) existingModal.remove();
-
-    const current = getEnhancerSettings();
-    let draft = JSON.parse(JSON.stringify(current));
-
-    const backdrop = document.createElement('div');
-    backdrop.id = 'sf-appearance-backdrop';
-    Object.assign(backdrop.style, {
-      position: 'fixed',
-      top: '0',
-      left: '0',
-      right: '0',
-      bottom: '0',
-      background: 'rgba(15, 23, 42, 0.65)',
-      zIndex: '9999998',
-      backdropFilter: 'blur(3px)'
-    });
-
-    const modal = document.createElement('div');
-    modal.id = 'sf-appearance-modal';
-    modal.setAttribute('role', 'dialog');
-    modal.setAttribute('aria-modal', 'true');
-    modal.setAttribute('aria-label', 'Salesforce Enhancer Settings');
-    Object.assign(modal.style, {
-      position: 'fixed',
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%)',
-      width: '560px',
-      maxWidth: '94vw',
-      maxHeight: '92vh',
-      background: '#ffffff',
-      borderRadius: '12px',
-      boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
-      zIndex: '9999999',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      fontSize: '13px',
-      color: '#0f172a'
-    });
-
-    const style = document.createElement('style');
-    style.textContent = `
-      #sf-appearance-modal * {
-        box-sizing: border-box;
-        font-family: inherit;
-      }
-      .sf-modal-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 16px 20px 12px 20px;
-        border-bottom: 1px solid #e2e8f0;
-      }
-      .sf-modal-title {
-        font-size: 16px;
-        font-weight: 700;
-        color: #0f172a;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-      .sf-modal-badge {
-        font-size: 11px;
-        font-weight: 700;
-        background: #0176d3;
-        color: #ffffff;
-        padding: 2px 7px;
-        border-radius: 10px;
-      }
-      .sf-modal-subtitle {
-        font-size: 12px;
-        color: #64748b;
-        margin-top: 2px;
-      }
-      .sf-modal-close-btn {
-        background: transparent;
-        border: none;
-        cursor: pointer;
-        font-size: 18px;
-        color: #64748b;
-        padding: 4px 8px;
-        border-radius: 4px;
-      }
-      .sf-modal-close-btn:hover {
-        background: #f1f5f9;
-        color: #0f172a;
-      }
-      .sf-modal-tabs {
-        display: flex;
-        background: #f8fafc;
-        border-bottom: 1px solid #e2e8f0;
-        padding: 0 16px;
-      }
-      .sf-modal-tab-btn {
-        background: transparent;
-        border: none;
-        border-bottom: 2px solid transparent;
-        padding: 10px 14px;
-        font-size: 13px;
-        font-weight: 600;
-        color: #64748b;
-        cursor: pointer;
-        transition: all 0.15s ease;
-      }
-      .sf-modal-tab-btn:hover {
-        color: #0f172a;
-      }
-      .sf-modal-tab-btn.active {
-        color: #0176d3;
-        border-bottom-color: #0176d3;
-      }
-      .sf-modal-body {
-        padding: 18px 20px;
-        overflow-y: auto;
-        flex: 1 1 auto;
-      }
-      .sf-module-card {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 12px 14px;
-        margin-bottom: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-      }
-      .sf-module-title {
-        font-weight: 600;
-        font-size: 13px;
-        color: #0f172a;
-        margin-bottom: 2px;
-      }
-      .sf-module-desc {
-        font-size: 11px;
-        color: #64748b;
-      }
-      .sf-switch {
-        position: relative;
-        display: inline-block;
-        width: 40px;
-        height: 22px;
-        flex-shrink: 0;
-      }
-      .sf-switch input {
-        opacity: 0;
-        width: 0;
-        height: 0;
-      }
-      .sf-slider {
-        position: absolute;
-        cursor: pointer;
-        top: 0; left: 0; right: 0; bottom: 0;
-        background-color: #cbd5e1;
-        transition: .2s;
-        border-radius: 22px;
-      }
-      .sf-slider:before {
-        position: absolute;
-        content: "";
-        height: 16px;
-        width: 16px;
-        left: 3px;
-        bottom: 3px;
-        background-color: white;
-        transition: .2s;
-        border-radius: 50%;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-      }
-      .sf-switch input:checked + .sf-slider {
-        background-color: #0176d3;
-      }
-      .sf-switch input:checked + .sf-slider:before {
-        transform: translateX(18px);
-      }
-      .sf-modal-section-title {
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.05rem;
-        color: #64748b;
-        margin-bottom: 8px;
-      }
-      .sf-themes-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
-        margin-bottom: 14px;
-      }
-      .sf-theme-btn {
-        border: 1px solid #cbd5e1;
-        border-radius: 8px;
-        padding: 8px 10px;
-        background: #ffffff;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        transition: all 0.15s ease;
-      }
-      .sf-theme-btn:hover {
-        border-color: #94a3b8;
-        background: #f8fafc;
-      }
-      .sf-theme-btn.active {
-        border-color: #0176d3;
-        background: #eff6ff;
-        font-weight: 700;
-      }
-      .sf-theme-swatches {
-        display: flex;
-        width: 22px;
-        height: 22px;
-        border-radius: 4px;
-        overflow: hidden;
-        border: 1px solid rgba(0,0,0,0.15);
-        flex-shrink: 0;
-      }
-      .sf-theme-swatches span {
-        flex: 1;
-        height: 100%;
-      }
-      .sf-custom-color-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 12px;
-      }
-      .sf-custom-color-row input[type="color"] {
-        width: 36px;
-        height: 32px;
-        border: 1px solid #cbd5e1;
-        border-radius: 6px;
-        padding: 0;
-        cursor: pointer;
-        background: none;
-      }
-      .sf-custom-color-row input[type="text"] {
-        flex: 1;
-        padding: 6px 10px;
-        border: 1px solid #cbd5e1;
-        border-radius: 6px;
-        font-size: 12px;
-        font-family: monospace;
-      }
-      .sf-checkbox-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 8px 0;
-        border-top: 1px solid #f1f5f9;
-        font-size: 12px;
-      }
-      .sf-shield-callout {
-        background: #f0fdf4;
-        border: 1px solid #bbf7d0;
-        border-radius: 6px;
-        padding: 8px 12px;
-        font-size: 11px;
-        color: #166534;
-        margin-top: 10px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .sf-gif-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
-        margin-bottom: 12px;
-      }
-      .sf-gif-card {
-        border: 1px solid #cbd5e1;
-        border-radius: 6px;
-        padding: 6px;
-        text-align: center;
-        cursor: pointer;
-        background: #ffffff;
-        transition: all 0.15s ease;
-      }
-      .sf-gif-card:hover {
-        border-color: #94a3b8;
-        background: #f8fafc;
-      }
-      .sf-gif-card.active {
-        border-color: #0176d3;
-        background: #eff6ff;
-        font-weight: 700;
-      }
-      .sf-gif-card img {
-        width: 38px;
-        height: 38px;
-        object-fit: contain;
-        display: block;
-        margin: 0 auto 4px auto;
-      }
-      .sf-gif-card span {
-        font-size: 11px;
-        display: block;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .sf-input-text {
-        width: 100%;
-        padding: 7px 10px;
-        border: 1px solid #cbd5e1;
-        border-radius: 6px;
-        font-size: 12px;
-        margin-bottom: 10px;
-      }
-      .sf-upload-label {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        width: 100%;
-        padding: 8px 12px;
-        background: #ffffff;
-        border: 1px dashed #cbd5e1;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: 600;
-        color: #475569;
-        margin-bottom: 10px;
-        transition: all 0.15s ease;
-      }
-      .sf-upload-label:hover {
-        border-color: #0176d3;
-        color: #0176d3;
-        background: rgba(1, 118, 211, 0.04);
-      }
-      .sf-size-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 12px;
-      }
-      .sf-size-btn {
-        flex: 1;
-        padding: 5px;
-        border: 1px solid #cbd5e1;
-        border-radius: 4px;
-        background: #ffffff;
-        cursor: pointer;
-        font-size: 11px;
-        font-weight: 500;
-      }
-      .sf-size-btn.active {
-        border-color: #0176d3;
-        background: #eff6ff;
-        font-weight: 700;
-      }
-      .sf-preview-panel {
-        border: 1px dashed #cbd5e1;
-        border-radius: 8px;
-        background: #f8fafc;
-        padding: 14px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        min-height: 100px;
-        position: relative;
-        margin-bottom: 12px;
-        overflow: hidden;
-      }
-      .sf-preview-panel img {
-        max-height: 80px;
-        max-width: 88%;
-        object-fit: contain;
-        transition: transform 0.2s ease;
-      }
-      .sf-preview-panel-title {
-        position: absolute;
-        top: 6px;
-        left: 10px;
-        font-size: 10px;
-        font-weight: 600;
-        color: #94a3b8;
-        text-transform: uppercase;
-        letter-spacing: 0.05rem;
-      }
-      .sf-modal-footer {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 20px;
-        background: #f8fafc;
-        border-top: 1px solid #e2e8f0;
-      }
-      .sf-btn {
-        padding: 7px 14px;
-        border-radius: 6px;
-        font-size: 12px;
-        font-weight: 600;
-        cursor: pointer;
-        border: 1px solid transparent;
-        transition: all 0.15s ease;
-      }
-      .sf-btn-secondary {
-        background: #ffffff;
-        border-color: #cbd5e1;
-        color: #334155;
-      }
-      .sf-btn-secondary:hover {
-        background: #f1f5f9;
-      }
-      .sf-btn-primary {
-        background: #0176d3;
-        color: #ffffff;
-      }
-      .sf-btn-primary:hover {
-        filter: brightness(0.92);
-      }
-    `;
-    modal.appendChild(style);
-
-    modal.innerHTML += `
-      <div class="sf-modal-header">
-        <div>
-          <div class="sf-modal-title">
-            Salesforce Enhancer
-            <span class="sf-modal-badge">v1.0.0</span>
-          </div>
-          <div class="sf-modal-subtitle">Modular Productivity, Developer Themes & Animated Loaders</div>
-        </div>
-        <button type="button" class="sf-modal-close-btn" id="sfModalClose">✕</button>
-      </div>
-
-      <div class="sf-modal-tabs">
-        <button type="button" class="sf-modal-tab-btn active" id="tabBtnModules">📦 Modules</button>
-        <button type="button" class="sf-modal-tab-btn" id="tabBtnThemes">🎨 Developer Themes</button>
-        <button type="button" class="sf-modal-tab-btn" id="tabBtnLoading">🎬 Loading Animation</button>
-      </div>
-
-      <!-- TAB 1: MODULES -->
-      <div class="sf-modal-body" id="tabContentModules">
-        <div class="sf-module-card">
-          <div>
-            <div class="sf-module-title">Subtabs & Workspace Shortcuts</div>
-            <div class="sf-module-desc">Alt+Click opens records as subtabs (+Shift in background). Cmd/Ctrl+Click opens in new workspace tab.</div>
-          </div>
-          <label class="sf-switch">
-            <input type="checkbox" id="sfModSubtabs" ${draft.modules.subtabs !== false ? 'checked' : ''}>
-            <span class="sf-slider"></span>
-          </label>
-        </div>
-
-        <div class="sf-module-card">
-          <div>
-            <div class="sf-module-title">Quick Views List Switcher</div>
-            <div class="sf-module-desc">Pin & bookmark your favorite list views at the top of the dropdown with custom order and instant switching.</div>
-          </div>
-          <label class="sf-switch">
-            <input type="checkbox" id="sfModQuickViews" ${draft.modules.quickViews !== false ? 'checked' : ''}>
-            <span class="sf-slider"></span>
-          </label>
-        </div>
-
-        <div class="sf-module-card">
-          <div>
-            <div class="sf-module-title">Developer Themes</div>
-            <div class="sf-module-desc">Gruvbox, Solarized, Nord, Dracula, and One Dark themes. Disabling removes 100% of injected theme CSS.</div>
-          </div>
-          <label class="sf-switch">
-            <input type="checkbox" id="sfModTheming" ${draft.modules.theming === true ? 'checked' : ''}>
-            <span class="sf-slider"></span>
-          </label>
-        </div>
-
-        <div class="sf-module-card">
-          <div>
-            <div class="sf-module-title">Loading Animation (GIFs)</div>
-            <div class="sf-module-desc">Replace Salesforce mascots with authentic animated GIFs (Party Parrot, Nyan Cat, Running Cat) or custom images.</div>
-          </div>
-          <label class="sf-switch">
-            <input type="checkbox" id="sfModLoading" ${draft.modules.loadingAnimation === true ? 'checked' : ''}>
-            <span class="sf-slider"></span>
-          </label>
-        </div>
-      </div>
-
-      <!-- TAB 2: DEVELOPER THEMES -->
-      <div class="sf-modal-body" id="tabContentThemes" style="display:none;">
-        <div class="sf-modal-section-title">Developer Themes</div>
-        <div class="sf-themes-grid" id="sfThemesGrid">
-          <button type="button" class="sf-theme-btn" data-preset="classic">
-            <div class="sf-theme-swatches"><span style="background:#0176d3;"></span><span style="background:#ffffff;"></span></div>
-            <span>Classic SF</span>
-          </button>
-          <button type="button" class="sf-theme-btn" data-preset="gruvbox-dark">
-            <div class="sf-theme-swatches"><span style="background:#fe8019;"></span><span style="background:#282828;"></span></div>
-            <span>Gruvbox Dark</span>
-          </button>
-          <button type="button" class="sf-theme-btn" data-preset="gruvbox-light">
-            <div class="sf-theme-swatches"><span style="background:#af3a03;"></span><span style="background:#fbf1c7;"></span></div>
-            <span>Gruvbox Light</span>
-          </button>
-          <button type="button" class="sf-theme-btn" data-preset="solarized-dark">
-            <div class="sf-theme-swatches"><span style="background:#268bd2;"></span><span style="background:#002b36;"></span></div>
-            <span>Solarized Dark</span>
-          </button>
-          <button type="button" class="sf-theme-btn" data-preset="solarized-light">
-            <div class="sf-theme-swatches"><span style="background:#2aa198;"></span><span style="background:#fdf6e3;"></span></div>
-            <span>Solarized Light</span>
-          </button>
-          <button type="button" class="sf-theme-btn" data-preset="nord">
-            <div class="sf-theme-swatches"><span style="background:#88c0d0;"></span><span style="background:#2e3440;"></span></div>
-            <span>Nord</span>
-          </button>
-          <button type="button" class="sf-theme-btn" data-preset="dracula">
-            <div class="sf-theme-swatches"><span style="background:#bd93f9;"></span><span style="background:#282a36;"></span></div>
-            <span>Dracula</span>
-          </button>
-          <button type="button" class="sf-theme-btn" data-preset="one-dark">
-            <div class="sf-theme-swatches"><span style="background:#61afef;"></span><span style="background:#21252b;"></span></div>
-            <span>One Dark</span>
-          </button>
-          <button type="button" class="sf-theme-btn" data-preset="custom">
-            <div class="sf-theme-swatches"><span id="sfCustomSwatchPreview" style="background:${draft.theme.customAccent || '#8b5cf6'};"></span><span style="background:#ffffff;"></span></div>
-            <span>Custom Accent</span>
-          </button>
-        </div>
-
-        <div class="sf-modal-section-title">Custom Accent Color</div>
-        <div class="sf-custom-color-row">
-          <input type="color" id="sfColorPicker" value="${draft.theme.customAccent || '#8b5cf6'}">
-          <input type="text" id="sfColorHex" value="${draft.theme.customAccent || '#8b5cf6'}" placeholder="#8b5cf6">
-        </div>
-
-        <div class="sf-checkbox-row">
-          <span>Apply horizontal accent bar to navigation bar and workspace tabs</span>
-          <input type="checkbox" id="sfChkApplyNav" ${draft.theme.applyToNavigation !== false ? 'checked' : ''}>
-        </div>
-
-        <div class="sf-shield-callout">
-          <span>🛡️</span>
-          <span><strong>Safe Mode Active:</strong> Case Progress Bar (.slds-path stage chevrons) is strictly isolated and protected from all theme styles.</span>
-        </div>
-      </div>
-
-      <!-- TAB 3: LOADING ANIMATION -->
-      <div class="sf-modal-body" id="tabContentLoading" style="display:none;">
-        <div class="sf-modal-section-title">Loading Animation Presets</div>
-        <div class="sf-gif-grid" id="sfGifGrid">
-          <div class="sf-gif-card" data-preset="spinner" data-url="" title="Default Salesforce Spinner">
-            <div style="font-size:20px; height:38px; display:flex; align-items:center; justify-content:center; margin:0 auto 4px auto;">🔄</div>
-            <span>Default</span>
-          </div>
-          <div class="sf-gif-card" data-preset="parrot" data-url="${GIF_PARROT}" title="Party Parrot (Animated GIF)">
-            <img src="${GIF_PARROT}" alt="Party Parrot">
-            <span>Parrot</span>
-          </div>
-          <div class="sf-gif-card" data-preset="nyan" data-url="${GIF_NYAN}" title="Nyan Cat (Animated GIF)">
-            <img src="${GIF_NYAN}" alt="Nyan Cat">
-            <span>Nyan Cat</span>
-          </div>
-          <div class="sf-gif-card" data-preset="custom" title="Custom Image / GIF (Click + to upload)">
-            <div id="sfCustomCardIcon" style="font-size:24px; height:38px; font-weight:700; display:flex; align-items:center; justify-content:center; margin:0 auto 4px auto; color:#0176d3;">+</div>
-            <img id="sfCustomCardThumb" src="" style="width:38px; height:38px; object-fit:contain; display:none; margin:0 auto 4px auto;" alt="Custom Image">
-            <span>Custom</span>
-          </div>
-        </div>
-
-        <input type="file" id="sfLoadingFileInput" accept="image/*" style="display:none;">
-
-        <div class="sf-modal-section-title">Display Size</div>
-        <div class="sf-size-row" id="sfSizeRow">
-          <button type="button" class="sf-size-btn ${draft.loadingImage.size === 40 ? 'active' : ''}" data-size="40">Small (40px)</button>
-          <button type="button" class="sf-size-btn ${draft.loadingImage.size === 64 || !draft.loadingImage.size ? 'active' : ''}" data-size="64">Medium (64px)</button>
-          <button type="button" class="sf-size-btn ${draft.loadingImage.size === 96 ? 'active' : ''}" data-size="96">Large (96px)</button>
-          <button type="button" class="sf-size-btn ${draft.loadingImage.size === 128 ? 'active' : ''}" data-size="128">Jumbo (128px)</button>
-        </div>
-
-        <div class="sf-checkbox-row" style="margin-bottom:12px;">
-          <span>Rotate image while loading (for static icons)</span>
-          <input type="checkbox" id="sfChkRotate" ${draft.loadingImage.rotate ? 'checked' : ''}>
-        </div>
-
-        <div class="sf-preview-panel">
-          <span class="sf-preview-panel-title">Live Loading Simulation</span>
-          <span id="sfPreviewEmpty" style="font-size:12px; color:#94a3b8; font-style:italic; display:${draft.loadingImage.url ? 'none' : 'block'};">
-            Salesforce default spinner active
-          </span>
-          <img id="sfPreviewImg" src="${draft.loadingImage.url || ''}" style="max-height:80px; max-width:80%; object-fit:contain; display:${draft.loadingImage.url ? 'block' : 'none'}; animation:${draft.loadingImage.rotate ? 'sf-custom-spin 1.2s linear infinite' : 'none'};" alt="Preview">
-        </div>
-      </div>
-
-      <div class="sf-modal-footer">
-        <button type="button" class="sf-btn sf-btn-secondary" id="sfBtnReset">Reset Defaults</button>
-        <div style="display:flex; gap:8px;">
-          <button type="button" class="sf-btn sf-btn-secondary" id="sfBtnCancel">Cancel</button>
-          <button type="button" class="sf-btn sf-btn-primary" id="sfBtnSave">Save & Apply</button>
-        </div>
-      </div>
-    `;
-
-    document.body.appendChild(backdrop);
-    document.body.appendChild(modal);
-
-    const closeModal = () => {
-      backdrop.remove();
-      modal.remove();
-    };
-
-    document.getElementById('sfModalClose').onclick = closeModal;
-    document.getElementById('sfBtnCancel').onclick = closeModal;
-    backdrop.onclick = closeModal;
-
-    // Tab navigation
-    const tabModules = document.getElementById('tabBtnModules');
-    const tabThemes = document.getElementById('tabBtnThemes');
-    const tabLoading = document.getElementById('tabBtnLoading');
-    const contentModules = document.getElementById('tabContentModules');
-    const contentThemes = document.getElementById('tabContentThemes');
-    const contentLoading = document.getElementById('tabContentLoading');
-
-    const switchTab = (tab) => {
-      tabModules.classList.toggle('active', tab === 'modules');
-      tabThemes.classList.toggle('active', tab === 'themes');
-      tabLoading.classList.toggle('active', tab === 'loading');
-      contentModules.style.display = tab === 'modules' ? 'block' : 'none';
-      contentThemes.style.display = tab === 'themes' ? 'block' : 'none';
-      contentLoading.style.display = tab === 'loading' ? 'block' : 'none';
-    };
-
-    tabModules.onclick = () => switchTab('modules');
-    tabThemes.onclick = () => switchTab('themes');
-    tabLoading.onclick = () => switchTab('loading');
-
-    // Modules switches
-    document.getElementById('sfModSubtabs').onchange = (e) => {
-      draft.modules.subtabs = e.target.checked;
-    };
-    document.getElementById('sfModQuickViews').onchange = (e) => {
-      draft.modules.quickViews = e.target.checked;
-    };
-    document.getElementById('sfModTheming').onchange = (e) => {
-      draft.modules.theming = e.target.checked;
-    };
-    document.getElementById('sfModLoading').onchange = (e) => {
-      draft.modules.loadingAnimation = e.target.checked;
-    };
-
-    // Themes selector
-    const themeBtns = modal.querySelectorAll('.sf-theme-btn');
-    const colorPicker = document.getElementById('sfColorPicker');
-    const colorHex = document.getElementById('sfColorHex');
-    const customSwatch = document.getElementById('sfCustomSwatchPreview');
-
-    const refreshThemeButtons = () => {
-      const currentPreset = draft.theme?.preset || 'classic';
-      themeBtns.forEach((btn) => {
-        btn.classList.toggle('active', btn.dataset.preset === currentPreset);
-      });
-      if (customSwatch) {
-        customSwatch.style.background = draft.theme.customAccent || '#8b5cf6';
-      }
-    };
-    refreshThemeButtons();
-
-    themeBtns.forEach((btn) => {
-      btn.onclick = () => {
-        const p = btn.dataset.preset;
-        draft.theme.preset = p;
-        draft.modules.theming = true;
-        const modThemingChk = document.getElementById('sfModTheming');
-        if (modThemingChk) modThemingChk.checked = true;
-        refreshThemeButtons();
-      };
-    });
-
-    colorPicker.oninput = (e) => {
-      draft.theme.customAccent = e.target.value;
-      draft.theme.preset = 'custom';
-      draft.modules.theming = true;
-      colorHex.value = e.target.value;
-      const modThemingChk = document.getElementById('sfModTheming');
-      if (modThemingChk) modThemingChk.checked = true;
-      refreshThemeButtons();
-    };
-
-    colorHex.onchange = (e) => {
-      let val = e.target.value.trim();
-      if (!val.startsWith('#')) val = '#' + val;
-      if (/^#[0-9a-fA-F]{6}$/.test(val)) {
-        draft.theme.customAccent = val;
-        draft.theme.preset = 'custom';
-        draft.modules.theming = true;
-        colorPicker.value = val;
-        const modThemingChk = document.getElementById('sfModTheming');
-        if (modThemingChk) modThemingChk.checked = true;
-        refreshThemeButtons();
-      }
-    };
-
-    document.getElementById('sfChkApplyNav').onchange = (e) => {
-      draft.theme.applyToNavigation = e.target.checked;
-    };
-
-    // Loading Animation
-    const gifCards = modal.querySelectorAll('.sf-gif-card');
-    const fileInput = document.getElementById('sfLoadingFileInput');
-    const sizeBtns = modal.querySelectorAll('.sf-size-btn');
-    const chkRotate = document.getElementById('sfChkRotate');
-    const previewImg = document.getElementById('sfPreviewImg');
-    const previewEmpty = document.getElementById('sfPreviewEmpty');
-
-    const refreshPreview = () => {
-      const url = getEffectiveLoadingUrl(draft);
-      if (url) {
-        previewImg.src = url;
-        previewImg.style.display = 'block';
-        previewEmpty.style.display = 'none';
-        previewImg.style.animation = draft.loadingImage?.rotate ? 'sf-custom-spin 1.2s linear infinite' : 'none';
-      } else {
-        previewImg.src = '';
-        previewImg.style.display = 'none';
-        previewEmpty.style.display = 'block';
-      }
-      const currentUrl = (draft.loadingImage?.url || '').trim();
-      const isParrot = currentUrl === GIF_PARROT || currentUrl === 'parrot.gif' || currentUrl.includes('parrot.gif');
-      const isNyan = currentUrl === GIF_NYAN || currentUrl === 'nyan.gif' || currentUrl.includes('nyan.gif') || currentUrl.includes('PYh.gif');
-      const isDefault = !currentUrl || currentUrl === GIF_SPINNER;
-      const isCustom = !isParrot && !isNyan && !isDefault;
-
-      gifCards.forEach((c) => {
-        const p = c.dataset.preset;
-        if (p === 'spinner') c.classList.toggle('active', isDefault);
-        else if (p === 'parrot') c.classList.toggle('active', isParrot);
-        else if (p === 'nyan') c.classList.toggle('active', isNyan);
-        else if (p === 'custom') {
-          c.classList.toggle('active', isCustom);
-          const thumb = c.querySelector('#sfCustomCardThumb');
-          const icon = c.querySelector('#sfCustomCardIcon');
-          if (thumb && icon) {
-            if (isCustom && currentUrl) {
-              thumb.src = currentUrl;
-              thumb.style.display = 'block';
-              icon.style.display = 'none';
-            } else {
-              thumb.src = '';
-              thumb.style.display = 'none';
-              icon.style.display = 'flex';
-            }
-          }
-        }
-      });
-    };
-    refreshPreview();
-
-    gifCards.forEach((card) => {
-      card.onclick = () => {
-        const p = card.dataset.preset;
-        if (p === 'custom') {
-          fileInput.click();
-          return;
-        }
-        const target = card.dataset.url || '';
-        draft.loadingImage.url = target;
-        draft.modules.loadingAnimation = true;
-        const modLoadingChk = document.getElementById('sfModLoading');
-        if (modLoadingChk) modLoadingChk.checked = true;
-        refreshPreview();
-      };
-    });
-
-    const handleInPageFile = (file) => {
-      if (!file || !file.type.startsWith('image/')) return;
-      const reader = new FileReader();
-      reader.onload = (loadEvt) => {
-        const dataUrl = loadEvt.target.result;
-        draft.loadingImage.url = dataUrl;
-        draft.modules.loadingAnimation = true;
-        const modLoadingChk = document.getElementById('sfModLoading');
-        if (modLoadingChk) modLoadingChk.checked = true;
-        refreshPreview();
-      };
-      reader.readAsDataURL(file);
-    };
-
-    fileInput.onchange = (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (file) handleInPageFile(file);
-    };
-
-    const modalDropTargets = [previewBox, modal.querySelector('.sf-gif-card[data-preset="custom"]')];
-    modalDropTargets.forEach((t) => {
-      if (!t) return;
-      t.ondragover = (e) => { e.preventDefault(); e.stopPropagation(); };
-      t.ondrop = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const files = e.dataTransfer && e.dataTransfer.files;
-        if (files && files.length > 0) handleInPageFile(files[0]);
-      };
-    });
-
-    sizeBtns.forEach((btn) => {
-      btn.onclick = () => {
-        const size = parseInt(btn.dataset.size, 10);
-        draft.loadingImage.size = size;
-        sizeBtns.forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
-      };
-    });
-
-    chkRotate.onchange = (e) => {
-      draft.loadingImage.rotate = e.target.checked;
-      refreshPreview();
-    };
-
-    // Reset Defaults
-    document.getElementById('sfBtnReset').onclick = () => {
-      if (confirm('Reset Salesforce Enhancer settings to defaults?')) {
-        draft = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
-        closeModal();
-        saveEnhancerSettings(draft);
-        applyAppearanceSettings(draft);
-        refreshQuickViewsUI();
-        showToast('Reset to Salesforce Enhancer defaults');
-      }
-    };
-
-    // Save & Apply
-    document.getElementById('sfBtnSave').onclick = () => {
-      saveEnhancerSettings(draft);
-      applyAppearanceSettings(draft);
-      refreshQuickViewsUI();
-      showToast('Salesforce Enhancer settings saved!');
-      closeModal();
-    };
-
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        closeModal();
-        document.removeEventListener('keydown', onKeyDown);
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
-  }
-
     function getCurrentObjectName() {
       const oMatch = window.location.pathname.match(/\/lightning\/o\/([a-zA-Z0-9_]+)\/(?:list|home)/);
       if (oMatch && oMatch[1]) return oMatch[1];
@@ -5992,27 +5160,7 @@
       headerLeft.className = 'sf-quick-header-title';
       headerLeft.innerHTML = `<span>${getBookmarkSVG(true)}</span><span>QUICK VIEWS</span> <span class="sf-quick-count">(${quickViews.length})</span>`;
 
-      const headerRight = document.createElement('div');
-      headerRight.className = 'sf-quick-header-actions';
-      headerRight.style.display = 'flex';
-      headerRight.style.alignItems = 'center';
-      headerRight.style.gap = '4px';
-
-      const settingsBtn = document.createElement('button');
-      settingsBtn.className = 'sf-quick-settings-btn';
-      settingsBtn.type = 'button';
-      settingsBtn.title = 'Customize Colors & Loading Animation';
-      settingsBtn.innerHTML = getSettingsGearSVG();
-      settingsBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        openAppearanceSettingsModal();
-      });
-      headerRight.appendChild(settingsBtn);
-
       headerRow.appendChild(headerLeft);
-      headerRow.appendChild(headerRight);
       container.appendChild(headerRow);
 
       if (quickViews.length === 0) {
@@ -6581,9 +5729,7 @@
     window.addEventListener('message', (event) => {
       try {
         if (!event.data) return;
-        if (event.data.__sfEnhancerAction === 'openModal' || event.data.__sfAppearanceAction === 'openModal') {
-          openAppearanceSettingsModal();
-        } else if (
+        if (
           (event.data.__sfEnhancerAction === 'settingsUpdated' || event.data.__sfAppearanceAction === 'applySettings') &&
           event.data.settings
         ) {
@@ -6604,17 +5750,7 @@
       } catch (_) {}
     });
 
-    // Keyboard shortcut: Cmd/Ctrl + Alt + S opens Salesforce Customizer
-    window.addEventListener(
-      'keydown',
-      (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.altKey && e.key && e.key.toLowerCase() === 's') {
-          e.preventDefault();
-          openAppearanceSettingsModal();
-        }
-      },
-      true
-    );
+    
 
     // Initial appearance settings apply
     applyAppearanceSettings(getEnhancerSettings());

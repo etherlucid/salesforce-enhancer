@@ -247,8 +247,7 @@
       .sf-native-bookmark-btn.is-bookmarked:hover {
         background: ${accentTint} !important;
       }
-      .sf-quick-control-btn:hover,
-      .sf-quick-settings-btn:hover {
+      .sf-quick-control-btn:hover {
         color: ${accent} !important;
       }
     `;
@@ -739,8 +738,7 @@
         }
         .sf-quick-header-title,
         .sf-quick-count,
-        .sf-quick-control-btn,
-        .sf-quick-settings-btn {
+        .sf-quick-control-btn {
           color: ${baseTheme.textMuted} !important;
         }
         .sf-quick-item-label {
