@@ -1,0 +1,86 @@
+/* Salesforce Enhancer - Early Loading Animation Intercept */
+
+@keyframes sf-custom-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Category 1 & 4: Hide native splash spinner rings, mascot children, and dots */
+html[data-sf-loading-enabled="true"] #auraLoadingBox .spinner,
+html[data-sf-loading-enabled="true"] .auraLoadingBox .spinner,
+html[data-sf-loading-enabled="true"] .loadingBox .spinner,
+html[data-sf-loading-enabled="true"] .oneLoading .spinner,
+html[data-sf-loading-enabled="true"] .forceDotsSpinner:not(.sf-loading-exempt) *,
+html[data-sf-loading-enabled="true"] #auraLoadingBox .logo > *,
+html[data-sf-loading-enabled="true"] .auraLoadingBox .logo > *,
+html[data-sf-loading-enabled="true"] .auraMsgBox .logo > *,
+html[data-sf-loading-enabled="true"] .loadingBox .logo > *,
+html[data-sf-loading-enabled="true"] .oneLoading .logo > *,
+html[data-sf-loading-enabled="true"] div[class*="loadingBox"] .logo > *,
+html[data-sf-loading-enabled="true"] div[class*="oneLoading"] .logo > *,
+html[data-sf-loading-enabled="true"] div[class*="splash"] .logo > * {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  animation: none !important;
+}
+
+/* Category 1: Instant replacement of initial page load / splash mascot container */
+html[data-sf-loading-enabled="true"] #auraLoadingBox .logo,
+html[data-sf-loading-enabled="true"] .auraLoadingBox .logo,
+html[data-sf-loading-enabled="true"] .auraMsgBox .logo,
+html[data-sf-loading-enabled="true"] .loadingBox .logo,
+html[data-sf-loading-enabled="true"] .oneLoading .logo,
+html[data-sf-loading-enabled="true"] div[class*="loadingBox"] .logo,
+html[data-sf-loading-enabled="true"] div[class*="oneLoading"] .logo,
+html[data-sf-loading-enabled="true"] div[class*="mascot" i],
+html[data-sf-loading-enabled="true"] div[class*="character" i],
+html[data-sf-loading-enabled="true"] div[class*="splash" i] .logo,
+html[data-sf-loading-enabled="true"] .initial-loading .logo,
+html[data-sf-loading-enabled="true"] .splash .logo {
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  background-image: var(--sf-custom-loading-img, url("nyan.gif")) !important;
+  background-size: contain !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  width: 140px !important;
+  height: 140px !important;
+  margin: 0 auto 16px auto !important;
+  animation: var(--sf-custom-loading-anim, none) !important;
+}
+
+/* Category 1: Instant replacement of initial page load / splash mascot image tags */
+html[data-sf-loading-enabled="true"] img[src*="astro" i],
+html[data-sf-loading-enabled="true"] img[src*="codey" i],
+html[data-sf-loading-enabled="true"] img[src*="einstein" i],
+html[data-sf-loading-enabled="true"] img[src*="cloudy" i],
+html[data-sf-loading-enabled="true"] img[src*="appy" i],
+html[data-sf-loading-enabled="true"] img[src*="bear" i],
+html[data-sf-loading-enabled="true"] img[src*="mascot" i],
+html[data-sf-loading-enabled="true"] #auraLoadingBox img,
+html[data-sf-loading-enabled="true"] .auraLoadingBox img,
+html[data-sf-loading-enabled="true"] .splash img,
+html[data-sf-loading-enabled="true"] .initial-loading img,
+html[data-sf-loading-enabled="true"] .loadingBox img {
+  content: var(--sf-custom-loading-img, url("nyan.gif")) !important;
+  object-fit: contain !important;
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  animation: var(--sf-custom-loading-anim, none) !important;
+}
+
+/* Category 4: Replacement of background data-fetching dots (.forceDotsSpinner) */
+html[data-sf-loading-enabled="true"] .forceDotsSpinner:not(.sf-loading-exempt) {
+  background-image: var(--sf-custom-loading-img, url("nyan.gif")) !important;
+  background-size: contain !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  border: none !important;
+  animation: var(--sf-custom-loading-anim, none) !important;
+  transform: none !important;
+  width: var(--sf-custom-loading-size, 64px) !important;
+  height: var(--sf-custom-loading-size, 64px) !important;
+}

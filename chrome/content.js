@@ -1,0 +1,2141 @@
+(function () {
+  'use strict';
+
+  const isTopWindow = window === window.top;
+  const api = typeof browser !== 'undefined' ? browser : chrome;
+
+  const GIF_PARROT = api?.runtime?.getURL ? api.runtime.getURL('parrot.gif') : 'parrot.gif';
+  const GIF_NYAN = api?.runtime?.getURL ? api.runtime.getURL('nyan.gif') : 'nyan.gif';
+  const GIF_CAT = 'https://media.giphy.com/media/unQ3IJU2RG7DO/giphy.gif';
+  const GIF_SPINNER = '';
+
+  const THEMES = {
+    'classic': {
+      name: 'Classic SF',
+      isDark: false,
+      accent: '#0176d3',
+      contrast: '#ffffff',
+      bg: '#ffffff',
+      surface: '#f8fafc',
+      surfaceHeader: '#ffffff',
+      border: '#dddbda',
+      text: '#181818',
+      textMuted: '#706e6b'
+    },
+    'gruvbox-dark': {
+      name: 'Gruvbox Dark',
+      isDark: true,
+      accent: '#fe8019',
+      contrast: '#282828',
+      bg: '#282828',
+      surface: '#3c3836',
+      surfaceHeader: '#1d2021',
+      border: '#504945',
+      text: '#ebdbb2',
+      textMuted: '#a89984'
+    },
+    'gruvbox-light': {
+      name: 'Gruvbox Light',
+      isDark: false,
+      accent: '#af3a03',
+      contrast: '#fbf1c7',
+      bg: '#fbf1c7',
+      surface: '#ebdbb2',
+      surfaceHeader: '#f2e5bc',
+      border: '#d5c4a1',
+      text: '#3c3836',
+      textMuted: '#7c6f64'
+    },
+    'solarized-dark': {
+      name: 'Solarized Dark',
+      isDark: true,
+      accent: '#268bd2',
+      contrast: '#ffffff',
+      bg: '#002b36',
+      surface: '#073642',
+      surfaceHeader: '#00212b',
+      border: '#073642',
+      text: '#839496',
+      textMuted: '#586e75'
+    },
+    'solarized-light': {
+      name: 'Solarized Light',
+      isDark: false,
+      accent: '#2aa198',
+      contrast: '#ffffff',
+      bg: '#fdf6e3',
+      surface: '#eee8d5',
+      surfaceHeader: '#f5efdc',
+      border: '#e0d8c3',
+      text: '#657b83',
+      textMuted: '#93a1a1'
+    },
+    'nord': {
+      name: 'Nord',
+      isDark: true,
+      accent: '#88c0d0',
+      contrast: '#2e3440',
+      bg: '#2e3440',
+      surface: '#3b4252',
+      surfaceHeader: '#242933',
+      border: '#434c5e',
+      text: '#eceff4',
+      textMuted: '#d8dee9'
+    },
+    'dracula': {
+      name: 'Dracula',
+      isDark: true,
+      accent: '#bd93f9',
+      contrast: '#282a36',
+      bg: '#282a36',
+      surface: '#44475a',
+      surfaceHeader: '#1e1f29',
+      border: '#6272a4',
+      text: '#f8f8f2',
+      textMuted: '#6272a4'
+    },
+    'one-dark': {
+      name: 'One Dark',
+      isDark: true,
+      accent: '#61afef',
+      contrast: '#21252b',
+      bg: '#21252b',
+      surface: '#282c34',
+      surfaceHeader: '#1b1d23',
+      border: '#3e4451',
+      text: '#abb2bf',
+      textMuted: '#5c6370'
+    },
+    'custom': {
+      name: 'Custom',
+      isDark: false,
+      accent: '#8b5cf6',
+      contrast: '#ffffff',
+      bg: '#ffffff',
+      surface: '#f8fafc',
+      surfaceHeader: '#ffffff',
+      border: '#dddbda',
+      text: '#181818',
+      textMuted: '#706e6b'
+    }
+  };
+
+  function hexToRgba(hex, alpha) {
+    if (!hex || typeof hex !== 'string') return `rgba(1, 118, 211, ${alpha})`;
+    let c = hex.replace('#', '').trim();
+    if (c.length === 3) c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
+    if (c.length !== 6) return `rgba(1, 118, 211, ${alpha})`;
+    const num = parseInt(c, 16);
+    const r = (num >> 16) & 255;
+    const g = (num >> 8) & 255;
+    const b = num & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  function getContrastColor(hex) {
+    if (!hex || typeof hex !== 'string') return '#ffffff';
+    let c = hex.replace('#', '').trim();
+    if (c.length === 3) c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
+    if (c.length !== 6) return '#ffffff';
+    const r = parseInt(c.slice(0, 2), 16) / 255;
+    const g = parseInt(c.slice(2, 4), 16) / 255;
+    const b = parseInt(c.slice(4, 6), 16) / 255;
+    const a = [r, g, b].map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+    const lum = 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
+    return lum > 0.45 ? '#0f172a' : '#ffffff';
+  }
+
+  function normalizeSettings(raw) {
+    if (!raw || typeof raw !== 'object') {
+      return {
+        version: '1.0.0',
+        modules: { subtabs: true, quickViews: true, theming: false, loadingAnimation: false },
+        theme: { preset: 'classic', customAccent: '#8b5cf6', applyToNavigation: true },
+        loadingImage: { url: GIF_PARROT, size: 64, rotate: false }
+      };
+    }
+
+    const res = {
+      version: '1.0.0',
+      modules: {
+        subtabs: raw.modules ? raw.modules.subtabs !== false : true,
+        quickViews: raw.modules ? raw.modules.quickViews !== false : true,
+        theming: raw.modules ? !!raw.modules.theming : (raw.applyToSalesforce === false ? false : !!(raw.theme && raw.theme !== 'classic')),
+        loadingAnimation: raw.modules ? raw.modules.loadingAnimation === true : (raw.loadingImage ? raw.loadingImage.enabled === true : false)
+      },
+      theme: {
+        preset: (raw.theme && typeof raw.theme === 'object' && raw.theme.preset) ? raw.theme.preset : (typeof raw.theme === 'string' ? raw.theme : 'classic'),
+        customAccent: (raw.theme && typeof raw.theme === 'object' && raw.theme.customAccent) ? raw.theme.customAccent : (raw.accentColor || '#8b5cf6'),
+        applyToNavigation: (raw.theme && typeof raw.theme === 'object' && raw.theme.applyToNavigation !== undefined) ? raw.theme.applyToNavigation : (raw.applyToSalesforce !== false)
+      },
+      loadingImage: {
+        url: (raw.loadingImage && raw.loadingImage.url !== undefined) ? raw.loadingImage.url : (raw.loadingUrl || GIF_PARROT),
+        size: (raw.loadingImage && raw.loadingImage.size) || 64,
+        rotate: !!(raw.loadingImage && raw.loadingImage.rotate)
+      }
+    };
+
+    return res;
+  }
+
+  function getEffectiveLoadingUrl(settings) {
+    if (!settings || !settings.modules || settings.modules.loadingAnimation !== true) return null;
+    let url = (settings.loadingImage && settings.loadingImage.url ? settings.loadingImage.url : '').trim();
+    if (!url) return null;
+    const lower = url.toLowerCase();
+    if (lower.includes('parrot') || lower.includes('partyparrot')) return GIF_PARROT;
+    if (lower.includes('nyan') || lower.includes('gifer')) return GIF_NYAN;
+    if (lower.includes('cat') || lower.includes('giphy') || lower.includes('tenor')) return GIF_CAT;
+    if (lower.includes('spinner') || lower === 'default') return null;
+    return url;
+  }
+
+  function sanitizeHexColor(hex, fallback = '#8b5cf6') {
+    if (!hex || typeof hex !== 'string') return fallback;
+    const trimmed = hex.trim();
+    return /^#[0-9a-fA-F]{3,8}$/.test(trimmed) ? trimmed : fallback;
+  }
+
+  function sanitizeCssUrl(url) {
+    if (!url || typeof url !== 'string') return '';
+    return url.replace(/["'\r\n\\]/g, '').trim();
+  }
+
+  function generateThemeCSS(settings) {
+    // If theming module is disabled, return empty string (zero CSS injected)
+    if (!settings || !settings.modules || settings.modules.theming !== true) {
+      return '';
+    }
+
+    const themeKey = (settings.theme && settings.theme.preset) || 'classic';
+    const baseTheme = THEMES[themeKey] || THEMES['classic'];
+    const accent = (themeKey === 'custom' && settings.theme?.customAccent) ? sanitizeHexColor(settings.theme.customAccent) : baseTheme.accent;
+    const accentContrast = (themeKey === 'custom') ? getContrastColor(accent) : baseTheme.contrast;
+    const accentTint = hexToRgba(accent, 0.14);
+    const accentBorder = hexToRgba(accent, 0.35);
+    const baseBorder = (baseTheme && baseTheme.border) ? baseTheme.border : '#dddbda';
+    const isDark = !!baseTheme.isDark;
+    const applyNav = !settings.theme || settings.theme.applyToNavigation !== false;
+
+    let css = `
+      :root {
+        --sf-theme-accent: ${accent} !important;
+        --sf-theme-accent-tint: ${accentTint} !important;
+        --sf-theme-accent-border: ${accentBorder} !important;
+        --sf-theme-accent-contrast: ${accentContrast} !important;
+      }
+
+      /* Quick Views Item Accent Styling */
+      .sf-quick-item.slds-is-selected {
+        background: ${accentTint} !important;
+        border-left: 3px solid ${accent} !important;
+      }
+      .sf-quick-item.slds-is-selected .sf-quick-item-label {
+        color: ${isDark ? '#f8fafc' : '#0f172a'} !important;
+        font-weight: 700 !important;
+      }
+      .sf-quick-item.slds-is-selected .sf-quick-item-icon svg {
+        stroke: ${accent} !important;
+      }
+      .sf-quick-item:hover {
+        background: ${accentTint} !important;
+      }
+      .sf-native-bookmark-btn:hover svg path {
+        stroke: ${accent} !important;
+      }
+      .sf-native-bookmark-btn.is-bookmarked:hover {
+        background: ${accentTint} !important;
+      }
+      .sf-quick-control-btn:hover,
+      .sf-quick-settings-btn:hover {
+        color: ${accent} !important;
+      }
+    `;
+
+    if (applyNav) {
+      css += `
+        /* Single clean accent bar directly below top app navigation bar */
+        one-app-nav-bar {
+          border-bottom: 2px solid ${accent} !important;
+        }
+        one-app-nav-bar .slds-context-bar,
+        .slds-context-bar,
+        nav.slds-context-bar {
+          border-bottom: none !important;
+        }
+
+        /* Active navigation bar item indicator */
+        one-app-nav-bar .slds-context-bar__item.slds-is-active {
+          border-bottom: none !important;
+        }
+        one-app-nav-bar .slds-context-bar__item.slds-is-active::before {
+          background-color: ${accent} !important;
+          height: 2px !important;
+        }
+
+        /* Outer Console Workspace Tab Bar - clean base border, no multiple stacked lines */
+        .oneWorkspaceNavigationTabs,
+        .oneConsoleTabContainer {
+          border-bottom: 1px solid ${baseBorder} !important;
+        }
+        .oneWorkspaceNavigationTabs .oneConsoleTabContainer,
+        .oneWorkspaceNavigationTabs .navexConsoleTabContainer,
+        .navexWorkspaceManager .tabBarContainer,
+        .navexConsoleTabContainer .tabBarContainer,
+        .tabBarContainer,
+        ul.tabBarItems {
+          border-bottom: none !important;
+          border-top: none !important;
+        }
+
+        /* Console workspace active tab - single crisp 2px top indicator, no border duplication */
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem,
+        .tabBarContainer ul.tabBarItems > li.tabItem {
+          border-top: none !important;
+          border-bottom: none !important;
+        }
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem.slds-is-active::before,
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem.active::before,
+        .tabBarContainer ul.tabBarItems > li.tabItem.slds-is-active::before,
+        .tabBarContainer ul.tabBarItems > li.tabItem.active::before {
+          background-color: ${accent} !important;
+          height: 2px !important;
+          top: 0 !important;
+        }
+
+        /* Subtabs Bar */
+        .subtabContainer,
+        .subtabs,
+        .slds-sub-tabs,
+        ul.subtabs {
+          border-bottom: 1px solid ${baseBorder} !important;
+        }
+        ul.subtabs > li.tabItem,
+        .subtabs li.tabItem,
+        .slds-sub-tabs__item {
+          border-top: none !important;
+          border-bottom: none !important;
+        }
+        ul.subtabs > li.tabItem.slds-is-active::before,
+        .subtabs li.tabItem.slds-is-active::before,
+        .slds-sub-tabs__item.slds-is-active::before {
+          background-color: ${accent} !important;
+          height: 2px !important;
+        }
+      `;
+    }
+
+    // Comprehensive Theme Coverage (Gruvbox, Solarized, Nord, Dracula, One Dark, etc.)
+    if (themeKey !== 'classic' && baseTheme) {
+      css += `
+        :root {
+          /* SLDS Global Neutral Tokens */
+          --slds-g-color-neutral-base-100: ${baseTheme.bg} !important;
+          --slds-g-color-neutral-base-95: ${baseTheme.surface} !important;
+          --slds-g-color-neutral-base-90: ${baseTheme.surfaceHeader} !important;
+          --slds-g-color-neutral-base-80: ${baseTheme.border} !important;
+          --slds-g-color-neutral-base-50: ${baseTheme.textMuted} !important;
+          --slds-g-color-neutral-base-30: ${baseTheme.text} !important;
+          --slds-g-color-neutral-base-20: ${baseTheme.text} !important;
+          --slds-g-color-neutral-base-10: ${baseTheme.text} !important;
+
+          /* Lightning Web Component (LWC) Global Design Tokens */
+          --lwc-colorBackground: ${baseTheme.surface} !important;
+          --lwc-colorBackgroundAlt: ${baseTheme.surfaceHeader} !important;
+          --lwc-colorBackgroundRowHover: ${baseTheme.surfaceHeader} !important;
+          --lwc-colorBackgroundRowSelected: ${baseTheme.surfaceHeader} !important;
+          --lwc-colorBackgroundButtonDefault: ${baseTheme.surface} !important;
+          --lwc-colorBackgroundButtonDefaultHover: ${baseTheme.surfaceHeader} !important;
+          --lwc-colorBackgroundButtonBrand: ${accent} !important;
+          --lwc-colorBackgroundInput: ${baseTheme.bg} !important;
+          --lwc-colorBackgroundCard: ${baseTheme.surface} !important;
+          --lwc-colorBackgroundCardHeader: ${baseTheme.surface} !important;
+          --lwc-colorBackgroundCardFooter: ${baseTheme.surface} !important;
+          --lwc-colorBackgroundModal: ${baseTheme.surface} !important;
+          --lwc-colorBackgroundModalHeader: ${baseTheme.surfaceHeader} !important;
+          --lwc-colorBackgroundModalFooter: ${baseTheme.surfaceHeader} !important;
+          --lwc-colorBackgroundToolbar: ${baseTheme.surfaceHeader} !important;
+          --lwc-colorBackgroundPopover: ${baseTheme.surface} !important;
+          --lwc-colorBackgroundToast: ${baseTheme.surface} !important;
+          --lwc-colorBackgroundHighlight: ${accentTint} !important;
+
+          --lwc-colorBorder: ${baseTheme.border} !important;
+          --lwc-colorBorderSeparator: ${baseTheme.border} !important;
+          --lwc-colorBorderCard: ${baseTheme.border} !important;
+          --lwc-colorBorderInput: ${baseTheme.border} !important;
+          --lwc-colorBorderButtonDefault: ${baseTheme.border} !important;
+
+          --lwc-colorTextDefault: ${baseTheme.text} !important;
+          --lwc-colorTextWeak: ${baseTheme.textMuted} !important;
+          --lwc-colorTextPlaceholder: ${baseTheme.textMuted} !important;
+          --lwc-colorTextLink: ${accent} !important;
+          --lwc-colorTextIconDefault: ${baseTheme.textMuted} !important;
+          --lwc-colorTextButtonDefault: ${baseTheme.text} !important;
+
+          /* SLDS Component Design Tokens */
+          --slds-c-card-color-background: ${baseTheme.surface} !important;
+          --slds-c-card-header-color-background: ${baseTheme.surface} !important;
+          --slds-c-card-footer-color-background: ${baseTheme.surface} !important;
+          --slds-c-card-text-color: ${baseTheme.text} !important;
+          --slds-c-card-color-border: ${baseTheme.border} !important;
+
+          --slds-c-page-header-color-background: ${baseTheme.surface} !important;
+          --slds-c-page-header-text-color: ${baseTheme.text} !important;
+          --slds-c-page-header-color-border: ${baseTheme.border} !important;
+
+          --slds-c-modal-color-background: ${baseTheme.surface} !important;
+          --slds-c-modal-header-color-background: ${baseTheme.surfaceHeader} !important;
+          --slds-c-modal-footer-color-background: ${baseTheme.surfaceHeader} !important;
+          --slds-c-modal-text-color: ${baseTheme.text} !important;
+
+          --slds-c-input-color-background: ${baseTheme.bg} !important;
+          --slds-c-input-text-color: ${baseTheme.text} !important;
+          --slds-c-input-color-border: ${baseTheme.border} !important;
+
+          --slds-c-tile-color-background: ${baseTheme.surface} !important;
+          --slds-c-tile-color-border: ${baseTheme.border} !important;
+
+          --slds-c-accordion-color-background: ${baseTheme.surface} !important;
+          --slds-c-accordion-header-color-background: ${baseTheme.surface} !important;
+
+          --slds-c-tabs-item-color-background: ${baseTheme.surface} !important;
+          --slds-c-tabs-content-color-background: ${baseTheme.surface} !important;
+
+          --slds-c-button-neutral-color-background: ${baseTheme.surface} !important;
+          --slds-c-button-neutral-color-border: ${baseTheme.border} !important;
+          --slds-c-button-neutral-text-color: ${baseTheme.text} !important;
+
+          --slds-c-pill-color-background: ${baseTheme.surfaceHeader} !important;
+          --slds-c-pill-color-border: ${baseTheme.border} !important;
+          --slds-c-pill-text-color: ${baseTheme.text} !important;
+
+          --sf-qv-bg: ${baseTheme.surface} !important;
+          --sf-qv-border: ${baseTheme.border} !important;
+          --sf-qv-text: ${baseTheme.text} !important;
+          --sf-qv-muted: ${baseTheme.textMuted} !important;
+          --sf-qv-hover: ${baseTheme.surfaceHeader} !important;
+        }
+
+        /* Universal Themed Scrollbars (Firefox & WebKit) */
+        * {
+          scrollbar-color: ${baseTheme.border} ${baseTheme.surfaceHeader} !important;
+          scrollbar-width: thin !important;
+        }
+        ::-webkit-scrollbar {
+          width: 8px !important;
+          height: 8px !important;
+          background-color: ${baseTheme.surfaceHeader} !important;
+        }
+        ::-webkit-scrollbar-track {
+          background-color: ${baseTheme.surfaceHeader} !important;
+        }
+        ::-webkit-scrollbar-thumb {
+          background-color: ${baseTheme.border} !important;
+          border-radius: 4px !important;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+          background-color: ${baseTheme.textMuted} !important;
+        }
+        ::-webkit-scrollbar-corner {
+          background-color: ${baseTheme.surfaceHeader} !important;
+        }
+
+        /* Global Canvas & Workspace Background */
+        html, body,
+        .desktop,
+        .oneAlohaPage,
+        .alohaPage,
+        .oneWorkspace,
+        .oneContent,
+        .center.oneCenterStage,
+        .flexipageBase,
+        .flexipageComponent,
+        .flexipagePage,
+        .flexipageRoot,
+        .navexWorkspaceManager,
+        .navexConsoleTabContainer,
+        .oneConsoleTabContainer,
+        div[class*="viewport"],
+        .slds-template__container,
+        .viewport {
+          background-color: ${baseTheme.bg} !important;
+          color: ${baseTheme.text} !important;
+        }
+
+        /* Global Header (Search bar, setup gear, bell, profile) */
+        header.slds-global-header,
+        .slds-global-header {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        /* Standard App Navigation Context Bar */
+        one-app-nav-bar,
+        one-app-nav-bar .slds-context-bar,
+        nav.slds-context-bar,
+        .slds-context-bar {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+        one-app-nav-bar .slds-context-bar__item,
+        one-app-nav-bar .slds-context-bar__item a,
+        .slds-context-bar__item a {
+          color: ${baseTheme.text} !important;
+        }
+        one-app-nav-bar .slds-context-bar__item:hover,
+        one-app-nav-bar .slds-context-bar__item.slds-is-active {
+          background-color: ${baseTheme.surfaceHeader} !important;
+        }
+        one-app-nav-bar .slds-context-bar__icon-action,
+        one-app-nav-bar .slds-context-bar__dropdown-trigger,
+        one-app-nav-bar .slds-button {
+          background: transparent !important;
+          background-color: transparent !important;
+          border: none !important;
+        }
+
+        /* Console Workspace Tabs (Outer Tab Bar) Container */
+        .oneWorkspaceNavigationTabs,
+        .navexWorkspaceManager,
+        .navexConsoleTabContainer,
+        .navexConsoleTabContainer ul.tabBarItems,
+        .tabBarContainer,
+        .oneConsoleTabContainer {
+          background-color: ${baseTheme.surfaceHeader} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        /* Unfocused / Inactive Workspace Tabs */
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem,
+        .tabBarContainer ul.tabBarItems > li.tabItem,
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem:not(.slds-is-active):not(.active),
+        .tabBarContainer ul.tabBarItems > li.tabItem:not(.slds-is-active):not(.active) {
+          background-color: ${baseTheme.surfaceHeader} !important;
+          color: ${baseTheme.textMuted} !important;
+          border-right: 1px solid ${baseTheme.border} !important;
+          border-left: none !important;
+          border-top: none !important;
+          border-bottom: none !important;
+        }
+
+        /* Unfocused Workspace Tabs Hover */
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem:not(.slds-is-active):not(.active):hover,
+        .tabBarContainer ul.tabBarItems > li.tabItem:not(.slds-is-active):not(.active):hover {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+        }
+
+        /* Focused / Active Workspace Tab */
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem.slds-is-active,
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem.active,
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem.slds-has-focus,
+        .tabBarContainer ul.tabBarItems > li.tabItem.slds-is-active,
+        .tabBarContainer ul.tabBarItems > li.tabItem.active,
+        .tabBarContainer ul.tabBarItems > li.tabItem.slds-has-focus {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-right: 1px solid ${baseTheme.border} !important;
+          border-top: none !important;
+          border-bottom: none !important;
+        }
+
+        /* Subtabs (Inner Tabs) Container */
+        .subtabContainer,
+        .slds-sub-tabs,
+        ul.subtabs {
+          background-color: ${baseTheme.surfaceHeader} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        /* Unfocused / Inactive Subtabs */
+        ul.subtabs > li.tabItem,
+        .subtabs li.tabItem,
+        .slds-sub-tabs__item,
+        ul.subtabs > li.tabItem:not(.slds-is-active):not(.active),
+        .subtabs li.tabItem:not(.slds-is-active):not(.active),
+        .slds-sub-tabs__item:not(.slds-is-active) {
+          background-color: ${baseTheme.surfaceHeader} !important;
+          color: ${baseTheme.textMuted} !important;
+          border-right: 1px solid ${baseTheme.border} !important;
+          border-top: none !important;
+          border-bottom: none !important;
+        }
+
+        /* Unfocused Subtabs Hover */
+        ul.subtabs > li.tabItem:not(.slds-is-active):not(.active):hover,
+        .subtabs li.tabItem:not(.slds-is-active):not(.active):hover,
+        .slds-sub-tabs__item:not(.slds-is-active):hover {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+        }
+
+        /* Focused / Active Subtab */
+        ul.subtabs > li.tabItem.slds-is-active,
+        ul.subtabs > li.tabItem.active,
+        ul.subtabs > li.tabItem.slds-has-focus,
+        .subtabs li.tabItem.slds-is-active,
+        .slds-sub-tabs__item.slds-is-active {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-right: 1px solid ${baseTheme.border} !important;
+          border-top: none !important;
+          border-bottom: none !important;
+        }
+
+        /* Transparent backgrounds for all inner elements of tabs (label link, text, title, dropdown trigger, close x button) */
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem *,
+        .tabBarContainer ul.tabBarItems > li.tabItem *,
+        ul.subtabs > li.tabItem *,
+        .subtabs li.tabItem *,
+        .slds-sub-tabs__item *,
+        .tabItem a,
+        .tabItem a.tabHeader,
+        .tabItem .tabHeader,
+        .tabItem .slds-context-bar__label-action,
+        .tabItem .slds-context-bar__icon-action,
+        .tabItem .slds-context-bar__button-action,
+        .tabItem .slds-context-bar__dropdown-trigger,
+        .tabItem .tabAction,
+        .tabItem .close,
+        .tabItem .title,
+        .tabItem .tabText,
+        .tabItem span,
+        .tabItem button,
+        .tabItem button.slds-button,
+        .tabItem button.slds-button_icon,
+        .tabItem lightning-button-icon,
+        .tabItem lightning-primitive-icon,
+        .tabBarContainer .slds-button,
+        .slds-sub-tabs__item a,
+        .slds-sub-tabs__item .slds-context-bar__label-action,
+        .slds-sub-tabs__item .slds-context-bar__icon-action,
+        .slds-sub-tabs__item .slds-context-bar__button-action,
+        .slds-sub-tabs__item button,
+        .slds-sub-tabs__item span {
+          background: transparent !important;
+          background-color: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
+        }
+
+        /* Ensure hover on tab preserves complete inner transparency */
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem:hover *,
+        .tabBarContainer ul.tabBarItems > li.tabItem:hover *,
+        ul.subtabs > li.tabItem:hover *,
+        .subtabs li.tabItem:hover *,
+        .slds-sub-tabs__item:hover * {
+          background: transparent !important;
+          background-color: transparent !important;
+        }
+
+        /* Text colors inside tabs */
+        .tabItem:not(.slds-is-active):not(.active) a,
+        .tabItem:not(.slds-is-active):not(.active) .slds-truncate,
+        .slds-sub-tabs__item:not(.slds-is-active) a,
+        .slds-sub-tabs__item:not(.slds-is-active) .slds-truncate {
+          color: ${baseTheme.textMuted} !important;
+        }
+        .tabItem.slds-is-active a,
+        .tabItem.slds-is-active .slds-truncate,
+        .tabItem.active a,
+        .tabItem.active .slds-truncate,
+        .slds-sub-tabs__item.slds-is-active a,
+        .slds-sub-tabs__item.slds-is-active .slds-truncate {
+          color: ${baseTheme.text} !important;
+        }
+
+        /* Dropdown arrow and close x SVG icons inside tabs */
+        .tabItem svg,
+        .tabItem .slds-button__icon,
+        .slds-sub-tabs__item svg,
+        .slds-sub-tabs__item .slds-button__icon {
+          fill: currentColor !important;
+          color: inherit !important;
+        }
+        .tabItem:not(.slds-is-active):not(.active) svg,
+        .tabItem:not(.slds-is-active):not(.active) .slds-button__icon,
+        .slds-sub-tabs__item:not(.slds-is-active) svg,
+        .slds-sub-tabs__item:not(.slds-is-active) .slds-button__icon {
+          fill: ${baseTheme.textMuted} !important;
+          color: ${baseTheme.textMuted} !important;
+        }
+        .tabItem.slds-is-active svg,
+        .tabItem.slds-is-active .slds-button__icon,
+        .tabItem.active svg,
+        .tabItem.active .slds-button__icon,
+        .slds-sub-tabs__item.slds-is-active svg,
+        .slds-sub-tabs__item.slds-is-active .slds-button__icon {
+          fill: ${baseTheme.text} !important;
+          color: ${baseTheme.text} !important;
+        }
+
+        /* Hover on tab action buttons (dropdown arrow and close x button) */
+        .tabItem button:hover,
+        .tabItem button.slds-button_icon:hover,
+        .tabItem .slds-context-bar__button-action:hover,
+        .tabItem .close:hover,
+        .slds-sub-tabs__item button:hover {
+          background-color: ${accentTint} !important;
+          color: ${accent} !important;
+          border-radius: 4px !important;
+        }
+        .tabItem button:hover svg,
+        .tabItem .close:hover svg,
+        .tabItem button.slds-button_icon:hover .slds-button__icon {
+          fill: ${accent} !important;
+          color: ${accent} !important;
+        }
+
+        /* Quick Views List View Dropdown Section & Bar */
+        .sf-quick-views-wrapper,
+        .sf-quick-header-row,
+        .sf-quick-list,
+        .sf-quick-item {
+          background: ${baseTheme.surface} !important;
+          background-color: ${baseTheme.surface} !important;
+          border-color: ${baseTheme.border} !important;
+          color: ${baseTheme.text} !important;
+        }
+        .sf-quick-views-wrapper {
+          border-bottom: 1px solid ${baseTheme.border} !important;
+        }
+        .sf-quick-header-title,
+        .sf-quick-count,
+        .sf-quick-control-btn,
+        .sf-quick-settings-btn {
+          color: ${baseTheme.textMuted} !important;
+        }
+        .sf-quick-item-label {
+          color: ${baseTheme.text} !important;
+        }
+        .sf-quick-item:hover,
+        .sf-quick-item.slds-is-selected {
+          background: ${baseTheme.surfaceHeader} !important;
+          background-color: ${baseTheme.surfaceHeader} !important;
+        }
+        .sf-quick-item.slds-is-selected .sf-quick-item-label {
+          color: ${baseTheme.text} !important;
+        }
+        .sf-quick-control-btn:hover {
+          background: ${baseTheme.surfaceHeader} !important;
+          color: ${accent} !important;
+        }
+
+        /* Cards, Record Sections & Layouts */
+        .slds-card,
+        article.slds-card,
+        .slds-card__header,
+        .slds-card__body,
+        .slds-card__footer,
+        .forceRelatedListCardHeader,
+        .forceRelatedListPreviewGrid,
+        .slds-box,
+        .slds-box_small,
+        .slds-box_x-small,
+        .slds-panel,
+        .slds-panel__body,
+        .slds-panel__header,
+        records-record-layout-base,
+        records-record-layout-section,
+        records-highlights-details-item,
+        records-record-layout-item,
+        force-record-layout-base,
+        force-record-layout-section {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        /* Page Headers & Record Highlights Panels */
+        .slds-page-header,
+        header.slds-page-header,
+        .slds-page-header_record-home,
+        .slds-page-header_object-home,
+        .slds-page-header__detail-row,
+        .pageHeader,
+        records-highlights2,
+        force-highlights2,
+        records-record-highlights2 {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        /* Tabs & Tab Content */
+        .slds-tabs_default__content,
+        .slds-tabs_scoped__content,
+        .tabContent,
+        .slds-tabs_default__nav,
+        .slds-tabs_scoped__nav,
+        ul.slds-tabs_default__nav,
+        ul.slds-tabs_scoped__nav {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+        .slds-tabs_default__item.slds-is-active a,
+        .slds-tabs_scoped__item.slds-is-active a,
+        .slds-tabs_default__item a,
+        .slds-tabs_scoped__item a {
+          color: ${baseTheme.text} !important;
+        }
+
+        /* Publisher, Quick Actions & Action Tabs (Update, Email, Close, Post, etc.) */
+        .slds-tabs_card,
+        .slds-tabs_card__nav,
+        .slds-tabs_card__item,
+        .slds-tabs_card__link,
+        .slds-tabs_card__content,
+        .tabs__nav:not(.slds-path__nav),
+        ul.tabs__nav:not(.slds-path__nav),
+        .tabs__nav:not(.slds-path__nav) > li.tabHeader:not(.slds-path__item),
+        .tabs__nav:not(.slds-path__nav) > li.tabItem:not(.slds-path__item),
+        .cuf-publisher .tabHeader:not(.slds-path__item),
+        .cuf-publisher .tabItem:not(.slds-path__item),
+        .uiTabset,
+        .uiTab,
+        .uiTabHeader,
+        .cuf-publisher,
+        .cuf-publisherWrapper,
+        .cuf-scrollerInside,
+        .cuf-content,
+        .cuf-scroller,
+        .cuf-feedItemContainer,
+        .publisherContainer,
+        .oneQuickActionContainer,
+        .quickActionContainer,
+        .quickActionPanel,
+        .forceDetailPanel,
+        .forcePageBlock,
+        .forcePageBlockSection,
+        .forcePageBlockSectionRow,
+        .forcePageBlockItem,
+        .forceChatterPublisher,
+        .forceChatterPublisherQuickActions,
+        .forceChatterPublisherTextArea,
+        .forceChatterPublisherCollapsedState,
+        .cuf-publisherPlaceholder,
+        .cuf-collapsedContent,
+        .dummyTextArea,
+        .cuf-publisherTextArea,
+        .cuf-publisherCollapsed,
+        .cuf-placeholder,
+        .cuf-publisherContainer,
+        .cuf-editorWrapper,
+        .modal-body,
+        .actionBody,
+        .actionsContainer,
+        .slds-form,
+        .slds-form_stacked,
+        .slds-form_horizontal,
+        .slds-form-element,
+        .slds-form-element__control,
+        records-record-edit-form,
+        lightning-record-edit-form,
+        lightning-record-form,
+        records-base-record-form,
+        records-lwc-record-layout,
+        records-form-footer,
+        .slds-docked-form-footer,
+        .bottomBar,
+        .footerBackground,
+        .cuf-publisherShareButton,
+        .cuf-publisherAttachment,
+        runtime_platform_actionsQuickActionWrapper {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        .slds-tabs_card__item.slds-is-active,
+        .slds-tabs_card__item.slds-is-active .slds-tabs_card__link,
+        .slds-tabs_default__item.slds-is-active,
+        .slds-tabs_default__item.slds-is-active .slds-tabs_default__link,
+        .tabs__nav:not(.slds-path__nav) > li.tabHeader.active,
+        .tabs__nav:not(.slds-path__nav) > li.tabHeader.slds-is-active,
+        .tabs__nav:not(.slds-path__nav) > li.active,
+        .tabs__nav:not(.slds-path__nav) > li.slds-is-active,
+        .cuf-publisher .tabHeader.active:not(.slds-path__item),
+        .cuf-publisher .tabHeader.slds-is-active:not(.slds-path__item) {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+        }
+
+        .slds-tabs_card__item:not(.slds-is-active),
+        .slds-tabs_default__item:not(.slds-is-active),
+        .tabs__nav:not(.slds-path__nav) > li.tabHeader:not(.active),
+        .tabs__nav:not(.slds-path__nav) > li:not(.active):not(.slds-is-active),
+        .cuf-publisher .tabHeader:not(.active):not(.slds-path__item) {
+          background-color: ${baseTheme.surfaceHeader} !important;
+          color: ${baseTheme.textMuted} !important;
+        }
+
+        .slds-tabs_card__item a,
+        .slds-tabs_card__link,
+        .slds-tabs_default__link,
+        .tabs__nav:not(.slds-path__nav) a,
+        .cuf-publisher .tabHeader a {
+          color: ${baseTheme.text} !important;
+        }
+
+        /* Rich Text Editors, Quill & CKEditor inside Publishers */
+        .slds-rich-text-editor,
+        .slds-rich-text-editor__toolbar,
+        .slds-rich-text-editor__textarea,
+        .slds-rich-text-editor__content,
+        .slds-rich-text-area__content,
+        lightning-input-rich-text,
+        lightning-rich-text-editor,
+        .ql-toolbar,
+        .ql-container,
+        .ql-editor,
+        .cke,
+        .cke_inner,
+        .cke_contents,
+        .cke_top,
+        .cke_bottom,
+        .cke_reset,
+        .cuf-ckeditor {
+          background-color: ${baseTheme.bg} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        .slds-rich-text-editor__toolbar,
+        .ql-toolbar,
+        .cke_top {
+          background-color: ${baseTheme.surfaceHeader} !important;
+          border-bottom-color: ${baseTheme.border} !important;
+        }
+
+        .ql-snow .ql-stroke {
+          stroke: ${baseTheme.text} !important;
+        }
+        .ql-snow .ql-fill {
+          fill: ${baseTheme.text} !important;
+        }
+        .ql-snow .ql-picker {
+          color: ${baseTheme.text} !important;
+        }
+        .ql-snow .ql-picker-options {
+          background-color: ${baseTheme.surface} !important;
+          border-color: ${baseTheme.border} !important;
+          color: ${baseTheme.text} !important;
+        }
+
+        /* Docked Composers (Email, Log Call, etc.) */
+        .slds-docked-composer,
+        .slds-docked-composer__header,
+        .slds-docked-composer__body,
+        .slds-docked-composer__footer,
+        .slds-docked-composer__toolbar,
+        .dockedComposerContainer,
+        lightning-docked-composer-panel {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+        .slds-docked-composer__header {
+          background-color: ${baseTheme.surfaceHeader} !important;
+        }
+
+        /* Chatter Feed Filters & Filter Dropdown (All Updates, Text Posts, Status Changes, Private Answers, Emails, Community Answers, etc.) */
+        .forceChatterFeedFilterHeader,
+        .forceChatterFeedInnerFilter,
+        .cuf-feedFilters,
+        .feedFilterContainer,
+        .feedFilterDropdown,
+        .uiMenuList,
+        .uiPopupMenuList,
+        .popupMenu,
+        .popupTargetContainer .uiMenuList,
+        .popupTargetContainer .uiPopupMenuList,
+        div[role="menu"],
+        ul[role="menu"],
+        .forceChatterFeedFilterHeader .slds-dropdown,
+        .feedFilterDropdown .slds-dropdown,
+        .cuf-feedFilters .slds-dropdown,
+        .cuf-filterPill,
+        .forceChatterFeedFilterPills,
+        .slds-pill,
+        .slds-pill_container {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        .cuf-filterPill,
+        .slds-pill {
+          background-color: ${baseTheme.surfaceHeader} !important;
+        }
+
+        .uiMenuItem,
+        .uiMenuItem > a,
+        .uiMenuItem > span,
+        li[role="presentation"] > a[role="menuitem"],
+        li[role="presentation"] > span[role="menuitem"],
+        a[role="menuitem"],
+        .forceChatterFeedFilterHeader .slds-dropdown__item,
+        .forceChatterFeedFilterHeader .slds-dropdown__item > a,
+        .feedFilterDropdown .slds-dropdown__item,
+        .feedFilterDropdown .slds-dropdown__item > a,
+        .cuf-feedFilters .slds-dropdown__item,
+        .cuf-feedFilters .slds-dropdown__item > a,
+        .slds-dropdown__item,
+        .slds-dropdown__item > a,
+        .slds-dropdown__item > a:hover,
+        .slds-dropdown__item > a:focus,
+        .slds-listbox__option,
+        .slds-listbox__option:hover {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+        }
+
+        .uiMenuItem:hover,
+        .uiMenuItem > a:hover,
+        .uiMenuItem.selected,
+        .uiMenuItem.selected > a,
+        li[role="presentation"]:hover > a[role="menuitem"],
+        a[role="menuitem"]:hover,
+        a[role="menuitem"]:focus,
+        .forceChatterFeedFilterHeader .slds-dropdown__item:hover > a,
+        .feedFilterDropdown .slds-dropdown__item:hover > a,
+        .cuf-feedFilters .slds-dropdown__item:hover > a,
+        .forceChatterFeedFilterHeader .slds-dropdown__item.slds-is-selected > a,
+        .feedFilterDropdown .slds-dropdown__item.slds-is-selected > a,
+        .slds-dropdown__item:hover > a,
+        .slds-dropdown__item.slds-is-selected > a,
+        .slds-listbox__option:hover,
+        .slds-listbox__option.slds-is-selected {
+          background-color: ${baseTheme.surfaceHeader} !important;
+          color: ${accent} !important;
+        }
+
+        /* Chatter Feed Items, Posts, and Comments */
+        .slds-feed,
+        .slds-feed__list,
+        .slds-feed__item,
+        .forceChatterFeed,
+        .forceChatterFeedBody,
+        .forceChatterFeedInnerWrapper,
+        .forceChatterFeedDesktop,
+        .forceChatterFeedItem,
+        .cuf-feedItem,
+        .forceChatterFeedItemBody,
+        .cuf-feedItemBody,
+        .slds-post,
+        .slds-post__header,
+        .slds-post__content,
+        .slds-post__footer,
+        .forceChatterFeedItemComments,
+        .cuf-comment,
+        .forceChatterComment,
+        .slds-comment,
+        .slds-comment__content,
+        .forceChatterMessageSegment,
+        .forceChatterFeedAuxBody,
+        .forceChatterEntityShareAuxBody,
+        .cuf-entitySharePost,
+        .cuf-feedItemContainer,
+        .cuf-feedItemAction,
+        .cuf-feedItemComments {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        .forceChatterFeedItemComments,
+        .forceChatterComment,
+        .slds-comment,
+        .cuf-comment {
+          background-color: ${baseTheme.surfaceHeader} !important;
+        }
+
+        .slds-feed p,
+        .slds-feed span,
+        .forceChatterFeedItem p,
+        .forceChatterFeedItem span,
+        .slds-post p,
+        .slds-post span,
+        .cuf-feedItem p,
+        .cuf-feedItem span {
+          color: ${baseTheme.text};
+        }
+
+        /* Agentforce Recommendations & Einstein Panels */
+        lightning-recommendation-panel,
+        runtime_commerce_einstein,
+        forceEinstein,
+        einstein-recommendation-panel,
+        runtime_sales_einstein,
+        runtime_service_einstein,
+        einstein-panel,
+        .einstein-card,
+        lightning-next-best-action,
+        force-next-best-action,
+        c-next-best-action,
+        c-agentforce-recommendations,
+        div[class*="recommendation" i],
+        div[class*="agentforce" i],
+        div[class*="einstein" i],
+        article[class*="recommendation" i],
+        article[class*="agentforce" i],
+        article[class*="einstein" i],
+        section[class*="recommendation" i],
+        section[class*="agentforce" i],
+        section[class*="einstein" i],
+        .agentforce-recommendation-card,
+        .runtime_platform_actionsEinsteinRecommendationsCard,
+        .recommendation-card,
+        .slds-tile,
+        .slds-tile_board {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        /* Search Knowledge - Whole Box, Container, and Card Header */
+        .forceKnowledgeSearchBox,
+        .knowledgeSearchBox,
+        .knowledgeSearchBoxContainer,
+        .searchKnowledge,
+        .searchBoxContainer,
+        knowledge-search-box,
+        force-knowledge-search-box,
+        runtime_service_knowledgeSearchBox,
+        div[class*="knowledgeSearch" i],
+        div[class*="KnowledgeSearch" i],
+        div[class*="searchKnowledge" i],
+        div[class*="SearchKnowledge" i],
+        div[class*="knowledge-search" i],
+        div[class*="search-knowledge" i],
+        div[class*="knowledgeSearchBox" i],
+        div[class*="KnowledgeSearchBox" i],
+        div[class*="forceKnowledgeSearch" i],
+        div[class*="forceKnowledgeSearchBox" i],
+        div[class*="knowledge" i] .slds-combobox_container,
+        div[class*="knowledge" i] .slds-combobox,
+        div[class*="knowledge" i] .slds-combobox__form-element,
+        div[class*="knowledge" i] .slds-input-has-icon,
+        div[class*="knowledge" i] .slds-form-element,
+        div[class*="knowledge" i] .slds-form-element__control,
+        div[class*="Knowledge" i] .slds-combobox_container,
+        div[class*="Knowledge" i] .slds-combobox,
+        div[class*="Knowledge" i] .slds-combobox__form-element,
+        div[class*="Knowledge" i] .slds-input-has-icon,
+        div[class*="Knowledge" i] .slds-form-element,
+        div[class*="Knowledge" i] .slds-form-element__control,
+        article[class*="knowledge" i] .slds-card__header,
+        article[class*="knowledge" i] .slds-combobox_container,
+        article[class*="knowledge" i] .slds-combobox,
+        article[class*="knowledge" i] .slds-combobox__form-element,
+        article[class*="knowledge" i] .slds-input-has-icon,
+        article[class*="knowledge" i] .slds-form-element,
+        article[class*="knowledge" i] .slds-form-element__control,
+        article[class*="Knowledge" i] .slds-card__header,
+        article[class*="Knowledge" i] .slds-combobox_container,
+        article[class*="Knowledge" i] .slds-combobox,
+        article[class*="Knowledge" i] .slds-combobox__form-element,
+        article[class*="Knowledge" i] .slds-input-has-icon,
+        article[class*="Knowledge" i] .slds-form-element,
+        article[class*="Knowledge" i] .slds-form-element__control,
+        div:has(> input[placeholder*="Knowledge" i]),
+        div:has(> * > input[placeholder*="Knowledge" i]),
+        div:has(> * > * > input[placeholder*="Knowledge" i]),
+        .slds-input-has-icon:has(input[placeholder*="Knowledge" i]),
+        .slds-form-element__control:has(input[placeholder*="Knowledge" i]),
+        .slds-form-element:has(input[placeholder*="Knowledge" i]),
+        .slds-combobox:has(input[placeholder*="Knowledge" i]),
+        .slds-combobox_container:has(input[placeholder*="Knowledge" i]),
+        .slds-combobox__form-element:has(input[placeholder*="Knowledge" i]),
+        lightning-grouped-combobox:has(input[placeholder*="Knowledge" i]),
+        lightning-base-combobox:has(input[placeholder*="Knowledge" i]),
+        lightning-input:has(input[placeholder*="Knowledge" i]),
+        .slds-card__header:has(input[placeholder*="Knowledge" i]),
+        header:has(input[placeholder*="Knowledge" i]),
+        article:has(input[placeholder*="Knowledge" i]) .slds-card__header,
+        div:has(> input[aria-label*="Knowledge" i]),
+        div:has(> * > input[aria-label*="Knowledge" i]),
+        .slds-input-has-icon:has(input[aria-label*="Knowledge" i]),
+        .slds-form-element__control:has(input[aria-label*="Knowledge" i]),
+        .slds-form-element:has(input[aria-label*="Knowledge" i]),
+        .slds-combobox:has(input[aria-label*="Knowledge" i]),
+        .slds-combobox_container:has(input[aria-label*="Knowledge" i]),
+        .slds-combobox__form-element:has(input[aria-label*="Knowledge" i]) {
+          background-color: ${baseTheme.surface} !important;
+          background: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        /* Search Knowledge Text Input (The entry field itself - matching the outer box) */
+        input[placeholder*="Knowledge" i],
+        input[aria-label*="Knowledge" i],
+        input[title*="Knowledge" i],
+        .forceKnowledgeSearchBox input,
+        .knowledgeSearchBox input,
+        div[class*="knowledge" i] input,
+        div[class*="Knowledge" i] input,
+        div[class*="knowledge" i] .slds-input,
+        div[class*="Knowledge" i] .slds-input,
+        div:has(> input[placeholder*="Knowledge" i]) input,
+        .slds-combobox_container:has(input[placeholder*="Knowledge" i]) input {
+          background-color: ${baseTheme.surface} !important;
+          background: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+        input[placeholder*="Knowledge" i]::placeholder,
+        div[class*="knowledge" i] input::placeholder,
+        div[class*="Knowledge" i] input::placeholder {
+          color: ${baseTheme.textMuted} !important;
+        }
+
+        /* Search Knowledge Icons */
+        .forceKnowledgeSearchBox svg,
+        .knowledgeSearchBox svg,
+        div[class*="knowledge" i] .slds-input__icon,
+        div[class*="knowledge" i] .slds-input-has-icon svg,
+        div[class*="Knowledge" i] .slds-input__icon,
+        div[class*="Knowledge" i] .slds-input-has-icon svg,
+        .slds-input-has-icon:has(input[placeholder*="Knowledge" i]) svg,
+        .slds-input-has-icon:has(input[placeholder*="Knowledge" i]) .slds-input__icon {
+          background: transparent !important;
+          fill: ${baseTheme.textMuted} !important;
+          stroke: ${baseTheme.textMuted} !important;
+        }
+
+        /* Suggested Articles & Knowledge Recommendations - Containers and Each Entry */
+        knowledge-suggested-articles,
+        lightning-suggested-articles,
+        forceKnowledgeSuggestedArticles,
+        forceKnowledgeArticleSuggestion,
+        articles-suggested-articles,
+        knowledge-article-suggestion-box,
+        knowledge-article-suggestion,
+        runtime_service_knowledgeSuggestedArticles,
+        einsteinArticleRecommendations,
+        .forceKnowledgeSuggestedArticles,
+        .forceKnowledgeArticleSuggestionCard,
+        .forceKnowledgeArticleSuggestionItem,
+        .knowledgeArticleSuggestionItem,
+        .knowledgeArticleItem,
+        .suggestedArticleItem,
+        .articleSuggestionItem,
+        .knowledgeArticleCard,
+        .suggested-article-item,
+        .suggestedArticle,
+        .articleItem,
+        .articleSummary,
+        .knowledgeSuggestedArticles,
+        .suggestedArticles,
+        .suggestedArticleItem,
+        .suggested-articles-container,
+        .suggested-article,
+        .suggested-article-item,
+        .knowledge-article-card,
+        .knowledge-article-item,
+        div[class*="suggestedArticle" i],
+        div[class*="suggested-article" i],
+        div[class*="suggested_article" i],
+        div[class*="articleSuggestion" i],
+        div[class*="article-suggestion" i],
+        article[class*="suggested" i],
+        article[class*="article" i],
+        section[class*="suggested" i],
+        /* Each individual entry within Suggested Articles / Knowledge */
+        div[class*="knowledge" i] li,
+        div[class*="Knowledge" i] li,
+        div[class*="suggested" i] li,
+        div[class*="Suggested" i] li,
+        div[class*="article" i] li,
+        div[class*="Article" i] li,
+        div[class*="knowledge" i] .slds-item,
+        div[class*="Knowledge" i] .slds-item,
+        div[class*="suggested" i] .slds-item,
+        div[class*="Suggested" i] .slds-item,
+        div[class*="article" i] .slds-item,
+        div[class*="Article" i] .slds-item,
+        div[class*="knowledge" i] .slds-list__item,
+        div[class*="Knowledge" i] .slds-list__item,
+        div[class*="suggested" i] .slds-list__item,
+        div[class*="Suggested" i] .slds-list__item,
+        div[class*="article" i] .slds-list__item,
+        div[class*="Article" i] .slds-list__item,
+        div[class*="knowledge" i] .slds-tile,
+        div[class*="Knowledge" i] .slds-tile,
+        div[class*="suggested" i] .slds-tile,
+        div[class*="Suggested" i] .slds-tile,
+        div[class*="article" i] .slds-tile,
+        div[class*="Article" i] .slds-tile,
+        div[class*="knowledge" i] .slds-box,
+        div[class*="Knowledge" i] .slds-box,
+        div[class*="suggested" i] .slds-box,
+        div[class*="Suggested" i] .slds-box,
+        div[class*="article" i] .slds-box,
+        div[class*="Article" i] .slds-box,
+        div[class*="knowledge" i] article,
+        div[class*="Knowledge" i] article,
+        div[class*="suggested" i] article,
+        div[class*="Suggested" i] article,
+        div[class*="article" i] article,
+        div[class*="Article" i] article,
+        div[class*="knowledge" i] .slds-card,
+        div[class*="Knowledge" i] .slds-card,
+        div[class*="suggested" i] .slds-card,
+        div[class*="Suggested" i] .slds-card,
+        div[class*="article" i] .slds-card,
+        div[class*="Article" i] .slds-card,
+        div[class*="knowledge" i] .slds-media__body,
+        div[class*="Knowledge" i] .slds-media__body,
+        div[class*="suggested" i] .slds-media__body,
+        div[class*="Suggested" i] .slds-media__body,
+        div[class*="knowledge" i] .slds-media__figure,
+        div[class*="suggested" i] .slds-media__figure {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        /* Hover states on individual suggested article entries */
+        .forceKnowledgeArticleSuggestionItem:hover,
+        .knowledgeArticleSuggestionItem:hover,
+        .knowledgeArticleItem:hover,
+        .suggestedArticleItem:hover,
+        .suggested-article-item:hover,
+        div[class*="knowledge" i] li:hover,
+        div[class*="Knowledge" i] li:hover,
+        div[class*="suggested" i] li:hover,
+        div[class*="Suggested" i] li:hover {
+          background-color: ${baseTheme.surfaceHeader} !important;
+        }
+
+        /* Article titles and links inside suggested articles */
+        div[class*="knowledge" i] a,
+        div[class*="Knowledge" i] a,
+        div[class*="suggested" i] a,
+        div[class*="Suggested" i] a,
+        .forceKnowledgeArticleSuggestionItem a,
+        .knowledgeArticleItem a,
+        .articleSuggestionItem a,
+        .suggestedArticleItem a {
+          color: ${accent} !important;
+        }
+
+        /* Accordions, Activity Timelines & Detail Sections */
+        .slds-accordion,
+        .slds-accordion__section,
+        .slds-accordion__summary-action,
+        .slds-accordion__content,
+        .slds-section,
+        .slds-section__title,
+        .slds-section__title-action,
+        .slds-section__content,
+        .test-id__section,
+        .slds-timeline,
+        .slds-timeline__item,
+        .slds-timeline__actions,
+        .slds-activity-timeline,
+        .slds-timeline__item_expandable {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        .slds-accordion__summary-action:hover,
+        .slds-section__title-action:hover {
+          background-color: ${baseTheme.surfaceHeader} !important;
+        }
+
+        /* Tables, Grid Rows & List Views */
+        .slds-table,
+        table.slds-table,
+        .slds-table_bordered,
+        .slds-table_edit,
+        .uiVirtualDataTable,
+        lightning-datatable,
+        lightning-primitive-datatable {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+        table.slds-table thead th,
+        .slds-table thead th,
+        table.slds-table th {
+          background-color: ${baseTheme.surfaceHeader} !important;
+          color: ${baseTheme.textMuted} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+        table.slds-table tbody tr,
+        table.slds-table tbody td,
+        .slds-table tbody td {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+        table.slds-table tbody tr:hover > td,
+        table.slds-table tbody tr:hover > th,
+        table.slds-table tbody tr.slds-is-selected > td {
+          background-color: ${baseTheme.surfaceHeader} !important;
+        }
+
+        /* Form Inputs, Dropdowns & Textareas */
+        input.slds-input,
+        textarea.slds-textarea,
+        select.slds-select,
+        .slds-combobox__input,
+        .slds-input_faux,
+        .slds-combobox {
+          background-color: ${baseTheme.bg} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+        input.slds-input::placeholder,
+        textarea.slds-textarea::placeholder {
+          color: ${baseTheme.textMuted} !important;
+        }
+
+        /* Modals, Popovers & Dropdown Menus */
+        .slds-modal__container,
+        .slds-modal__content,
+        .slds-popover,
+        .slds-popover__body,
+        .slds-dropdown,
+        .slds-dropdown-trigger_click .slds-dropdown,
+        .slds-dropdown_fluid,
+        .slds-dropdown_left,
+        .slds-dropdown_right {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+        .slds-modal__header,
+        .slds-modal__footer,
+        .slds-popover__header,
+        .slds-popover__footer {
+          background-color: ${baseTheme.surfaceHeader} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        /* Buttons & Badges */
+        button.slds-button_neutral,
+        .slds-button_neutral,
+        button.slds-button_icon-border,
+        button.slds-button_icon-border-filled {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+        button.slds-button_neutral:hover,
+        .slds-button_neutral:hover,
+        button.slds-button_icon-border:hover,
+        button.slds-button_icon-border-filled:hover {
+          background-color: ${baseTheme.surfaceHeader} !important;
+        }
+        button.slds-button_brand,
+        .slds-button_brand {
+          background-color: ${accent} !important;
+          border-color: ${accent} !important;
+          color: ${accentContrast} !important;
+        }
+
+        /* Split View Sidebars */
+        .slds-split-view,
+        .slds-split-view__list-item-action,
+        .slds-split-view__header {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+        .slds-split-view__list-item.slds-is-active .slds-split-view__list-item-action {
+          background-color: ${baseTheme.surfaceHeader} !important;
+        }
+
+        /* Text, Labels & Links */
+        .slds-form-element__label,
+        .slds-text-color_weak,
+        .slds-text-body_small {
+          color: ${baseTheme.textMuted} !important;
+        }
+        .slds-text-heading_small,
+        .slds-text-heading_medium,
+        .slds-text-heading_large,
+        .slds-card__header-title,
+        .slds-page-header__title,
+        .slds-truncate {
+          color: ${baseTheme.text} !important;
+        }
+        a:not(.slds-button):not(.slds-tabs_default__link):not(.slds-tabs_card__link):not(.slds-tabs_scoped__link):not(.tabItem a) {
+          color: ${accent} !important;
+        }
+
+        /* Final override to guarantee full tab width background consistency */
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem *,
+        .tabBarContainer ul.tabBarItems > li.tabItem *,
+        ul.subtabs > li.tabItem *,
+        .subtabs li.tabItem *,
+        .slds-sub-tabs__item * {
+          background: transparent !important;
+          background-color: transparent !important;
+        }
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem:hover *,
+        .tabBarContainer ul.tabBarItems > li.tabItem:hover *,
+        ul.subtabs > li.tabItem:hover *,
+        .subtabs li.tabItem:hover *,
+        .slds-sub-tabs__item:hover * {
+          background: transparent !important;
+          background-color: transparent !important;
+        }
+        .tabItem button:hover,
+        .tabItem button.slds-button_icon:hover,
+        .tabItem .slds-context-bar__button-action:hover,
+        .tabItem .close:hover,
+        .slds-sub-tabs__item button:hover {
+          background-color: ${accentTint} !important;
+          color: ${accent} !important;
+          border-radius: 4px !important;
+        }
+      `;
+    }
+
+    css += `
+      /* SAFETY: Case Progress Bar (SLDS Path stages) New -> Working -> Waiting -> Closed MUST retain native colors */
+      lightning-path,
+      .slds-path,
+      .slds-path__container,
+      .slds-path__nav,
+      runtime_sales_pathassistant,
+      records-path-assistant {
+        background-color: transparent !important;
+      }
+
+      .slds-path__item,
+      .slds-path__item *,
+      .slds-path__link,
+      .slds-path__stage,
+      .slds-path__title,
+      .slds-path__mark {
+        border-top-color: inherit !important;
+        border-bottom-color: inherit !important;
+      }
+
+      .slds-path__item.slds-is-complete,
+      .slds-path__item.slds-is-complete .slds-path__link,
+      .slds-path__item.slds-is-complete::before,
+      .slds-path__item.slds-is-complete::after {
+        background-color: #2e844a !important;
+        border-left-color: #2e844a !important;
+        color: #ffffff !important;
+      }
+
+      .slds-path__item.slds-is-current,
+      .slds-path__item.slds-is-current .slds-path__link,
+      .slds-path__item.slds-is-current::before,
+      .slds-path__item.slds-is-current::after {
+        background-color: #0176d3 !important;
+        border-left-color: #0176d3 !important;
+        color: #ffffff !important;
+      }
+
+      .slds-path__item.slds-is-incomplete,
+      .slds-path__item.slds-is-incomplete .slds-path__link,
+      .slds-path__item.slds-is-incomplete::before,
+      .slds-path__item.slds-is-incomplete::after {
+        background-color: #ecebea !important;
+        border-left-color: #ecebea !important;
+        color: #080707 !important;
+      }
+
+      .slds-path__item.slds-is-won,
+      .slds-path__item.slds-is-won .slds-path__link,
+      .slds-path__item.slds-is-won::before,
+      .slds-path__item.slds-is-won::after {
+        background-color: #2e844a !important;
+        border-left-color: #2e844a !important;
+        color: #ffffff !important;
+      }
+
+      .slds-path__item.slds-is-lost,
+      .slds-path__item.slds-is-lost .slds-path__link,
+      .slds-path__item.slds-is-lost::before,
+      .slds-path__item.slds-is-lost::after {
+        background-color: #c23934 !important;
+        border-left-color: #c23934 !important;
+        color: #ffffff !important;
+      }
+
+      .slds-path__item.slds-is-complete .slds-path__title,
+      .slds-path__item.slds-is-current .slds-path__title,
+      .slds-path__item.slds-is-won .slds-path__title,
+      .slds-path__item.slds-is-lost .slds-path__title {
+        color: #ffffff !important;
+      }
+
+      .slds-path__item.slds-is-incomplete .slds-path__title {
+        color: #080707 !important;
+      }
+    `;
+
+    return css;
+  }
+
+  function generateLoadingCSS(settings, loadingUrl) {
+    if (!loadingUrl) return '';
+    const safeUrl = sanitizeCssUrl(loadingUrl);
+    const loadingSize = ((settings.loadingImage && settings.loadingImage.size) || 64) + 'px';
+    const loadingAnim = (settings.loadingImage && settings.loadingImage.rotate) ? 'sf-custom-spin 1.2s linear infinite' : 'none';
+
+    return `
+      :root {
+        --sf-custom-loading-img: url("${safeUrl}") !important;
+        --sf-custom-loading-size: ${loadingSize} !important;
+        --sf-custom-loading-anim: ${loadingAnim} !important;
+      }
+
+      @keyframes sf-custom-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+
+      /* Category 1: Instant CSS replacement of native initial page load / splash mascot image tags */
+      img[src*="astro" i],
+      img[src*="codey" i],
+      img[src*="einstein" i],
+      img[src*="cloudy" i],
+      img[src*="appy" i],
+      img[src*="bear" i],
+      img[src*="mascot" i],
+      #auraLoadingBox img,
+      .auraLoadingBox img,
+      .splash img,
+      .initial-loading img,
+      .loadingBox img {
+        content: url("${safeUrl}") !important;
+        object-fit: contain !important;
+        display: block !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        animation: ${loadingAnim} !important;
+      }
+
+      /* Category 1 & 4: Hide native splash spinner rings, mascot child elements, and dots */
+      #auraLoadingBox .spinner,
+      .auraLoadingBox .spinner,
+      .loadingBox .spinner,
+      .oneLoading .spinner,
+      .forceDotsSpinner:not(.sf-loading-exempt) *,
+      #auraLoadingBox .logo > *,
+      .auraLoadingBox .logo > *,
+      .auraMsgBox .logo > *,
+      .loadingBox .logo > *,
+      .oneLoading .logo > *,
+      div[class*="loadingBox"] .logo > *,
+      div[class*="oneLoading"] .logo > *,
+      div[class*="splash"] .logo > * {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        animation: none !important;
+      }
+
+      /* Category 1: Instant replacement of initial page load / splash mascot container backgrounds */
+      #auraLoadingBox .logo,
+      .auraLoadingBox .logo,
+      .auraMsgBox .logo,
+      .loadingBox .logo,
+      .oneLoading .logo,
+      div[class*="loadingBox"] .logo,
+      div[class*="oneLoading"] .logo,
+      div[class*="mascot" i],
+      div[class*="character" i],
+      div[class*="splash" i] .logo,
+      .initial-loading .logo,
+      .splash .logo {
+        display: block !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        background-image: url("${safeUrl}") !important;
+        background-size: contain !important;
+        background-repeat: no-repeat !important;
+        background-position: center !important;
+        width: 140px !important;
+        height: 140px !important;
+        margin: 0 auto 16px auto !important;
+        animation: ${loadingAnim} !important;
+      }
+
+      /* Category 4: Replacement of background data-fetching dots (.forceDotsSpinner) */
+      .forceDotsSpinner:not(.sf-loading-exempt) {
+        background-image: url("${safeUrl}") !important;
+        background-size: contain !important;
+        background-repeat: no-repeat !important;
+        background-position: center !important;
+        border: none !important;
+        animation: ${loadingAnim} !important;
+        transform: none !important;
+        width: var(--sf-custom-loading-size, 64px) !important;
+        height: var(--sf-custom-loading-size, 64px) !important;
+      }
+    `;
+  }
+
+  // 1. Child Frame / iframe Handler
+  if (!isTopWindow) {
+    // Clean up any rogue preload styles that may have existed in iframes
+    const rogue = document.getElementById('sf-preload-theme-style');
+    if (rogue) rogue.remove();
+
+    const SF_ID_REGEX = /^[a-zA-Z0-9]{15,18}$/;
+    const RECORD_URL_REGEX = /\/lightning\/r\/(?:[a-zA-Z0-9_]+\/)?([a-zA-Z0-9]{15,18})(?:\/view|$|\?|#)/;
+
+    function extractTarget(event) {
+      const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+      if (!path.length && event.target) {
+        path.push(event.target);
+      }
+
+      for (const node of path) {
+        if (!node || node.nodeType !== 1) continue;
+
+        const idAttrs = [
+          'data-recordid',
+          'data-record-id',
+          'data-id',
+          'data-target-id',
+          'data-value',
+          'data-key',
+          'value'
+        ];
+        for (const attr of idAttrs) {
+          const val = node.getAttribute ? node.getAttribute(attr) : null;
+          if (val && typeof val === 'string' && SF_ID_REGEX.test(val.trim())) {
+            return { recordId: val.trim() };
+          }
+        }
+
+        if (node.dataset) {
+          for (const key of ['recordid', 'recordId', 'id', 'targetId', 'value']) {
+            const val = node.dataset[key];
+            if (val && typeof val === 'string' && SF_ID_REGEX.test(val.trim())) {
+              return { recordId: val.trim() };
+            }
+          }
+        }
+
+        const urlCandidates = [];
+        if (node.getAttribute) {
+          const h = node.getAttribute('href');
+          if (h) urlCandidates.push(h);
+          const du = node.getAttribute('data-url');
+          if (du) urlCandidates.push(du);
+          const dh = node.getAttribute('data-href');
+          if (dh) urlCandidates.push(dh);
+        }
+        if (typeof node.href === 'string') {
+          urlCandidates.push(node.href);
+        }
+
+        for (const rawUrl of urlCandidates) {
+          if (!rawUrl || typeof rawUrl !== 'string') continue;
+          const trimmed = rawUrl.trim();
+          if (!trimmed || trimmed.startsWith('javascript:') || trimmed === '#') continue;
+
+          let parsed = null;
+          try {
+            parsed = new URL(trimmed, window.location.origin);
+          } catch (_) {}
+
+          const pathToCheck = parsed ? parsed.pathname : trimmed;
+          const hashToCheck = parsed ? parsed.hash : '';
+
+          const recordMatch = (pathToCheck + hashToCheck).match(RECORD_URL_REGEX);
+          if (recordMatch && recordMatch[1]) {
+            return { recordId: recordMatch[1], url: trimmed };
+          }
+
+          const classicMatch = pathToCheck.match(/^\/([a-zA-Z0-9]{15,18})(?:\/view|$|\?|#|\/|$)/);
+          if (classicMatch && classicMatch[1]) {
+            return { recordId: classicMatch[1], url: trimmed };
+          }
+
+          const sObjMatch = (pathToCheck + hashToCheck).match(/\/sObject\/([a-zA-Z0-9]{15,18})(?:\/view|$|\?|#|\/|$)/i);
+          if (sObjMatch && sObjMatch[1]) {
+            return { recordId: sObjMatch[1], url: trimmed };
+          }
+
+          if (parsed && parsed.searchParams) {
+            const idParam = parsed.searchParams.get('id') || parsed.searchParams.get('recordId');
+            if (idParam && SF_ID_REGEX.test(idParam)) {
+              return { recordId: idParam, url: trimmed };
+            }
+          }
+
+          if (pathToCheck.startsWith('/lightning/')) {
+            const fullPath = parsed ? parsed.pathname + parsed.search + parsed.hash : trimmed;
+            return { url: fullPath };
+          }
+        }
+      }
+
+      return null;
+    }
+
+    window.addEventListener(
+      'click',
+      (e) => {
+        if (e.button !== 0) return;
+        const isCmdOrCtrl = e.metaKey || e.ctrlKey;
+        const isAlt = e.altKey;
+        if (!isAlt && !isCmdOrCtrl) return;
+
+        try {
+          window.getSelection()?.removeAllRanges();
+        } catch (_) {}
+
+        const target = extractTarget(e);
+        if (!target) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        if (isAlt && !isCmdOrCtrl) {
+          const openInBackground = e.shiftKey;
+          window.top.postMessage(
+            {
+              __sfEnhancer: true,
+              __sfSubtabOpener: true,
+              action: 'openSubtab',
+              target,
+              options: { openInBackground }
+            },
+            '*'
+          );
+        } else if (isCmdOrCtrl && !isAlt) {
+          const focus = !e.shiftKey;
+          window.top.postMessage(
+            {
+              __sfEnhancer: true,
+              __sfSubtabOpener: true,
+              action: 'openPrimaryTab',
+              target,
+              options: { focus }
+            },
+            '*'
+          );
+        }
+      },
+      true
+    );
+
+    return; // Child frame work is done! No styles, observers, or page scripts.
+  }
+
+  // -------------------------------------------------------------
+  // TOP WINDOW ONLY: Preload Styling, Interception & Page Script
+  // -------------------------------------------------------------
+
+  let activeEarlyMascotObs = null;
+
+  function injectPreloadStyles(rawSettings) {
+    let settings = rawSettings;
+    try {
+      if (!settings) {
+        const pageStorage = window.wrappedJSObject?.localStorage || window.localStorage;
+        const raw = (pageStorage ? pageStorage.getItem('sf_enhancer_settings') : null) ||
+                    (pageStorage ? pageStorage.getItem('sf_appearance_settings') : null) ||
+                    (document.documentElement?.dataset?.sfAppearance);
+        if (raw) settings = JSON.parse(raw);
+      }
+    } catch (_) {}
+
+    settings = normalizeSettings(settings);
+
+    // 1. Loading Animation Preload (Independent of theming)
+    const loadingUrl = getEffectiveLoadingUrl(settings);
+    const loadingEnabled = settings.modules.loadingAnimation === true && !!loadingUrl;
+    const loadingStyle = document.getElementById('sf-preload-loading-style');
+
+    if (loadingEnabled) {
+      const safeUrl = loadingUrl.replace(/"/g, '\\"');
+      const loadingSize = ((settings.loadingImage && settings.loadingImage.size) || 64) + 'px';
+      const loadingAnim = (settings.loadingImage && settings.loadingImage.rotate) ? 'sf-custom-spin 1.2s linear infinite' : 'none';
+
+      if (document.documentElement) {
+        document.documentElement.dataset.sfLoadingEnabled = 'true';
+        document.documentElement.dataset.sfLoadingDisabled = 'false';
+        document.documentElement.style.setProperty('--sf-custom-loading-img', `url("${safeUrl}")`, 'important');
+        document.documentElement.style.setProperty('--sf-custom-loading-size', loadingSize, 'important');
+        document.documentElement.style.setProperty('--sf-custom-loading-anim', loadingAnim, 'important');
+      }
+
+      const loadingCss = generateLoadingCSS(settings, loadingUrl);
+      let el = loadingStyle;
+      if (!el) {
+        el = document.createElement('style');
+        el.id = 'sf-preload-loading-style';
+        const root = document.head || document.documentElement;
+        if (root) root.appendChild(el);
+      }
+      if (el) el.textContent = loadingCss;
+      startEarlyMascotInterceptor(loadingUrl, settings.loadingImage && settings.loadingImage.rotate);
+    } else {
+      if (document.documentElement) {
+        document.documentElement.dataset.sfLoadingEnabled = 'false';
+        document.documentElement.dataset.sfLoadingDisabled = 'true';
+        document.documentElement.style.removeProperty('--sf-custom-loading-img');
+        document.documentElement.style.removeProperty('--sf-custom-loading-size');
+        document.documentElement.style.removeProperty('--sf-custom-loading-anim');
+      }
+      if (loadingStyle) loadingStyle.remove();
+      if (activeEarlyMascotObs) {
+        try { activeEarlyMascotObs.disconnect(); } catch (_) {}
+        activeEarlyMascotObs = null;
+      }
+    }
+
+    // 2. Theming Preload (Independent of loading animation)
+    const themingStyle = document.getElementById('sf-preload-theme-style');
+    if (settings.modules.theming === true) {
+      const themeCss = generateThemeCSS(settings);
+      if (themeCss) {
+        let el = themingStyle;
+        if (!el) {
+          el = document.createElement('style');
+          el.id = 'sf-preload-theme-style';
+          const root = document.head || document.documentElement;
+          if (root) root.appendChild(el);
+        }
+        if (el) el.textContent = themeCss;
+      } else if (themingStyle) {
+        themingStyle.remove();
+      }
+    } else if (themingStyle) {
+      themingStyle.remove();
+    }
+  }
+
+  function startEarlyMascotInterceptor(customImgUrl, shouldRotate) {
+    if (activeEarlyMascotObs) {
+      try { activeEarlyMascotObs.disconnect(); } catch (_) {}
+      activeEarlyMascotObs = null;
+    }
+
+    const anim = shouldRotate ? 'sf-custom-spin 1.2s linear infinite' : 'none';
+
+    function checkNode(el) {
+      if (!el || el.nodeType !== 1) return;
+
+      if (el.querySelectorAll) {
+        const imgs = el.querySelectorAll('img');
+        for (let i = 0; i < imgs.length; i++) {
+          checkNode(imgs[i]);
+        }
+      }
+
+      if (el.tagName === 'IMG') {
+        const src = (el.src || el.getAttribute('src') || '').toLowerCase();
+        const alt = (el.alt || el.getAttribute('alt') || '').toLowerCase();
+        const title = (el.title || el.getAttribute('title') || '').toLowerCase();
+        const isMascot =
+          src.includes('astro') ||
+          src.includes('codey') ||
+          src.includes('einstein') ||
+          src.includes('cloudy') ||
+          src.includes('appy') ||
+          src.includes('bear') ||
+          src.includes('mascot') ||
+          src.includes('illustration') ||
+          src.includes('character') ||
+          src.includes('salesforce-logo') ||
+          alt.includes('loading') ||
+          alt.includes('astro') ||
+          title.includes('loading') ||
+          (el.closest && el.closest('#auraLoadingBox, .auraLoadingBox, .slds-spinner_container, .loadingBox, .oneLoading'));
+
+        if (isMascot && el.src !== customImgUrl) {
+          el.src = customImgUrl;
+          el.srcset = '';
+          el.style.setProperty('object-fit', 'contain', 'important');
+          el.style.setProperty('animation', anim, 'important');
+          if (el.parentElement) {
+            el.parentElement.style.setProperty('opacity', '1', 'important');
+            el.parentElement.style.setProperty('visibility', 'visible', 'important');
+          }
+        }
+      }
+
+      if (
+        el.id === 'auraLoadingBox' ||
+        (el.classList && el.classList.contains('auraLoadingBox')) ||
+        (el.classList && el.classList.contains('loadingBox')) ||
+        (el.classList && el.classList.contains('oneLoading'))
+      ) {
+        const logo = el.querySelector ? el.querySelector('.logo, div[class*="logo"]') : null;
+        if (logo) {
+          logo.style.setProperty('background-image', `url("${customImgUrl}")`, 'important');
+          logo.style.setProperty('background-size', 'contain', 'important');
+          logo.style.setProperty('background-repeat', 'no-repeat', 'important');
+          logo.style.setProperty('background-position', 'center', 'important');
+          logo.style.setProperty('animation', anim, 'important');
+          logo.style.setProperty('display', 'block', 'important');
+          logo.style.setProperty('opacity', '1', 'important');
+          logo.style.setProperty('visibility', 'visible', 'important');
+        }
+      }
+    }
+
+    try {
+      checkNode(document.documentElement);
+      activeEarlyMascotObs = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+          for (let i = 0; i < m.addedNodes.length; i++) {
+            checkNode(m.addedNodes[i]);
+          }
+        }
+      });
+      activeEarlyMascotObs.observe(document.documentElement, { childList: true, subtree: true });
+    } catch (_) {}
+  }
+
+  // Synchronously inject styles immediately at document_start in top window
+  injectPreloadStyles();
+
+  if (document.documentElement && api?.runtime?.getURL) {
+    document.documentElement.dataset.sfParrotUrl = api.runtime.getURL('parrot.gif');
+    document.documentElement.dataset.sfNyanUrl = api.runtime.getURL('nyan.gif');
+  }
+
+  // Inject page-script.js into the main page execution context so it can access window.$A and workspaceAPI
+  function injectPageScript() {
+    try {
+      if (document.documentElement && document.documentElement.dataset.sfMainWorldLoaded === 'true') {
+        return true;
+      }
+      const parent = document.head || document.documentElement;
+      if (parent) {
+        if (api?.runtime?.getURL) {
+          parent.dataset.sfParrotUrl = api.runtime.getURL('parrot.gif');
+          parent.dataset.sfNyanUrl = api.runtime.getURL('nyan.gif');
+        }
+        const script = document.createElement('script');
+        script.src = api?.runtime?.getURL ? api.runtime.getURL('page-script.js') : 'page-script.js';
+        script.dataset.parrotUrl = api?.runtime?.getURL ? api.runtime.getURL('parrot.gif') : 'parrot.gif';
+        script.dataset.nyanUrl = api?.runtime?.getURL ? api.runtime.getURL('nyan.gif') : 'nyan.gif';
+        script.onload = function () {
+          this.remove();
+        };
+        parent.appendChild(script);
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  if (!injectPageScript()) {
+    const observer = new MutationObserver(() => {
+      if (injectPageScript()) {
+        observer.disconnect();
+      }
+    });
+    observer.observe(document, { childList: true, subtree: true });
+  }
+
+  // Bridge between Browser Extension and Main Page Script
+  function loadAndApplyStorageSettings() {
+    if (!api || !api.storage || !api.storage.local) return;
+
+    let applied = false;
+    const applyFromStorage = (res) => {
+      if (applied) return;
+      applied = true;
+      try {
+        const loaded = res?.sf_enhancer_settings || res?.sf_appearance_settings;
+        if (loaded) {
+          const s = normalizeSettings(loaded);
+          try {
+            const pageStorage = window.wrappedJSObject?.localStorage || window.localStorage;
+            if (pageStorage) {
+              pageStorage.setItem('sf_enhancer_settings', JSON.stringify(s));
+              pageStorage.setItem('sf_appearance_settings', JSON.stringify(s));
+            }
+          } catch (_) {}
+          try {
+            if (document.documentElement) {
+              document.documentElement.dataset.sfAppearance = JSON.stringify(s);
+            }
+          } catch (_) {}
+          injectPreloadStyles(s);
+          window.postMessage({ __sfEnhancerAction: 'settingsUpdated', settings: s }, '*');
+        }
+      } catch (_) {}
+    };
+
+    try {
+      const p = api.storage.local.get(['sf_enhancer_settings', 'sf_appearance_settings'], applyFromStorage);
+      if (p && typeof p.then === 'function') {
+        p.then(applyFromStorage).catch(() => {});
+      }
+    } catch (_) {}
+  }
+
+  loadAndApplyStorageSettings();
+
+  if (api && api.runtime && api.runtime.onMessage) {
+    api.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (!message || !message.action) return;
+      if (message.action === 'applyEnhancerSettings' || message.action === 'applyAppearanceSettings') {
+        const s = normalizeSettings(message.settings);
+        try {
+          const pageStorage = window.wrappedJSObject?.localStorage || window.localStorage;
+          if (pageStorage) {
+            pageStorage.setItem('sf_enhancer_settings', JSON.stringify(s));
+            pageStorage.setItem('sf_appearance_settings', JSON.stringify(s));
+          }
+        } catch (_) {}
+        try {
+          if (document.documentElement) {
+            document.documentElement.dataset.sfAppearance = JSON.stringify(s);
+          }
+        } catch (_) {}
+        injectPreloadStyles(s);
+        window.postMessage({ __sfEnhancerAction: 'settingsUpdated', settings: s }, '*');
+        if (sendResponse) sendResponse({ ok: true });
+      }
+    });
+  }
+
+  window.addEventListener('message', (event) => {
+    try {
+      // Security: Only accept internal configuration messages from the exact same window context
+      if (event.source !== window || (event.origin && event.origin !== window.location.origin)) {
+        return;
+      }
+      if (event.data && event.data.__sfEnhancerAction === 'saveSettings' && event.data.settings) {
+        const s = normalizeSettings(event.data.settings);
+        try {
+          const pageStorage = window.wrappedJSObject?.localStorage || window.localStorage;
+          if (pageStorage) {
+            pageStorage.setItem('sf_enhancer_settings', JSON.stringify(s));
+            pageStorage.setItem('sf_appearance_settings', JSON.stringify(s));
+          }
+        } catch (_) {}
+        try {
+          if (document.documentElement) {
+            document.documentElement.dataset.sfAppearance = JSON.stringify(s);
+          }
+        } catch (_) {}
+        if (api && api.storage && api.storage.local) {
+          api.storage.local.set({ sf_enhancer_settings: s, sf_appearance_settings: s }, () => {});
+        }
+      } else if (event.data && event.data.__sfEnhancerAction === 'requestSettings') {
+        loadAndApplyStorageSettings();
+      }
+    } catch (_) {}
+  });
+})();

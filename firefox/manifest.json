@@ -1,0 +1,94 @@
+{
+  "manifest_version": 3,
+  "name": "Salesforce Enhancer",
+  "version": "1.0.0",
+  "description": "Streamlined Salesforce productivity: Subtabs & workspace shortcuts, Quick Views list bookmarking, developer themes (Gruvbox, Solarized, Nord, Dracula), and custom loading animations.",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://*.lightning.force.com/*",
+    "https://*.salesforce.com/*",
+    "https://*.force.com/*",
+    "https://*.visualforce.com/*",
+    "https://*.salesforce-setup.com/*",
+    "https://*.salesforce-communities.com/*",
+    "https://*.site.com/*",
+    "https://*.cloudforce.com/*",
+    "https://*.salesforce-experience.com/*",
+    "https://*.my.salesforce.com/*",
+    "https://*.my.site.com/*"
+  ],
+  "icons": {
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Salesforce Enhancer",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.lightning.force.com/*",
+        "https://*.salesforce.com/*",
+        "https://*.force.com/*",
+        "https://*.visualforce.com/*",
+        "https://*.salesforce-setup.com/*",
+        "https://*.salesforce-communities.com/*",
+        "https://*.site.com/*",
+        "https://*.cloudforce.com/*",
+        "https://*.salesforce-experience.com/*",
+        "https://*.my.salesforce.com/*",
+        "https://*.my.site.com/*"
+      ],
+      "all_frames": true,
+      "match_about_blank": true,
+      "css": ["loading-intercept.css"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "page-script.js",
+        "uploader.html",
+        "uploader.js",
+        "parrot.gif",
+        "nyan.gif",
+        "icons/icon-32.png",
+        "icons/icon-48.png",
+        "icons/icon-128.png"
+      ],
+      "matches": [
+        "https://*.lightning.force.com/*",
+        "https://*.salesforce.com/*",
+        "https://*.force.com/*",
+        "https://*.visualforce.com/*",
+        "https://*.salesforce-setup.com/*",
+        "https://*.salesforce-communities.com/*",
+        "https://*.site.com/*",
+        "https://*.cloudforce.com/*",
+        "https://*.salesforce-experience.com/*",
+        "https://*.my.salesforce.com/*",
+        "https://*.my.site.com/*"
+      ]
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "salesforce-enhancer@etherlucid",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  }
+}

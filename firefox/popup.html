@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Salesforce Enhancer</title>
+  <style>
+    :root {
+      --primary: #0176d3;
+      --primary-contrast: #ffffff;
+      --bg: #ffffff;
+      --surface: #f8fafc;
+      --text: #0f172a;
+      --subtext: #64748b;
+      --border: #e2e8f0;
+      --border-dark: #cbd5e1;
+      --success: #10b981;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      width: 400px;
+      min-height: 520px;
+      max-height: 600px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.4;
+      padding: 14px 16px;
+      overflow-y: auto;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header-logo {
+      width: 24px;
+      height: 24px;
+      border-radius: 5px;
+    }
+    .header-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .header-badge {
+      font-size: 11px;
+      color: #475569;
+      background: #f1f5f9;
+      border: 1px solid var(--border);
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+
+    /* Section Cards */
+    .module-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 10px;
+      transition: border-color 0.15s ease;
+    }
+    .module-card:hover {
+      border-color: var(--border-dark);
+    }
+    .module-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .module-title-group {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .module-icon {
+      font-size: 16px;
+      line-height: 1;
+    }
+    .module-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .module-desc {
+      font-size: 11px;
+      color: var(--subtext);
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+    .module-body {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      transition: all 0.2s ease;
+    }
+    .module-body.is-disabled {
+      display: none;
+    }
+
+    /* Modern Switch Toggle */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #cbd5e1;
+      transition: 0.2s;
+      border-radius: 20px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.2s;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    input:checked + .slider {
+      background-color: var(--primary);
+    }
+    input:checked + .slider:before {
+      transform: translateX(16px);
+    }
+
+    /* Sub-options check row */
+    .sub-option-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-size: 12px;
+      color: var(--text);
+    }
+    .sub-option-row input[type="checkbox"] {
+      cursor: pointer;
+      width: 15px;
+      height: 15px;
+      accent-color: var(--primary);
+    }
+
+    /* Developer Theme Grid */
+    .themes-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .theme-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 6px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      background: #ffffff;
+      font-size: 11px;
+      font-weight: 500;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .theme-chip:hover {
+      border-color: #94a3b8;
+      background: #f1f5f9;
+    }
+    .theme-chip.active {
+      border-color: var(--primary);
+      background: rgba(1, 118, 211, 0.08);
+      font-weight: 700;
+    }
+    .theme-chip-dots {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+    .dot-bg {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 1px solid rgba(0,0,0,0.15);
+    }
+    .dot-accent {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 1px solid rgba(0,0,0,0.15);
+    }
+    .theme-chip-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Custom color input */
+    .custom-color-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 6px 0 8px 0;
+      padding: 6px 8px;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .custom-color-row input[type="color"] {
+      width: 28px;
+      height: 24px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      padding: 0;
+      background: none;
+    }
+    .custom-color-row input[type="text"] {
+      flex: 1;
+      padding: 4px 6px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: monospace;
+    }
+
+    /* Preset GIF Grid */
+    .preset-gif-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .gif-card {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 3px;
+      text-align: center;
+      cursor: pointer;
+      background: #ffffff;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .gif-card:hover {
+      border-color: #94a3b8;
+      background: #f1f5f9;
+    }
+    .gif-card.active {
+      border-color: var(--primary);
+      background: rgba(1, 118, 211, 0.08);
+      font-weight: 700;
+    }
+    .gif-card-thumb {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto 3px auto;
+    }
+    .gif-card-name {
+      font-size: 10px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .upload-btn-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      padding: 5px 8px;
+      background: #ffffff;
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--subtext);
+      margin-bottom: 6px;
+      transition: all 0.15s ease;
+    }
+    .upload-btn-label:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: rgba(1, 118, 211, 0.04);
+    }
+    .preview-box {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 64px;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin: 6px 0;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.15s ease;
+    }
+    .preview-box.dragover, .gif-card.dragover {
+      border-color: var(--primary) !important;
+      background: rgba(1, 118, 211, 0.08) !important;
+    }
+    .custom-gif-controls {
+      display: none;
+      margin: 6px 0;
+      padding: 6px 8px;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .custom-gif-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .custom-gif-row input[type="text"] {
+      flex: 1;
+      padding: 5px 8px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 11px;
+      outline: none;
+    }
+    .custom-gif-row input[type="text"]:focus {
+      border-color: var(--primary);
+    }
+    .custom-gif-tip {
+      font-size: 10px;
+      color: var(--subtext);
+      margin-top: 4px;
+      line-height: 1.3;
+    }
+    .preview-box-empty {
+      font-size: 11px;
+      color: var(--subtext);
+      font-style: italic;
+    }
+    .preview-img {
+      max-height: 52px;
+      max-width: 85%;
+      object-fit: contain;
+    }
+
+    /* Footer Actions */
+    .footer-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .btn {
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+    }
+    .btn-neutral {
+      background: #ffffff;
+      border-color: var(--border);
+      color: #334155;
+    }
+    .btn-neutral:hover {
+      background: #f1f5f9;
+      border-color: var(--border-dark);
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: var(--primary-contrast);
+    }
+    .btn-primary:hover {
+      filter: brightness(0.92);
+    }
+
+    .notice-safe {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 6px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <img src="icons/icon-32.png" alt="Logo" class="header-logo">
+      <span class="header-title">Salesforce Enhancer</span>
+    </div>
+    <span class="header-badge">v1.0.0</span>
+  </div>
+
+  <!-- Module 1: Subtabs & Workspace Shortcuts -->
+  <div class="module-card">
+    <div class="module-header">
+      <div class="module-title-group">
+        <span class="module-icon">🗂️</span>
+        <span class="module-title">Subtabs & Shortcuts</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="chkModSubtabs" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="module-desc">
+      Alt+Click (Option+Click) opens records in Console subtabs. Cmd/Ctrl+Click opens in new workspace tabs.
+    </div>
+  </div>
+
+  <!-- Module 2: Quick Views -->
+  <div class="module-card">
+    <div class="module-header">
+      <div class="module-title-group">
+        <span class="module-icon">📌</span>
+        <span class="module-title">Quick Views</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="chkModQuickViews" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="module-desc">
+      Pin your favorite list views to the top of the List View Switcher dropdown with quick reordering and A-Z sorting.
+    </div>
+  </div>
+
+  <!-- Module 3: Developer Themes & Styling -->
+  <div class="module-card">
+    <div class="module-header">
+      <div class="module-title-group">
+        <span class="module-icon">🎨</span>
+        <span class="module-title">Developer Themes</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="chkModTheming">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="module-desc" id="themingDesc">
+      Disabled. Salesforce native look & feel is 100% untouched.
+    </div>
+
+    <div class="module-body is-disabled" id="themingBody">
+      <div class="themes-grid" id="themesGrid">
+        <!-- Gruvbox Dark -->
+        <div class="theme-chip" data-theme="gruvbox-dark" title="Gruvbox Dark">
+          <div class="theme-chip-dots">
+            <span class="dot-bg" style="background:#282828;"></span>
+            <span class="dot-accent" style="background:#fe8019;"></span>
+          </div>
+          <span class="theme-chip-name">Gruvbox Dark</span>
+        </div>
+        <!-- Gruvbox Light -->
+        <div class="theme-chip" data-theme="gruvbox-light" title="Gruvbox Light">
+          <div class="theme-chip-dots">
+            <span class="dot-bg" style="background:#fbf1c7;"></span>
+            <span class="dot-accent" style="background:#af3a03;"></span>
+          </div>
+          <span class="theme-chip-name">Gruvbox Light</span>
+        </div>
+        <!-- Solarized Dark -->
+        <div class="theme-chip" data-theme="solarized-dark" title="Solarized Dark">
+          <div class="theme-chip-dots">
+            <span class="dot-bg" style="background:#002b36;"></span>
+            <span class="dot-accent" style="background:#268bd2;"></span>
+          </div>
+          <span class="theme-chip-name">Solarized Dark</span>
+        </div>
+        <!-- Solarized Light -->
+        <div class="theme-chip" data-theme="solarized-light" title="Solarized Light">
+          <div class="theme-chip-dots">
+            <span class="dot-bg" style="background:#fdf6e3;"></span>
+            <span class="dot-accent" style="background:#2aa198;"></span>
+          </div>
+          <span class="theme-chip-name">Solarized Light</span>
+        </div>
+        <!-- Nord -->
+        <div class="theme-chip" data-theme="nord" title="Nord">
+          <div class="theme-chip-dots">
+            <span class="dot-bg" style="background:#2e3440;"></span>
+            <span class="dot-accent" style="background:#88c0d0;"></span>
+          </div>
+          <span class="theme-chip-name">Nord</span>
+        </div>
+        <!-- Dracula -->
+        <div class="theme-chip" data-theme="dracula" title="Dracula">
+          <div class="theme-chip-dots">
+            <span class="dot-bg" style="background:#282a36;"></span>
+            <span class="dot-accent" style="background:#bd93f9;"></span>
+          </div>
+          <span class="theme-chip-name">Dracula</span>
+        </div>
+        <!-- One Dark -->
+        <div class="theme-chip" data-theme="one-dark" title="One Dark">
+          <div class="theme-chip-dots">
+            <span class="dot-bg" style="background:#21252b;"></span>
+            <span class="dot-accent" style="background:#61afef;"></span>
+          </div>
+          <span class="theme-chip-name">One Dark</span>
+        </div>
+        <!-- Classic SF -->
+        <div class="theme-chip" data-theme="classic" title="Classic Salesforce Blue">
+          <div class="theme-chip-dots">
+            <span class="dot-bg" style="background:#ffffff;"></span>
+            <span class="dot-accent" style="background:#0176d3;"></span>
+          </div>
+          <span class="theme-chip-name">Classic SF</span>
+        </div>
+        <!-- Custom -->
+        <div class="theme-chip" data-theme="custom" title="Custom Accent Color">
+          <div class="theme-chip-dots">
+            <span class="dot-bg" style="background:#ffffff;"></span>
+            <span class="dot-accent" id="customChipDot" style="background:#8b5cf6;"></span>
+          </div>
+          <span class="theme-chip-name">Custom</span>
+        </div>
+      </div>
+
+      <div class="custom-color-row" id="customColorRow" style="display:none;">
+        <input type="color" id="customColorPicker" value="#8b5cf6">
+        <input type="text" id="customColorHex" value="#8b5cf6" placeholder="#8b5cf6">
+      </div>
+
+      <div class="sub-option-row">
+        <span>Apply accent bar to navigation & workspace tabs</span>
+        <input type="checkbox" id="chkApplyNavigation" checked>
+      </div>
+
+      <div class="notice-safe">
+        <span>🛡️ Case Progress Bar (New &rarr; Working &rarr; Waiting &rarr; Closed) is protected.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Module 4: Loading Animation -->
+  <div class="module-card">
+    <div class="module-header">
+      <div class="module-title-group">
+        <span class="module-icon">🎬</span>
+        <span class="module-title">Loading Animation</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="chkModLoading">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="module-desc" id="loadingDesc">
+      Disabled. Native Salesforce mascot & spinner active.
+    </div>
+
+    <div class="module-body is-disabled" id="loadingBody">
+      <div class="preset-gif-grid" id="presetGifGrid">
+        <div class="gif-card" data-preset="spinner" data-url="" title="Default Salesforce Spinner">
+          <div class="gif-card-thumb" style="display:flex; align-items:center; justify-content:center; font-size:20px; line-height:32px;">🔄</div>
+          <div class="gif-card-name">Default</div>
+        </div>
+        <div class="gif-card" data-preset="parrot" data-url="parrot.gif" title="Party Parrot (Animated GIF)">
+          <img src="parrot.gif" class="gif-card-thumb" alt="Party Parrot">
+          <div class="gif-card-name">Parrot</div>
+        </div>
+        <div class="gif-card" data-preset="nyan" data-url="nyan.gif" title="Nyan Cat (Animated GIF)">
+          <img src="nyan.gif" class="gif-card-thumb" alt="Nyan Cat">
+          <div class="gif-card-name">Nyan Cat</div>
+        </div>
+        <div class="gif-card" data-preset="custom" id="cardCustomGif" title="Custom Image / GIF (Click to upload file or paste URL)">
+          <div class="gif-card-thumb" id="customCardIcon" style="display:flex; align-items:center; justify-content:center; font-size:24px; line-height:32px; font-weight:700; color:var(--primary);">+</div>
+          <img src="" id="customCardThumb" class="gif-card-thumb" style="display:none;" alt="Custom Image">
+          <div class="gif-card-name">Custom</div>
+        </div>
+      </div>
+
+      <!-- Custom GIF Controls (Visible when Custom is active) -->
+      <div class="custom-gif-controls" id="customGifControls">
+        <div class="custom-gif-row">
+          <input type="text" id="txtCustomGifUrl" placeholder="Paste image/GIF URL or drop file below...">
+          <button type="button" class="btn btn-neutral" id="btnOpenUploader" style="padding: 4px 8px; font-size: 11px; white-space:nowrap;" title="Open uploader in dedicated window to prevent popup closing">📁 Browse...</button>
+        </div>
+        <div class="custom-gif-tip">
+          Tip: You can also drag & drop any .gif file directly onto this panel, or copy an image and press Cmd+V / Ctrl+V to paste.
+        </div>
+      </div>
+
+      <input type="file" id="loadingFileInput" accept="image/*" style="display:none;">
+
+      <div class="preview-box" id="previewBox">
+        <span class="preview-box-empty" id="previewEmpty">No custom image (Salesforce default spinner)</span>
+        <img src="" id="previewImg" class="preview-img" style="display:none;" alt="Loading Preview">
+      </div>
+
+      <div class="sub-option-row">
+        <span>Rotate image while loading (for static icons)</span>
+        <input type="checkbox" id="chkRotate">
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-actions" style="justify-content: flex-end; padding-top: 8px;">
+    <button type="button" class="btn btn-neutral" id="btnReset" style="font-size: 11px; padding: 5px 12px;">Reset Defaults</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
