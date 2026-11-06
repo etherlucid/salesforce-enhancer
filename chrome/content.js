@@ -2356,6 +2356,7 @@
             document.documentElement.dataset.sfAppearance = JSON.stringify(s);
           }
         } catch (_) {}
+        injectPreloadStyles(s);
         if (api && api.storage && api.storage.local) {
           api.storage.local.set({ sf_enhancer_settings: s, sf_appearance_settings: s }, () => {});
         }

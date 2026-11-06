@@ -26,6 +26,17 @@
 
   // Global registry for Shadow Roots to support LWC Native Shadow DOM (Chrome & modern SF)
   const trackedShadowRoots = new Set();
+  const observedShadowRoots = new WeakSet();
+  let dropdownObserver = null;
+
+  function observeShadowRoot(sr) {
+    if (!sr || !dropdownObserver || observedShadowRoots.has(sr)) return;
+    try {
+      observedShadowRoots.add(sr);
+      dropdownObserver.observe(sr, { childList: true, subtree: true });
+    } catch (_) {}
+  }
+
   const origAttachShadow = Element.prototype.attachShadow;
   if (!Element.prototype._sfPatchedAttachShadow) {
     Element.prototype._sfPatchedAttachShadow = true;
@@ -33,6 +44,7 @@
       const shadowRoot = origAttachShadow.apply(this, args);
       trackedShadowRoots.add(shadowRoot);
       this._sfShadowRoot = shadowRoot;
+      observeShadowRoot(shadowRoot);
       try {
         if (typeof syncStylesToShadowRoot === 'function') {
           syncStylesToShadowRoot(shadowRoot);
@@ -1297,10 +1309,17 @@
     const themingEnabled = settings.modules?.theming === true;
     const loadingUrl = getEffectiveLoadingUrl(settings);
 
+    // If theming module is disabled, clean up 100% of injected theme CSS and inline styles
+    if (!themingEnabled) {
+      if (preloadStyle) preloadStyle.remove();
+      removeAllShadowThemeStyles();
+      cleanupSearchAssistantDOM();
+      cleanupThemeInlineStyles();
+    }
+
     // If both theming and loading animation are disabled, remove all custom styles
     if (!themingEnabled && !loadingUrl) {
       if (styleEl) styleEl.remove();
-      if (preloadStyle) preloadStyle.remove();
       if (preloadLoadingStyle) preloadLoadingStyle.remove();
       if (document.documentElement) {
         document.documentElement.dataset.sfLoadingEnabled = 'false';
@@ -1330,23 +1349,27 @@
     const hoverBg = isDark ? hexToRgba(accent, 0.18) : '#eef4ff';
     const applyNav = themingEnabled && (!settings.theme || settings.theme.applyToNavigation !== false);
 
-    let css = `
-      :root {
-        --sf-theme-accent: ${accent} !important;
-        --sf-theme-accent-tint: ${accentTint} !important;
-        --sf-theme-accent-border: ${accentBorder} !important;
-        --sf-theme-accent-contrast: ${accentContrast} !important;
-    `;
+    let css = '';
+    if (themingEnabled) {
+      css += `
+        :root {
+          --sf-theme-accent: ${accent} !important;
+          --sf-theme-accent-tint: ${accentTint} !important;
+          --sf-theme-accent-border: ${accentBorder} !important;
+          --sf-theme-accent-contrast: ${accentContrast} !important;
+        }
+      `;
+    }
 
     if (loadingUrl) {
       const loadingSize = ((settings.loadingImage && settings.loadingImage.size) || 64) + 'px';
       css += `
-        --sf-custom-loading-img: url("${loadingUrl.replace(/"/g, '\\"')}") !important;
-        --sf-custom-loading-size: ${loadingSize} !important;
+        :root {
+          --sf-custom-loading-img: url("${loadingUrl.replace(/"/g, '\\"')}") !important;
+          --sf-custom-loading-size: ${loadingSize} !important;
+        }
       `;
     }
-
-    css += `}\n`;
 
     if (themingEnabled) {
       // Quick Views Accent Theming
@@ -3104,6 +3127,10 @@
     if (themingEnabled && baseTheme && baseTheme.isDark) {
       syncStylesToAllShadowRoots();
       themeSearchAssistantDOM(baseTheme);
+    } else {
+      removeAllShadowThemeStyles();
+      cleanupSearchAssistantDOM();
+      cleanupThemeInlineStyles();
     }
 
     if (loadingUrl) {
@@ -3115,6 +3142,7 @@
     if (!root) return;
     if (root.shadowRoot) {
       trackedShadowRoots.add(root.shadowRoot);
+      observeShadowRoot(root.shadowRoot);
       collectAllShadowRoots(root.shadowRoot);
     }
     const children = root.children || [];
@@ -3126,14 +3154,25 @@
   function syncStylesToShadowRoot(shadowRoot) {
     if (!shadowRoot) return;
     const settings = getEnhancerSettings();
-    if (!settings || !settings.modules || settings.modules.theming !== true) return;
-    const themeKey = (settings.theme && settings.theme.preset) || 'classic';
+    const themingEnabled = settings?.modules?.theming === true;
+    const themeKey = (settings?.theme && settings.theme.preset) || 'classic';
     const baseTheme = THEMES[themeKey] || THEMES['classic'];
-    if (!baseTheme || !baseTheme.isDark) return;
-    const accent = (themeKey === 'custom' && settings.theme?.customAccent) ? sanitizeHexColor(settings.theme.customAccent) : baseTheme.accent;
-    const hoverBg = baseTheme.isDark ? hexToRgba(accent, 0.18) : '#eef4ff';
 
-    let style = shadowRoot.querySelector ? shadowRoot.querySelector('#sf-shadow-theme-style') : null;
+    if (!themingEnabled || !baseTheme || !baseTheme.isDark) {
+      try {
+        const existing = shadowRoot.querySelectorAll ? shadowRoot.querySelectorAll('style[id*="sf-shadow-theme-style"]') : [];
+        for (let i = 0; i < existing.length; i++) existing[i].remove();
+      } catch (_) {}
+      return;
+    }
+    const accent = (themeKey === 'custom' && settings.theme?.customAccent) ? sanitizeHexColor(settings.theme.customAccent) : baseTheme.accent;
+    const hoverBg = hexToRgba(accent, 0.18);
+
+    const existingStyles = shadowRoot.querySelectorAll ? shadowRoot.querySelectorAll('style[id*="sf-shadow-theme-style"]') : [];
+    let style = existingStyles[0] || null;
+    for (let i = 1; i < existingStyles.length; i++) {
+      try { existingStyles[i].remove(); } catch (_) {}
+    }
     if (!style) {
       style = document.createElement('style');
       style.id = 'sf-shadow-theme-style';
@@ -3320,13 +3359,88 @@
     }
   }
 
+  function removeAllShadowThemeStyles() {
+    function clean(node) {
+      if (!node) return;
+      if (node.shadowRoot) {
+        try {
+          const styles = node.shadowRoot.querySelectorAll ? node.shadowRoot.querySelectorAll('style[id*="sf-shadow-theme-style"]') : [];
+          for (let i = 0; i < styles.length; i++) styles[i].remove();
+        } catch (_) {}
+        clean(node.shadowRoot);
+      }
+      const ch = node.children || [];
+      for (let i = 0; i < ch.length; i++) clean(ch[i]);
+    }
+    try {
+      clean(document.documentElement);
+    } catch (_) {}
+    if (typeof trackedShadowRoots !== 'undefined') {
+      for (const sr of trackedShadowRoots) {
+        try {
+          const styles = sr.querySelectorAll ? sr.querySelectorAll('style[id*="sf-shadow-theme-style"]') : [];
+          for (let i = 0; i < styles.length; i++) styles[i].remove();
+        } catch (_) {}
+      }
+    }
+    try {
+      const docStyles = document.querySelectorAll('style[id*="sf-shadow-theme-style"]');
+      for (let i = 0; i < docStyles.length; i++) docStyles[i].remove();
+    } catch (_) {}
+  }
+
+  function cleanupThemeInlineStyles() {
+    function cleanTree(root) {
+      if (!root) return;
+      try {
+        const themedEls = root.querySelectorAll ? root.querySelectorAll('[data-sf-theme-applied]') : [];
+        for (let i = 0; i < themedEls.length; i++) {
+          const el = themedEls[i];
+          el.style.removeProperty('background-color');
+          el.style.removeProperty('background');
+          el.style.removeProperty('color');
+          el.style.removeProperty('border-color');
+          delete el.dataset.sfThemeApplied;
+        }
+      } catch (_) {}
+
+      // Specifically check layout elements to ensure no lingering styles
+      const layoutSelectors = '.desktop, .container, .viewport, .oneHeader, body, search_assistant-assistant-dialog, search_dialog-assistant-dialog, force-search-assistant, [role="dialog"]';
+      try {
+        const layoutEls = root.querySelectorAll ? root.querySelectorAll(layoutSelectors) : [];
+        for (let i = 0; i < layoutEls.length; i++) {
+          const el = layoutEls[i];
+          if (el.style) {
+            el.style.removeProperty('background-color');
+            el.style.removeProperty('background');
+            el.style.removeProperty('color');
+            el.style.removeProperty('border-color');
+            delete el.dataset.sfThemeApplied;
+          }
+        }
+      } catch (_) {}
+    }
+
+    cleanTree(document);
+    if (typeof trackedShadowRoots !== 'undefined') {
+      for (const sr of trackedShadowRoots) {
+        cleanTree(sr);
+      }
+    }
+  }
+
+  function cleanupSearchAssistantDOM() {
+    cleanupThemeInlineStyles();
+  }
+
   function syncQuickViewsStyleToRoot(root) {
     if (!root) return;
     const settings = getEnhancerSettings();
-    const themeKey = (settings.theme && settings.theme.preset) || 'classic';
+    const themingEnabled = settings?.modules?.theming === true;
+    const themeKey = (settings?.theme && settings.theme.preset) || 'classic';
     const baseTheme = THEMES[themeKey] || THEMES['classic'];
-    const accent = (themeKey === 'custom' && settings.theme?.customAccent) ? sanitizeHexColor(settings.theme.customAccent) : (baseTheme ? baseTheme.accent : '#0176d3');
-    const isDark = !!baseTheme?.isDark;
+    const accent = (themeKey === 'custom' && settings?.theme?.customAccent) ? sanitizeHexColor(settings.theme.customAccent) : (baseTheme ? baseTheme.accent : '#0176d3');
+    const isDark = themingEnabled && !!baseTheme?.isDark;
     const qvBg = isDark ? baseTheme.surface : '#ffffff';
     const qvBorder = isDark ? baseTheme.border : '#dddbda';
     const qvText = isDark ? baseTheme.text : '#181818';
@@ -3516,6 +3630,20 @@
 
     function applyThemeToEl(el) {
       if (!el || el.nodeType !== 1) return;
+      const tag = (el.tagName || '').toLowerCase();
+      const cls = typeof el.className === 'string' ? el.className : '';
+      if (
+        el === document.body ||
+        el === document.documentElement ||
+        cls.includes('desktop') ||
+        cls.includes('oneHeader') ||
+        cls.includes('viewport') ||
+        tag === 'body' ||
+        tag === 'html'
+      ) {
+        return;
+      }
+      el.dataset.sfThemeApplied = 'true';
       el.style.setProperty('background-color', theme.surface, 'important');
       el.style.setProperty('background', theme.surface, 'important');
       el.style.setProperty('color', theme.text, 'important');
@@ -3540,77 +3668,98 @@
             let curr = textNode.parentElement;
             let depth = 0;
             let topDialog = null;
-            while (curr && curr !== document.body && curr !== document.documentElement && depth < 25) {
-              applyThemeToEl(curr);
+            while (curr && depth < 20) {
+              const tag = (curr.tagName || '').toLowerCase();
+              const cls = typeof curr.className === 'string' ? curr.className : '';
+              const role = curr.getAttribute?.('role') || '';
               if (
-                curr.getAttribute?.('role') === 'dialog' ||
-                curr.tagName.toLowerCase().includes('assistant-dialog') ||
-                curr.classList?.contains('slds-modal') ||
-                curr.classList?.contains('searchAssistantDialog')
+                role === 'dialog' ||
+                tag.includes('assistant-dialog') ||
+                cls.includes('slds-modal') ||
+                cls.includes('searchAssistantDialog') ||
+                tag === 'search_dialog-assistant-dialog' ||
+                tag === 'search_assistant-assistant-dialog'
               ) {
                 topDialog = curr;
+                break;
+              }
+              if (
+                curr === document.body ||
+                curr === document.documentElement ||
+                cls.includes('desktop') ||
+                cls.includes('oneHeader') ||
+                cls.includes('viewport')
+              ) {
+                break;
               }
               if (!curr.parentElement && curr.getRootNode) {
                 try {
                   const rootNode = curr.getRootNode();
                   if (rootNode && rootNode.host) {
-                    curr = rootNode.host;
-                    applyThemeToEl(curr);
-                    continue;
+                    const hostTag = (rootNode.host.tagName || '').toLowerCase();
+                    if (hostTag.includes('assistant') || hostTag.includes('search')) {
+                      curr = rootNode.host;
+                      continue;
+                    }
                   }
                 } catch (_) {}
+                break;
               }
-              curr = curr.parentElement || curr.parentNode;
+              curr = curr.parentElement;
               depth++;
             }
 
-            const scope = topDialog || node;
-            const allElements = scope.querySelectorAll ? scope.querySelectorAll('*') : [];
-            for (let k = 0; k < allElements.length; k++) {
-              const el = allElements[k];
-              if (el.nodeType !== 1) continue;
-              const tag = el.tagName.toLowerCase();
-              if (tag === 'svg' || tag === 'path' || tag === 'img') continue;
+            const scope = topDialog || textNode.parentElement;
+            if (scope) {
+              applyThemeToEl(scope);
+              const allElements = scope.querySelectorAll ? scope.querySelectorAll('*') : [];
+              for (let k = 0; k < allElements.length; k++) {
+                const el = allElements[k];
+                if (el.nodeType !== 1) continue;
+                const tag = el.tagName.toLowerCase();
+                if (tag === 'svg' || tag === 'path' || tag === 'img') continue;
 
-              if (tag === 'a') {
-                el.style.setProperty('color', theme.accent, 'important');
-                continue;
-              }
+                if (tag === 'a') {
+                  el.dataset.sfThemeApplied = 'true';
+                  el.style.setProperty('color', theme.accent, 'important');
+                  continue;
+                }
 
-              if (
-                el.classList?.contains('slds-col') ||
-                el.classList?.contains('slds-grid') ||
-                el.classList?.contains('slds-split-view__detail') ||
-                el.classList?.contains('slds-split-view__content') ||
-                el.classList?.contains('slds-split-view') ||
-                el.classList?.contains('slds-scrollable_y') ||
-                el.classList?.contains('slds-modal__content') ||
-                tag.includes('preview') ||
-                tag.includes('empty-state') ||
-                tag.includes('content-container') ||
-                el.className?.includes('preview') ||
-                el.className?.includes('detail') ||
-                el.className?.includes('right') ||
-                el.className?.includes('guidance') ||
-                el.className?.includes('tips')
-              ) {
-                applyThemeToEl(el);
-              }
-
-              try {
-                const compBg = window.getComputedStyle(el).backgroundColor;
                 if (
-                  compBg &&
-                  (compBg.includes('255, 255, 255') ||
-                   compBg.includes('243, 243, 243') ||
-                   compBg.includes('250, 250, 250') ||
-                   compBg.includes('248, 249, 250') ||
-                   compBg.includes('238, 244, 255') ||
-                   compBg === 'rgb(255, 255, 255)')
+                  el.classList?.contains('slds-col') ||
+                  el.classList?.contains('slds-grid') ||
+                  el.classList?.contains('slds-split-view__detail') ||
+                  el.classList?.contains('slds-split-view__content') ||
+                  el.classList?.contains('slds-split-view') ||
+                  el.classList?.contains('slds-scrollable_y') ||
+                  el.classList?.contains('slds-modal__content') ||
+                  tag.includes('preview') ||
+                  tag.includes('empty-state') ||
+                  tag.includes('content-container') ||
+                  el.className?.includes('preview') ||
+                  el.className?.includes('detail') ||
+                  el.className?.includes('right') ||
+                  el.className?.includes('guidance') ||
+                  el.className?.includes('tips')
                 ) {
                   applyThemeToEl(el);
                 }
-              } catch (_) {}
+
+                try {
+                  const compBg = window.getComputedStyle(el).backgroundColor;
+                  if (
+                    compBg &&
+                    (compBg.includes('255, 255, 255') ||
+                     compBg.includes('243, 243, 243') ||
+                     compBg.includes('250, 250, 250') ||
+                     compBg.includes('248, 249, 250') ||
+                     compBg.includes('238, 244, 255') ||
+                     compBg === 'rgb(255, 255, 255)')
+                  ) {
+                    applyThemeToEl(el);
+                  }
+                } catch (_) {}
+              }
             }
           }
         }
@@ -3634,9 +3783,7 @@
           '[data-aura-class*="searchAssistant" i]',
           '[data-aura-class*="forceSearch" i]',
           '.slds-illustration',
-          '.slds-empty-state',
-          '.slds-split-view',
-          '.slds-split-view__detail'
+          '.slds-empty-state'
         ];
         const matches = node.querySelectorAll ? node.querySelectorAll(searchSelectors.join(',')) : [];
         for (let i = 0; i < matches.length; i++) {
@@ -3646,8 +3793,10 @@
           for (let j = 0; j < childDivs.length; j++) {
             const cd = childDivs[j];
             if (cd.tagName === 'A') {
+              cd.dataset.sfThemeApplied = 'true';
               cd.style.setProperty('color', theme.accent, 'important');
             } else {
+              cd.dataset.sfThemeApplied = 'true';
               cd.style.setProperty('color', theme.text, 'important');
               if (
                 cd.classList &&
@@ -6222,12 +6371,26 @@
         document.querySelectorAll('.sf-native-bookmark-btn').forEach((btn) => btn.remove());
         const qvStyle = document.getElementById('sf-quick-views-style');
         if (qvStyle) qvStyle.remove();
+        if (typeof trackedShadowRoots !== 'undefined') {
+          for (const sr of trackedShadowRoots) {
+            try {
+              const srWrapper = sr.querySelector ? sr.querySelector('.sf-quick-views-wrapper') : null;
+              if (srWrapper) srWrapper.remove();
+              sr.querySelectorAll ? sr.querySelectorAll('.sf-native-bookmark-btn').forEach((btn) => btn.remove()) : null;
+              const srStyle = sr.querySelector ? sr.querySelector('#sf-quick-views-shadow-style') : null;
+              if (srStyle) srStyle.remove();
+            } catch (_) {}
+          }
+        }
         return;
       }
       const ctx = findListViewDropdownContext();
       if (!ctx) return;
 
       const { popover, listContainer, itemWrapper, headerEl } = ctx;
+      if (popover) {
+        observeShadowRoot(popover);
+      }
       const objectName = getCurrentObjectName();
 
       ensureQuickViewsStylesInjected();
@@ -6279,7 +6442,7 @@
 
     // Observer on DOM mutations ignoring internal updates
     let checkScheduled = false;
-    const dropdownObserver = new MutationObserver((mutations) => {
+    dropdownObserver = new MutationObserver((mutations) => {
       if (isInternalDOMUpdate) return;
 
       const isOurs = mutations.every((m) =>
@@ -6311,6 +6474,11 @@
         dropdownObserver.observe(targetToObserve, { childList: true, subtree: true });
       } catch (_) {}
     }
+    if (typeof trackedShadowRoots !== 'undefined') {
+      for (const sr of trackedShadowRoots) {
+        observeShadowRoot(sr);
+      }
+    }
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
         const bodyTarget = document.body || document.documentElement;
@@ -6318,6 +6486,11 @@
           try {
             dropdownObserver.observe(bodyTarget, { childList: true, subtree: true });
           } catch (_) {}
+        }
+        if (typeof trackedShadowRoots !== 'undefined') {
+          for (const sr of trackedShadowRoots) {
+            observeShadowRoot(sr);
+          }
         }
         checkAndInjectQuickViews();
       });
@@ -6327,9 +6500,12 @@
     window.addEventListener(
       'click',
       (e) => {
-        setTimeout(checkAndInjectQuickViews, 30);
-        setTimeout(checkAndInjectQuickViews, 120);
-        setTimeout(checkAndInjectQuickViews, 300);
+        [30, 100, 250, 500, 800, 1200, 2000].forEach((t) => setTimeout(checkAndInjectQuickViews, t));
+        if (typeof trackedShadowRoots !== 'undefined') {
+          for (const sr of trackedShadowRoots) {
+            observeShadowRoot(sr);
+          }
+        }
         const t = e.target;
         if (t && (t.closest?.('input[type="search"], input.slds-input, button[class*="search" i], [class*="searchAssistant" i]') || (t.getAttribute && (t.getAttribute('placeholder') || '').toLowerCase().includes('search')))) {
           const _s = getEnhancerSettings();
@@ -6349,7 +6525,12 @@
     window.addEventListener(
       'focusin',
       (e) => {
-        setTimeout(checkAndInjectQuickViews, 40);
+        [30, 100, 250, 500, 800, 1200].forEach((t) => setTimeout(checkAndInjectQuickViews, t));
+        if (typeof trackedShadowRoots !== 'undefined') {
+          for (const sr of trackedShadowRoots) {
+            observeShadowRoot(sr);
+          }
+        }
         const t = e.target;
         if (t && (t.closest?.('input[type="search"], input.slds-input, button[class*="search" i]') || (t.getAttribute && (t.getAttribute('placeholder') || '').toLowerCase().includes('search')))) {
           const _s = getEnhancerSettings();
