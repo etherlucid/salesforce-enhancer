@@ -24,6 +24,23 @@
     document.documentElement.dataset.sfMainWorldLoaded = 'true';
   }
 
+  // Global registry for Shadow Roots to support LWC Native Shadow DOM (Chrome & modern SF)
+  const trackedShadowRoots = new Set();
+  const origAttachShadow = Element.prototype.attachShadow;
+  if (!Element.prototype._sfPatchedAttachShadow) {
+    Element.prototype._sfPatchedAttachShadow = true;
+    Element.prototype.attachShadow = function (...args) {
+      const shadowRoot = origAttachShadow.apply(this, args);
+      trackedShadowRoots.add(shadowRoot);
+      try {
+        if (typeof syncStylesToShadowRoot === 'function') {
+          syncStylesToShadowRoot(shadowRoot);
+        }
+      } catch (_) {}
+      return shadowRoot;
+    };
+  }
+
   const isTopWindow = window === window.top;
 
   let detectedParrot = (document.documentElement && document.documentElement.dataset && document.documentElement.dataset.sfParrotUrl)
@@ -1479,6 +1496,22 @@
             --slds-c-tile-color-background: ${baseTheme.surface} !important;
             --slds-c-tile-color-border: ${baseTheme.border} !important;
 
+            /* SLDS Surface, Panel, Illustration & Search Design Tokens */
+            --slds-g-color-surface-container: ${baseTheme.surface} !important;
+            --slds-g-color-surface-container-screen: ${baseTheme.surface} !important;
+            --slds-g-color-surface-container-low: ${baseTheme.surface} !important;
+            --slds-g-color-surface-container-lowest: ${baseTheme.surface} !important;
+            --slds-g-color-surface-container-high: ${baseTheme.surfaceHeader} !important;
+            --slds-g-color-surface-container-highest: ${baseTheme.surfaceHeader} !important;
+            --slds-g-color-surface-base: ${baseTheme.surface} !important;
+            --slds-g-color-surface-base-alt: ${baseTheme.surfaceHeader} !important;
+            --slds-c-illustration-color-background: ${baseTheme.surface} !important;
+            --slds-c-panel-color-background: ${baseTheme.surface} !important;
+            --slds-c-empty-state-color-background: ${baseTheme.surface} !important;
+            --slds-c-split-view-color-background: ${baseTheme.surface} !important;
+            --slds-c-popover-color-background: ${baseTheme.surface} !important;
+            --slds-c-combobox-color-background: ${baseTheme.bg} !important;
+
             --slds-c-accordion-color-background: ${baseTheme.surface} !important;
             --slds-c-accordion-header-color-background: ${baseTheme.surface} !important;
 
@@ -2610,6 +2643,135 @@
             color: ${baseTheme.text} !important;
           }
 
+          /* Override hardcoded SLDS default white surfaces on search & dialogs */
+          .slds-theme_default,
+          .slds-theme--default,
+          .slds-theme_shade,
+          .slds-theme--shade {
+            background-color: ${baseTheme.surface} !important;
+            color: ${baseTheme.text} !important;
+            border-color: ${baseTheme.border} !important;
+          }
+
+          /* Illustrations & Empty States (like "Do more with Search!") */
+          .slds-illustration,
+          .slds-illustration_large,
+          .slds-illustration_small,
+          .slds-empty-state,
+          .slds-empty-state__body,
+          .slds-rich-text-editor__output,
+          .slds-text-longform,
+          .slds-box {
+            background-color: ${baseTheme.surface} !important;
+            color: ${baseTheme.text} !important;
+            border-color: ${baseTheme.border} !important;
+          }
+
+          /* Universal selectors for Search Assistant, Einstein Search & Previews */
+          search_assistant-assistant-dialog,
+          search_assistant-content-container,
+          search_assistant-instant-results-list,
+          search_assistant-empty-state,
+          search_assistant-preview,
+          search_assistant-natural-language-preview,
+          force-search-assistant,
+          [class*="searchAssistant" i],
+          [class*="SearchAssistant" i],
+          [class*="search-assistant" i],
+          [class*="instantResult" i],
+          [class*="InstantResult" i],
+          [class*="naturalLanguage" i],
+          [class*="NaturalLanguage" i],
+          [class*="searchTips" i],
+          [class*="SearchTips" i],
+          [class*="searchHelp" i],
+          [class*="SearchHelp" i],
+          [class*="doMoreWithSearch" i],
+          [class*="DoMoreWithSearch" i],
+          [class*="searchPreview" i],
+          [class*="SearchPreview" i],
+          [class*="search-preview" i],
+          [class*="search-tips" i],
+          [class*="search-results" i],
+          [data-aura-class*="forceSearch" i],
+          [data-aura-class*="searchAssistant" i] {
+            background-color: ${baseTheme.surface} !important;
+            color: ${baseTheme.text} !important;
+            border-color: ${baseTheme.border} !important;
+          }
+
+          /* Left Pane Instant Results & Listbox */
+          search_assistant-assistant-dialog .slds-listbox,
+          search_assistant-assistant-dialog .slds-listbox_vertical,
+          search_assistant-instant-results-list .slds-listbox,
+          [class*="searchAssistant" i] .slds-listbox,
+          [class*="searchAssistant" i] [role="listbox"],
+          [class*="searchAssistant" i] ul {
+            background-color: ${baseTheme.surface} !important;
+            color: ${baseTheme.text} !important;
+            border-color: ${baseTheme.border} !important;
+          }
+
+          /* Items in Search Assistant */
+          search_assistant-assistant-dialog [role="option"],
+          search_assistant-instant-results-list [role="option"],
+          search_assistant-assistant-dialog .slds-listbox__item,
+          search_assistant-instant-results-list .slds-listbox__item,
+          [class*="searchAssistant" i] .slds-listbox__item,
+          [class*="searchAssistant" i] [role="option"] {
+            background-color: transparent !important;
+            color: ${baseTheme.text} !important;
+          }
+
+          search_assistant-assistant-dialog [role="option"]:hover,
+          search_assistant-instant-results-list [role="option"]:hover,
+          search_assistant-assistant-dialog .slds-listbox__item:hover,
+          search_assistant-instant-results-list .slds-listbox__item:hover,
+          [class*="searchAssistant" i] .slds-listbox__item:hover,
+          [class*="searchAssistant" i] [role="option"]:hover,
+          [class*="searchAssistant" i] [role="option"].slds-is-selected,
+          [class*="searchAssistant" i] [role="option"][aria-selected="true"] {
+            background-color: ${baseTheme.surfaceHeader} !important;
+            color: ${baseTheme.text} !important;
+          }
+
+          /* Right Pane: Empty State Guidance ("Do more with Search!") & Previews */
+          search_assistant-empty-state,
+          search_assistant-preview,
+          search_assistant-content-container,
+          [class*="searchAssistant" i] .slds-illustration,
+          [class*="searchAssistant" i] .slds-empty-state,
+          [class*="searchAssistant" i] .slds-box,
+          [class*="searchAssistant" i] .slds-text-longform,
+          [class*="searchAssistant" i] .slds-rich-text-editor__output,
+          [class*="searchAssistant" i] div[class*="empty" i],
+          [class*="searchAssistant" i] div[class*="preview" i],
+          [class*="searchAssistant" i] div[class*="tips" i] {
+            background-color: ${baseTheme.surface} !important;
+            color: ${baseTheme.text} !important;
+            border-color: ${baseTheme.border} !important;
+          }
+
+          [class*="searchAssistant" i] div,
+          [class*="search-assistant" i] div,
+          [class*="searchTips" i] div,
+          [class*="naturalLanguage" i] div {
+            border-color: ${baseTheme.border} !important;
+          }
+
+          [class*="searchAssistant" i] h1,
+          [class*="searchAssistant" i] h2,
+          [class*="searchAssistant" i] h3,
+          [class*="searchAssistant" i] p,
+          [class*="searchAssistant" i] span,
+          [class*="searchAssistant" i] label {
+            color: ${baseTheme.text} !important;
+          }
+
+          [class*="searchAssistant" i] a {
+            color: ${accent} !important;
+          }
+
           /* Buttons & Badges */
           button.slds-button_neutral,
           .slds-button_neutral,
@@ -2863,8 +3025,299 @@
     styleEl.textContent = css;
     if (preloadStyle) preloadStyle.remove();
 
+    if (themingEnabled && baseTheme && baseTheme.isDark) {
+      syncStylesToAllShadowRoots();
+      themeSearchAssistantDOM(baseTheme);
+    }
+
     if (loadingUrl) {
       interceptAndReplaceMascot();
+    }
+  }
+
+  function collectAllShadowRoots(root = document.documentElement) {
+    if (!root) return;
+    if (root.shadowRoot) {
+      trackedShadowRoots.add(root.shadowRoot);
+      collectAllShadowRoots(root.shadowRoot);
+    }
+    const children = root.children || [];
+    for (let i = 0; i < children.length; i++) {
+      collectAllShadowRoots(children[i]);
+    }
+  }
+
+  function syncStylesToShadowRoot(shadowRoot) {
+    if (!shadowRoot) return;
+    const settings = getEnhancerSettings();
+    if (!settings || !settings.modules || settings.modules.theming !== true) return;
+    const themeKey = (settings.theme && settings.theme.preset) || 'classic';
+    const baseTheme = THEMES[themeKey] || THEMES['classic'];
+    if (!baseTheme || !baseTheme.isDark) return;
+    const accent = (themeKey === 'custom' && settings.theme?.customAccent) ? sanitizeHexColor(settings.theme.customAccent) : baseTheme.accent;
+
+    let style = shadowRoot.getElementById ? shadowRoot.getElementById('sf-shadow-theme-style') : null;
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'sf-shadow-theme-style';
+      try {
+        shadowRoot.appendChild(style);
+      } catch (_) {}
+    }
+
+    style.textContent = `
+      :host {
+        --slds-c-card-color-background: ${baseTheme.surface} !important;
+        --slds-c-card-header-color-background: ${baseTheme.surface} !important;
+        --slds-c-card-footer-color-background: ${baseTheme.surface} !important;
+        --slds-g-color-surface-container: ${baseTheme.surface} !important;
+        --slds-g-color-surface-container-screen: ${baseTheme.surface} !important;
+        --slds-g-color-surface-container-low: ${baseTheme.surface} !important;
+        --slds-g-color-surface-container-lowest: ${baseTheme.surface} !important;
+        --slds-g-color-surface-container-high: ${baseTheme.surfaceHeader} !important;
+        --slds-g-color-surface-container-highest: ${baseTheme.surfaceHeader} !important;
+        --slds-g-color-surface-base: ${baseTheme.surface} !important;
+        --slds-g-color-surface-base-alt: ${baseTheme.surfaceHeader} !important;
+        --slds-c-illustration-color-background: ${baseTheme.surface} !important;
+        --slds-c-panel-color-background: ${baseTheme.surface} !important;
+        --slds-c-empty-state-color-background: ${baseTheme.surface} !important;
+        --slds-c-split-view-color-background: ${baseTheme.surface} !important;
+        --slds-c-popover-color-background: ${baseTheme.surface} !important;
+        --slds-c-combobox-color-background: ${baseTheme.bg} !important;
+        background-color: ${baseTheme.surface} !important;
+        color: ${baseTheme.text} !important;
+      }
+
+      .slds-theme_default,
+      .slds-theme--default,
+      .slds-theme_shade,
+      .slds-theme--shade,
+      .slds-illustration,
+      .slds-illustration_large,
+      .slds-illustration_small,
+      .slds-empty-state,
+      .slds-box,
+      .slds-card,
+      search_assistant-assistant-dialog,
+      search_assistant-content-container,
+      search_assistant-instant-results-list,
+      search_assistant-empty-state,
+      search_assistant-preview,
+      [class*="searchAssistant" i],
+      [class*="search-assistant" i],
+      [class*="contentContainer" i],
+      [class*="emptyState" i],
+      [class*="preview" i],
+      [class*="instantResult" i],
+      [class*="naturalLanguage" i],
+      [class*="tips" i],
+      [class*="results-list" i],
+      [class*="split-view" i] {
+        background-color: ${baseTheme.surface} !important;
+        color: ${baseTheme.text} !important;
+        border-color: ${baseTheme.border} !important;
+      }
+
+      h1, h2, h3, h4, p, span, label, div {
+        color: ${baseTheme.text} !important;
+      }
+      a {
+        color: ${accent} !important;
+      }
+      .slds-button_neutral,
+      button.slds-button_neutral {
+        background-color: ${baseTheme.surface} !important;
+        color: ${baseTheme.text} !important;
+        border-color: ${baseTheme.border} !important;
+      }
+    `;
+  }
+
+  function syncStylesToAllShadowRoots() {
+    collectAllShadowRoots();
+    for (const sr of trackedShadowRoots) {
+      try {
+        syncStylesToShadowRoot(sr);
+      } catch (_) {}
+    }
+  }
+
+  function syncQuickViewsStyleToRoot(root) {
+    if (!root) return;
+    if (root.getElementById && root.getElementById('sf-quick-views-shadow-style')) return;
+    try {
+      const style = document.createElement('style');
+      style.id = 'sf-quick-views-shadow-style';
+      style.textContent = `
+        .sf-native-bookmark-btn {
+          position: absolute !important;
+          right: 6px !important;
+          top: 50% !important;
+          transform: translateY(-50%) !important;
+          z-index: 9999 !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          width: 24px !important;
+          height: 24px !important;
+          background: transparent !important;
+          border: none !important;
+          border-radius: 4px !important;
+          cursor: pointer !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          opacity: 0.75 !important;
+          visibility: visible !important;
+          pointer-events: auto !important;
+          transition: background 0.12s ease !important;
+        }
+        .sf-native-bookmark-btn:hover {
+          background: rgba(0, 0, 0, 0.08) !important;
+          opacity: 1 !important;
+        }
+        .sf-native-bookmark-btn svg path {
+          stroke: #706e6b !important;
+        }
+        .sf-native-bookmark-btn:hover svg path {
+          stroke: #0176d3 !important;
+        }
+        .sf-native-bookmark-btn.is-bookmarked {
+          opacity: 1 !important;
+          background: transparent !important;
+        }
+        .sf-native-bookmark-btn.is-bookmarked svg path {
+          stroke: #0176d3 !important;
+        }
+        .sf-native-bookmark-btn.is-bookmarked:hover {
+          background: rgba(1, 118, 211, 0.1) !important;
+        }
+        .sf-native-bookmark-btn svg {
+          pointer-events: none !important;
+        }
+      `;
+      root.appendChild(style);
+    } catch (_) {}
+  }
+
+  function themeSearchAssistantDOM(theme, specificRoot = null) {
+    if (!theme || !theme.isDark) return;
+
+    function applyThemeToEl(el) {
+      if (!el || el.nodeType !== 1) return;
+      el.style.setProperty('background-color', theme.surface, 'important');
+      el.style.setProperty('background', theme.surface, 'important');
+      el.style.setProperty('color', theme.text, 'important');
+      el.style.setProperty('border-color', theme.border, 'important');
+    }
+
+    function processSearchAssistantTree(node) {
+      if (!node) return;
+
+      // 1. Text walker matching "Do more with Search!" empty state
+      try {
+        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null, false);
+        let textNode;
+        while ((textNode = walker.nextNode())) {
+          const val = textNode.nodeValue || '';
+          if (
+            val.includes('Do more with Search') ||
+            val.includes('Get the right answers') ||
+            val.includes('Get insights') ||
+            val.includes('search_ai_natural_lang_examples')
+          ) {
+            let parent = textNode.parentElement;
+            let depth = 0;
+            while (parent && parent !== document.body && parent !== document.documentElement && depth < 8) {
+              applyThemeToEl(parent);
+              if (
+                parent.classList &&
+                (parent.classList.contains('slds-grid') ||
+                 parent.classList.contains('slds-split-view') ||
+                 parent.getAttribute('role') === 'dialog' ||
+                 parent.tagName.toLowerCase().includes('search_assistant'))
+              ) {
+                const gridKids = parent.querySelectorAll ? parent.querySelectorAll('div, section, article') : [];
+                for (let k = 0; k < gridKids.length; k++) {
+                  applyThemeToEl(gridKids[k]);
+                }
+                break;
+              }
+              parent = parent.parentElement || parent.parentNode;
+              depth++;
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 2. Query selectors for search assistant and preview elements
+      try {
+        const searchSelectors = [
+          'search_assistant-assistant-dialog',
+          'search_assistant-content-container',
+          'search_assistant-instant-results-list',
+          'search_assistant-empty-state',
+          'search_assistant-preview',
+          'search_assistant-natural-language-preview',
+          'force-search-assistant',
+          '[class*="searchAssistant" i]',
+          '[class*="search-assistant" i]',
+          '[class*="instantResult" i]',
+          '[class*="naturalLanguage" i]',
+          '[class*="searchTips" i]',
+          '[data-aura-class*="searchAssistant" i]',
+          '[data-aura-class*="forceSearch" i]',
+          '.slds-illustration',
+          '.slds-empty-state',
+          '.slds-split-view'
+        ];
+        const matches = node.querySelectorAll ? node.querySelectorAll(searchSelectors.join(',')) : [];
+        for (let i = 0; i < matches.length; i++) {
+          const m = matches[i];
+          applyThemeToEl(m);
+          const childDivs = m.querySelectorAll ? m.querySelectorAll('div, section, article, p, span, a') : [];
+          for (let j = 0; j < childDivs.length; j++) {
+            const cd = childDivs[j];
+            if (cd.tagName === 'A') {
+              cd.style.setProperty('color', theme.accent, 'important');
+            } else {
+              cd.style.setProperty('color', theme.text, 'important');
+              if (
+                cd.classList &&
+                (cd.classList.contains('slds-theme_default') ||
+                 cd.classList.contains('slds-theme_shade') ||
+                 cd.classList.contains('slds-box'))
+              ) {
+                applyThemeToEl(cd);
+              }
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 3. Recurse into open shadow roots
+      if (node.shadowRoot) {
+        processSearchAssistantTree(node.shadowRoot);
+      }
+      const children = node.children || [];
+      for (let i = 0; i < children.length; i++) {
+        if (children[i].shadowRoot) {
+          processSearchAssistantTree(children[i].shadowRoot);
+        }
+      }
+    }
+
+    if (specificRoot) {
+      processSearchAssistantTree(specificRoot);
+    } else {
+      processSearchAssistantTree(document.body || document.documentElement);
+      if (typeof trackedShadowRoots !== 'undefined') {
+        for (const sr of trackedShadowRoots) {
+          try {
+            processSearchAssistantTree(sr);
+          } catch (_) {}
+        }
+      }
     }
   }
 
@@ -4228,47 +4681,112 @@
       }
     }
 
-    function findRecentListViewsHeader() {
+    function findRecentListViewsHeader(root = document) {
       const isHeaderTxt = (txt) => {
         if (!txt) return false;
-        const lower = txt.trim().toLowerCase();
+        const lower = txt.replace(/\s+/g, ' ').trim().toLowerCase();
         return (
           lower === 'recent list views' ||
           lower === 'pinned list view' ||
           lower === 'pinned list views' ||
           lower === 'list views' ||
-          lower === 'other list views'
+          lower === 'other list views' ||
+          lower === 'lists' ||
+          lower === 'recent' ||
+          lower.includes('recent list views') ||
+          lower.includes('pinned list view')
         );
       };
 
-      const candidateHeaders = document.querySelectorAll(
+      const candidateHeaders = root.querySelectorAll(
         '.slds-listbox__option-header, .slds-dropdown__header, [role="presentation"], h2, h3, span, div, p'
       );
-      for (const el of candidateHeaders) {
-        if (el.closest('.sf-quick-views-wrapper, .sf-pinned-section-wrapper')) continue;
+      for (let i = 0; i < candidateHeaders.length; i++) {
+        const el = candidateHeaders[i];
+        if (el.closest && el.closest('.sf-quick-views-wrapper, .sf-pinned-section-wrapper')) continue;
         const txt = (el.textContent || '').trim();
         if (isHeaderTxt(txt)) {
           return el;
         }
       }
 
-      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-      let node;
-      while ((node = walker.nextNode())) {
-        const txt = (node.nodeValue || '').trim();
-        if (isHeaderTxt(txt)) {
-          const parent = node.parentElement;
-          if (parent && !parent.closest('.sf-quick-views-wrapper, .sf-pinned-section-wrapper')) {
-            return parent;
+      if (root.createTreeWalker) {
+        try {
+          const walker = root.createTreeWalker(root.body || root, NodeFilter.SHOW_TEXT, null, false);
+          let node;
+          while ((node = walker.nextNode())) {
+            const txt = (node.nodeValue || '').trim();
+            if (isHeaderTxt(txt)) {
+              const parent = node.parentElement;
+              if (parent && (!parent.closest || !parent.closest('.sf-quick-views-wrapper, .sf-pinned-section-wrapper'))) {
+                return parent;
+              }
+            }
           }
-        }
+        } catch (_) {}
       }
 
       return null;
     }
 
     function findListViewDropdownContext() {
-      const headerEl = findRecentListViewsHeader();
+      // 1. Check open, visible list view dropdown containers across the document and custom elements
+      const popoverCandidates = [];
+      const selectors = [
+        '.forceListViewPickerDesktop .slds-dropdown',
+        '.forceListViewPicker .slds-dropdown',
+        'div[class*="listViewPicker"] .slds-dropdown',
+        'div[class*="ListViewPicker"] .slds-dropdown',
+        'div[class*="forceListViewPicker"]',
+        'div[class*="listViewPicker"]',
+        '.slds-combobox[aria-expanded="true"] .slds-dropdown',
+        '.slds-combobox[aria-expanded="true"] [role="listbox"]',
+        '.slds-dropdown-trigger_click.slds-is-open .slds-dropdown',
+        '.slds-is-open > .slds-dropdown',
+        'div[role="listbox"][class*="slds-dropdown"]',
+        '.uiPanel--default.visible',
+        '.uiPanel.open',
+        '.panel-content:not(:empty)',
+        '.slds-dropdown',
+        '.slds-popover',
+        '[role="listbox"]'
+      ];
+      for (let s = 0; s < selectors.length; s++) {
+        const matches = document.querySelectorAll(selectors[s]);
+        for (let i = 0; i < matches.length; i++) popoverCandidates.push(matches[i]);
+      }
+
+      // Also check shadow roots of pickers/comboboxes
+      const customPickers = document.querySelectorAll('lightning-base-combobox, force-list-view-picker, force-list-view-manager-header, one-app-nav-bar');
+      for (let i = 0; i < customPickers.length; i++) {
+        const cp = customPickers[i];
+        if (cp.shadowRoot) {
+          const inShadow = cp.shadowRoot.querySelectorAll('.slds-dropdown, [role="listbox"], .slds-listbox');
+          for (let j = 0; j < inShadow.length; j++) popoverCandidates.push(inShadow[j]);
+        }
+      }
+
+      for (let i = 0; i < popoverCandidates.length; i++) {
+        const pop = popoverCandidates[i];
+        if (!pop || (pop.closest && pop.closest('.sf-quick-views-wrapper'))) continue;
+        const isVisible = pop.offsetParent !== null ||
+          (window.getComputedStyle(pop).display !== 'none' && window.getComputedStyle(pop).visibility !== 'hidden');
+        if (!isVisible) continue;
+
+        const hasOptions = pop.querySelector('li, [role="option"], lightning-base-combobox-item, .slds-listbox__item, input[placeholder*="Search" i]');
+        if (hasOptions) {
+          const headerEl = findRecentListViewsHeader(pop);
+          const listContainer = pop.querySelector('ul, ol, [role="listbox"], .slds-listbox') || pop;
+          let itemWrapper = headerEl;
+          while (itemWrapper && itemWrapper.parentElement && itemWrapper.parentElement !== listContainer) {
+            itemWrapper = itemWrapper.parentElement;
+          }
+          return { popover: pop, listContainer, itemWrapper, headerEl };
+        }
+      }
+
+      // 2. Fallback: locate via header anywhere in the document
+      const headerEl = findRecentListViewsHeader(document);
       if (headerEl) {
         const popover =
           headerEl.closest(
@@ -4288,11 +4806,12 @@
         return { popover, listContainer, itemWrapper, headerEl };
       }
 
-      // If actively searching (header is replaced by search results):
+      // 3. Fallback: actively searching
       const searchInputs = document.querySelectorAll(
         'input[placeholder*="Search lists" i], input[placeholder*="Search this list" i], input[placeholder*="Search..." i], input[type="search"].slds-input, input.slds-combobox__input'
       );
-      for (const inp of searchInputs) {
+      for (let i = 0; i < searchInputs.length; i++) {
+        const inp = searchInputs[i];
         const popover = inp.closest(
           '.slds-dropdown, .slds-popover, .uiPanel, .panel-content, [role="dialog"], [role="listbox"], [role="combobox"], div[class*="picker"], div[class*="Picker"], div[class*="dropdown"], div[class*="menu"], div[class*="panel"]'
         );
@@ -4815,12 +5334,6 @@
     }
 
     function renderQuickViewsSection(container, quickViews, objectName, popover) {
-      if (quickViews.length === 0) {
-        container.style.display = 'none';
-        container.innerHTML = '';
-        container._lastSignature = 'empty';
-        return;
-      }
       container.style.display = '';
 
       const activeView = getCurrentActiveListView(objectName, popover);
@@ -4861,6 +5374,15 @@
       headerRow.appendChild(headerLeft);
       headerRow.appendChild(headerRight);
       container.appendChild(headerRow);
+
+      if (quickViews.length === 0) {
+        const emptyHint = document.createElement('div');
+        emptyHint.className = 'sf-quick-empty-hint';
+        emptyHint.style.cssText = 'padding: 8px 12px; font-size: 11px; color: var(--sf-qv-muted, #706e6b); font-style: italic; user-select: none; line-height: 1.4;';
+        emptyHint.textContent = 'Click the ☆ star on any list view below to pin it here.';
+        container.appendChild(emptyHint);
+        return;
+      }
 
       const ul = document.createElement('ul');
       ul.className = 'sf-quick-list';
@@ -4942,28 +5464,24 @@
       for (const { row, label } of rowsWithLabels) {
         const rowId = extractListViewId(row);
         const isBookmarked = (rowId && bookmarkedIds.has(rowId)) || bookmarkedNames.has(label);
-        const container = row.closest('li, lightning-base-combobox-item') || row;
 
-        // Check if button for this view already exists anywhere in container or popover
-        let existingBtn = null;
-        if (popover) {
-          const matching = popover.querySelectorAll(`.sf-native-bookmark-btn[data-view-label="${CSS.escape(label)}"]`);
-          if (matching.length > 0) {
-            existingBtn = matching[0];
-            for (let i = 1; i < matching.length; i++) {
-              matching[i].remove();
-            }
-          }
+        let hostEl = row;
+        const comboboxItem = row.closest ? row.closest('lightning-base-combobox-item') : null;
+        if (comboboxItem && comboboxItem.shadowRoot) {
+          hostEl = comboboxItem.shadowRoot.querySelector('[role="option"], .slds-listbox__option, .slds-media') || comboboxItem.shadowRoot;
+          syncQuickViewsStyleToRoot(comboboxItem.shadowRoot);
+        } else if (row.shadowRoot) {
+          hostEl = row.shadowRoot.querySelector('[role="option"], .slds-listbox__option, .slds-media') || row.shadowRoot;
+          syncQuickViewsStyleToRoot(row.shadowRoot);
+        } else {
+          hostEl = row.closest ? (row.closest('li, lightning-base-combobox-item, [role="option"]') || row) : row;
         }
 
-        if (!existingBtn) {
-          const inContainer = container.querySelectorAll('.sf-native-bookmark-btn');
-          if (inContainer.length > 0) {
-            existingBtn = inContainer[0];
-            for (let i = 1; i < inContainer.length; i++) {
-              inContainer[i].remove();
-            }
-          }
+        // Check if button for this view already exists anywhere in hostEl or popover
+        let existingBtn = hostEl.querySelector ? hostEl.querySelector(`.sf-native-bookmark-btn[data-view-label="${CSS.escape(label)}"]`) : null;
+        if (!existingBtn && popover && popover.querySelectorAll) {
+          const matching = popover.querySelectorAll(`.sf-native-bookmark-btn[data-view-label="${CSS.escape(label)}"]`);
+          if (matching.length > 0) existingBtn = matching[0];
         }
 
         if (existingBtn) {
@@ -4972,7 +5490,7 @@
           existingBtn.title = isBookmarked ? `Remove '${label}' from Quick Views` : `Save '${label}' to Quick Views`;
           if (isBookmarked) existingBtn.classList.add('is-bookmarked');
           else existingBtn.classList.remove('is-bookmarked');
-          bindBookmarkButtonEvents(existingBtn, container, label, objectName);
+          bindBookmarkButtonEvents(existingBtn, hostEl, label, objectName);
           continue;
         }
 
@@ -4984,11 +5502,13 @@
         bookmarkBtn.title = isBookmarked ? `Remove '${label}' from Quick Views` : `Save '${label}' to Quick Views`;
         bookmarkBtn.innerHTML = getBookmarkSVG(isBookmarked);
 
-        container.style.setProperty('position', 'relative', 'important');
-        container.style.setProperty('padding-right', '36px', 'important');
+        if (hostEl.style) {
+          hostEl.style.setProperty('position', 'relative', 'important');
+          hostEl.style.setProperty('padding-right', '36px', 'important');
+        }
 
-        container.appendChild(bookmarkBtn);
-        bindBookmarkButtonEvents(bookmarkBtn, container, label, objectName);
+        hostEl.appendChild(bookmarkBtn);
+        bindBookmarkButtonEvents(bookmarkBtn, hostEl, label, objectName);
       }
     }
 
@@ -5248,14 +5768,15 @@
         const quickViews = getQuickViews(objectName);
 
         // 3. Inject and render Quick Views section (now guaranteed to have up-to-date names!)
-        if (itemWrapper && listContainer) {
+        if (listContainer) {
           let quickWrapper = listContainer.querySelector('.sf-quick-views-wrapper');
           if (!quickWrapper) {
             const isUl = listContainer.tagName === 'UL' || listContainer.tagName === 'OL';
             quickWrapper = document.createElement(isUl ? 'li' : 'div');
             quickWrapper.className = 'sf-quick-views-wrapper slds-listbox__item';
             quickWrapper.setAttribute('role', 'presentation');
-            listContainer.insertBefore(quickWrapper, itemWrapper);
+            const insertBeforeEl = itemWrapper || listContainer.firstElementChild;
+            listContainer.insertBefore(quickWrapper, insertBeforeEl);
           }
           renderQuickViewsSection(quickWrapper, quickViews, objectName, popover);
         }
@@ -5294,6 +5815,14 @@
       requestAnimationFrame(() => {
         checkScheduled = false;
         checkAndInjectQuickViews();
+        const _s = getEnhancerSettings();
+        if (_s.modules?.theming === true) {
+          const tKey = (_s.theme && _s.theme.preset) || 'classic';
+          const bTheme = THEMES[tKey] || THEMES['classic'];
+          if (bTheme && bTheme.isDark) {
+            themeSearchAssistantDOM(bTheme);
+          }
+        }
       });
     });
 
@@ -5318,17 +5847,61 @@
     // Click & focus fallbacks for immediate responsiveness
     window.addEventListener(
       'click',
-      () => {
-        setTimeout(checkAndInjectQuickViews, 50);
-        setTimeout(checkAndInjectQuickViews, 200);
+      (e) => {
+        setTimeout(checkAndInjectQuickViews, 30);
+        setTimeout(checkAndInjectQuickViews, 120);
+        setTimeout(checkAndInjectQuickViews, 300);
+        const t = e.target;
+        if (t && (t.closest?.('input[type="search"], input.slds-input, button[class*="search" i], [class*="searchAssistant" i]') || (t.getAttribute && (t.getAttribute('placeholder') || '').toLowerCase().includes('search')))) {
+          const _s = getEnhancerSettings();
+          if (_s.modules?.theming === true) {
+            const tKey = (_s.theme && _s.theme.preset) || 'classic';
+            const bTheme = THEMES[tKey] || THEMES['classic'];
+            if (bTheme && bTheme.isDark) {
+              setTimeout(() => themeSearchAssistantDOM(bTheme), 10);
+              setTimeout(() => themeSearchAssistantDOM(bTheme), 120);
+            }
+          }
+        }
       },
       true
     );
 
     window.addEventListener(
       'focusin',
-      () => {
-        setTimeout(checkAndInjectQuickViews, 50);
+      (e) => {
+        setTimeout(checkAndInjectQuickViews, 40);
+        const t = e.target;
+        if (t && (t.closest?.('input[type="search"], input.slds-input, button[class*="search" i]') || (t.getAttribute && (t.getAttribute('placeholder') || '').toLowerCase().includes('search')))) {
+          const _s = getEnhancerSettings();
+          if (_s.modules?.theming === true) {
+            const tKey = (_s.theme && _s.theme.preset) || 'classic';
+            const bTheme = THEMES[tKey] || THEMES['classic'];
+            if (bTheme && bTheme.isDark) {
+              setTimeout(() => themeSearchAssistantDOM(bTheme), 10);
+              setTimeout(() => themeSearchAssistantDOM(bTheme), 120);
+            }
+          }
+        }
+      },
+      true
+    );
+
+    window.addEventListener(
+      'input',
+      (e) => {
+        const t = e.target;
+        if (t && (t.closest?.('input[type="search"], input.slds-input') || (t.getAttribute && (t.getAttribute('placeholder') || '').toLowerCase().includes('search')))) {
+          const _s = getEnhancerSettings();
+          if (_s.modules?.theming === true) {
+            const tKey = (_s.theme && _s.theme.preset) || 'classic';
+            const bTheme = THEMES[tKey] || THEMES['classic'];
+            if (bTheme && bTheme.isDark) {
+              setTimeout(() => themeSearchAssistantDOM(bTheme), 10);
+              setTimeout(() => themeSearchAssistantDOM(bTheme), 100);
+            }
+          }
+        }
       },
       true
     );
@@ -5397,5 +5970,5 @@
     setTimeout(syncPageContextPeriodically, 600);
     setTimeout(syncPageContextPeriodically, 1800);
 
-  console.log('[Salesforce Enhancer v1.0.0] Ready — Modular shortcuts, Quick Views, developer themes & loading animations.');
+  console.log('[Salesforce Enhancer v1.0.1] Ready — Modular shortcuts, Quick Views, developer themes & loading animations.');
 })();

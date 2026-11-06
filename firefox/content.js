@@ -395,6 +395,22 @@
           --slds-c-tile-color-background: ${baseTheme.surface} !important;
           --slds-c-tile-color-border: ${baseTheme.border} !important;
 
+          /* SLDS Surface, Panel, Illustration & Search Design Tokens */
+          --slds-g-color-surface-container: ${baseTheme.surface} !important;
+          --slds-g-color-surface-container-screen: ${baseTheme.surface} !important;
+          --slds-g-color-surface-container-low: ${baseTheme.surface} !important;
+          --slds-g-color-surface-container-lowest: ${baseTheme.surface} !important;
+          --slds-g-color-surface-container-high: ${baseTheme.surfaceHeader} !important;
+          --slds-g-color-surface-container-highest: ${baseTheme.surfaceHeader} !important;
+          --slds-g-color-surface-base: ${baseTheme.surface} !important;
+          --slds-g-color-surface-base-alt: ${baseTheme.surfaceHeader} !important;
+          --slds-c-illustration-color-background: ${baseTheme.surface} !important;
+          --slds-c-panel-color-background: ${baseTheme.surface} !important;
+          --slds-c-empty-state-color-background: ${baseTheme.surface} !important;
+          --slds-c-split-view-color-background: ${baseTheme.surface} !important;
+          --slds-c-popover-color-background: ${baseTheme.surface} !important;
+          --slds-c-combobox-color-background: ${baseTheme.bg} !important;
+
           --slds-c-accordion-color-background: ${baseTheme.surface} !important;
           --slds-c-accordion-header-color-background: ${baseTheme.surface} !important;
 
@@ -1423,11 +1439,26 @@
         }
 
         /* Global Search & Einstein Search Assistant (Left results pane, Right tips/guidance pane, and dialog) */
+        search_assistant-assistant-dialog,
+        search_assistant-content-container,
+        search_assistant-instant-results-list,
+        search_assistant-empty-state,
+        search_assistant-preview,
+        search_assistant-natural-language-preview,
         force-search-assistant,
         force-search-assistant-layout,
         force-search-assistant-results,
         force-search-natural-language-help,
         force-search-instant-result-item,
+        .slds-theme_default,
+        .slds-theme--default,
+        .slds-theme_shade,
+        .slds-theme--shade,
+        .slds-illustration,
+        .slds-illustration_large,
+        .slds-illustration_small,
+        .slds-empty-state,
+        .slds-box,
         .forceSearchAssistant,
         .forceSearchAssistantLayout,
         .forceSearchAssistantDialog,
@@ -1435,28 +1466,26 @@
         .forceSearchGlobalSearch,
         .forceSearchNaturalLanguageHelp,
         .forceSearchAssistantNaturalLanguage,
-        div[class*="searchAssistant" i],
-        div[class*="SearchAssistant" i],
-        div[class*="search-assistant" i],
-        div[class*="assistantResults" i],
-        div[class*="assistantPreview" i],
-        div[class*="assistantTips" i],
-        div[class*="assistantRight" i],
-        div[class*="searchTips" i],
-        div[class*="SearchTips" i],
-        div[class*="searchHelp" i],
-        div[class*="SearchHelp" i],
-        div[class*="naturalLanguage" i],
-        div[class*="NaturalLanguage" i],
-        div[class*="doMoreWithSearch" i],
-        div[class*="DoMoreWithSearch" i],
-        div[class*="instantResult" i],
-        div[class*="InstantResult" i],
-        div[class*="search-preview" i],
-        div[class*="search-tips" i],
-        div[class*="search-results" i],
-        div[class*="searchPreview" i],
-        div[class*="searchResults" i],
+        [class*="searchAssistant" i],
+        [class*="SearchAssistant" i],
+        [class*="search-assistant" i],
+        [class*="assistantResults" i],
+        [class*="assistantPreview" i],
+        [class*="assistantTips" i],
+        [class*="assistantRight" i],
+        [class*="searchTips" i],
+        [class*="SearchTips" i],
+        [class*="searchHelp" i],
+        [class*="SearchHelp" i],
+        [class*="doMoreWithSearch" i],
+        [class*="DoMoreWithSearch" i],
+        [class*="instantResult" i],
+        [class*="InstantResult" i],
+        [class*="search-preview" i],
+        [class*="search-tips" i],
+        [class*="search-results" i],
+        [class*="searchPreview" i],
+        [class*="searchResults" i],
         .search-results-pane,
         .search-preview-pane,
         .searchResultsPane,
@@ -1468,6 +1497,27 @@
           background-color: ${baseTheme.surface} !important;
           color: ${baseTheme.text} !important;
           border-color: ${baseTheme.border} !important;
+        }
+
+        /* Search Assistant Right Pane Empty State ("Do more with Search!") & Illustration */
+        search_assistant-empty-state,
+        search_assistant-preview,
+        search_assistant-content-container,
+        [class*="searchAssistant" i] .slds-illustration,
+        [class*="searchAssistant" i] .slds-empty-state,
+        [class*="searchAssistant" i] .slds-box,
+        [class*="searchAssistant" i] .slds-text-longform,
+        [class*="searchAssistant" i] .slds-rich-text-editor__output,
+        [class*="searchAssistant" i] div[class*="empty" i],
+        [class*="searchAssistant" i] div[class*="preview" i],
+        [class*="searchAssistant" i] div[class*="tips" i] {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        [class*="searchAssistant" i] a {
+          color: ${accent} !important;
         }
 
         force-search-assistant-results .slds-listbox,
