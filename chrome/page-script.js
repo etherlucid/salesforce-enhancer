@@ -4430,10 +4430,79 @@
       return null;
     }
 
+    function getDropdownObjectName(popover) {
+      if (!popover) return null;
+
+      let curr = popover;
+      let depth = 0;
+      while (curr && curr !== document.body && curr !== document.documentElement && depth < 30) {
+        if (curr.objectApiName && typeof curr.objectApiName === 'string') {
+          return curr.objectApiName;
+        }
+        if (curr.getAttribute) {
+          const apiName = curr.getAttribute('object-api-name') || curr.getAttribute('data-object-api-name');
+          if (apiName) return apiName;
+        }
+
+        const tag = (curr.tagName || '').toLowerCase();
+        if (tag === 'lst-list-view-picker' || tag === 'force-list-view-picker' || tag === 'lst-list-view-manager' || tag === 'force-list-view-manager') {
+          const chevron = (curr.shadowRoot && curr.shadowRoot.querySelector('lightning-button-icon.pickerChevron, button[title*="Select a List View" i]')) ||
+                          (curr.querySelector && curr.querySelector('lightning-button-icon.pickerChevron, button[title*="Select a List View" i]'));
+          if (chevron) {
+            const title = chevron.title || (chevron.getAttribute && chevron.getAttribute('title')) || '';
+            const m = title.match(/Select a List View:\s*(.+)/i);
+            if (m && m[1]) {
+              const label = m[1].trim();
+              if (label.endsWith('ies')) return label.slice(0, -3) + 'y';
+              if (label.endsWith('es') && !label.endsWith('ses')) return label.slice(0, -2);
+              if (label.endsWith('s') && !label.endsWith('ss')) return label.slice(0, -1);
+              return label;
+            }
+          }
+          const assistive = (curr.shadowRoot && curr.shadowRoot.querySelector('.slds-page-header__name-title .slds-assistive-text')) ||
+                            (curr.querySelector && curr.querySelector('.slds-page-header__name-title .slds-assistive-text'));
+          if (assistive && assistive.textContent) {
+            const label = assistive.textContent.trim();
+            if (label) {
+              if (label.endsWith('ies')) return label.slice(0, -3) + 'y';
+              if (label.endsWith('es') && !label.endsWith('ses')) return label.slice(0, -2);
+              if (label.endsWith('s') && !label.endsWith('ss')) return label.slice(0, -1);
+              return label;
+            }
+          }
+        }
+
+        if (!curr.parentElement && curr.getRootNode) {
+          try {
+            const r = curr.getRootNode();
+            if (r && r.host) {
+              curr = r.host;
+              continue;
+            }
+          } catch (_) {}
+        }
+        curr = curr.parentElement;
+        depth++;
+      }
+
+      const listMatch = window.location.pathname.match(/\/lightning\/o\/([a-zA-Z0-9_]+)\/list/);
+      if (listMatch && listMatch[1]) {
+        return listMatch[1];
+      }
+
+      const objHome = document.querySelector('lst-object-home, force-object-home');
+      if (objHome && objHome.objectApiName) {
+        return objHome.objectApiName;
+      }
+
+      return null;
+    }
+
     function findListViewDropdownContext() {
       // 1. Direct path check (instant O(1) in modern Salesforce Lightning)
       try {
-        const directEl = document.querySelector('lst-object-home, force-object-home')
+        const objHome = document.querySelector('lst-object-home, force-object-home');
+        const directEl = objHome
           ?.shadowRoot?.querySelector('lst-list-view-manager, force-list-view-manager')
           ?.shadowRoot?.querySelector('lst-common-list-internal, force-common-list-internal')
           ?.shadowRoot?.querySelector('lst-list-view-manager-header, force-list-view-manager-header')
@@ -4454,7 +4523,8 @@
           if (listRoot && listRoot !== document) {
             syncQuickViewsStyleToRoot(listRoot);
           }
-          return { popover: directEl, listContainer, itemWrapper, headerEl: innerHeader };
+          const objectName = (objHome && objHome.objectApiName) || getDropdownObjectName(directEl) || 'Case';
+          return { popover: directEl, listContainer, itemWrapper, headerEl: innerHeader, objectName };
         }
       } catch (_) {}
 
@@ -4480,6 +4550,45 @@
         }
       }
 
+      // Check whether an element belongs to record details/fields (Cluster, Status, Account, etc.)
+      const isRecordDetailComponent = (el) => {
+        if (!el) return false;
+        let curr = el;
+        let depth = 0;
+        while (curr && curr !== document.body && curr !== document.documentElement && depth < 25) {
+          const tag = (curr.tagName || '').toLowerCase();
+          const cls = typeof curr.className === 'string' ? curr.className.toLowerCase() : '';
+          if (
+            tag.includes('record-layout') ||
+            tag.includes('record-form') ||
+            tag.includes('detail-panel') ||
+            tag.includes('form-picklist') ||
+            tag === 'force-lookup' ||
+            tag.includes('quick-action') ||
+            cls.includes('recordlayout') ||
+            cls.includes('records-form') ||
+            (cls.includes('slds-form-element') && !cls.includes('forcelistviewpicker') && !tag.includes('list-view'))
+          ) {
+            if (curr.closest && curr.closest('lst-object-home, lst-list-view-manager, force-list-view-manager')) {
+              return false;
+            }
+            return true;
+          }
+          if (!curr.parentElement && curr.getRootNode) {
+            try {
+              const r = curr.getRootNode();
+              if (r && r.host) {
+                curr = r.host;
+                continue;
+              }
+            } catch (_) {}
+          }
+          curr = curr.parentElement;
+          depth++;
+        }
+        return false;
+      };
+
       const isListViewPickerComponent = (el) => {
         if (!el) return false;
         let curr = el;
@@ -4488,9 +4597,16 @@
           const tag = (curr.tagName || '').toLowerCase();
           const cls = typeof curr.className === 'string' ? curr.className.toLowerCase() : '';
           if (
+            tag === 'lst-list-view-picker' ||
             tag === 'force-list-view-picker' ||
+            tag === 'lst-list-view-picker-dropdown' ||
+            tag === 'force-list-view-picker-dropdown' ||
+            tag === 'lst-list-view-manager' ||
+            tag === 'force-list-view-manager' ||
+            tag === 'lst-list-view-manager-header' ||
             tag === 'force-list-view-manager-header' ||
-            tag === 'lightning-grouped-combobox' ||
+            tag === 'lst-object-home' ||
+            tag === 'force-object-home' ||
             cls.includes('forcelistviewpicker') ||
             cls.includes('listviewpicker') ||
             (curr.getAttribute && curr.getAttribute('data-component-id')?.toLowerCase().includes('listviewpicker'))
@@ -4523,7 +4639,7 @@
         }
       };
 
-      // 1. Search for visible dropdowns belonging to list view pickers
+      // 1. Search for visible dropdowns strictly belonging to list view pickers
       for (let rIdx = 0; rIdx < rootsToSearch.length; rIdx++) {
         const root = rootsToSearch[rIdx];
         try {
@@ -4535,12 +4651,16 @@
             if (!isCandidateVisible(pop)) continue;
             if (pop.closest && pop.closest('search_assistant-assistant-dialog, force-search-assistant, [class*="searchAssistant" i]')) continue;
             if (pop.closest && pop.closest('one-app-launcher-modal, .slds-app-launcher, one-notifications-flyout')) continue;
+            if (isRecordDetailComponent(pop)) continue;
 
             const isPicker = isListViewPickerComponent(pop);
             const innerHeader = findRecentListViewsHeader(pop);
-            const hasListSearchInput = pop.querySelector ? pop.querySelector('input[placeholder*="Search lists" i], input[placeholder*="Search this list" i]') : null;
+            const hasListSearchInput = pop.querySelector ? pop.querySelector('input[placeholder*="Search lists" i], input[placeholder*="Search this list" i], input[aria-label*="Search lists" i]') : null;
 
-            if (isPicker || innerHeader || hasListSearchInput) {
+            if (isPicker && (innerHeader || hasListSearchInput || (pop.closest && pop.closest('lst-list-view-picker, force-list-view-picker')))) {
+              const objectName = getDropdownObjectName(pop);
+              if (!objectName) continue;
+
               const listContainer = pop.querySelector('ul, ol, [role="listbox"], .slds-listbox') || pop;
               let itemWrapper = innerHeader;
               while (itemWrapper && itemWrapper.parentElement && itemWrapper.parentElement !== listContainer) {
@@ -4550,7 +4670,7 @@
               if (listRoot && listRoot !== document) {
                 syncQuickViewsStyleToRoot(listRoot);
               }
-              return { popover: pop, listContainer, itemWrapper, headerEl: innerHeader };
+              return { popover: pop, listContainer, itemWrapper, headerEl: innerHeader, objectName };
             }
           }
         } catch (_) {}
@@ -4577,13 +4697,16 @@
                 }
               }
               if (!pop) {
-                const hostCombobox = btn.closest ? btn.closest('lightning-base-combobox, lightning-combobox, force-list-view-picker, .slds-combobox') : null;
+                const hostCombobox = btn.closest ? btn.closest('lightning-base-combobox, force-list-view-picker, lst-list-view-picker, .slds-combobox') : null;
                 if (hostCombobox) {
                   const sr = hostCombobox.shadowRoot || hostCombobox._sfShadowRoot;
                   pop = (sr ? sr.querySelector('.slds-dropdown, [role="listbox"]') : null) || hostCombobox.querySelector('.slds-dropdown, [role="listbox"]');
                 }
               }
-              if (pop && isCandidateVisible(pop)) {
+              if (pop && isCandidateVisible(pop) && !isRecordDetailComponent(pop)) {
+                const objectName = getDropdownObjectName(pop) || getDropdownObjectName(btn);
+                if (!objectName) continue;
+
                 const listContainer = pop.querySelector('ul, ol, [role="listbox"], .slds-listbox') || pop;
                 const innerHeader = findRecentListViewsHeader(pop);
                 let itemWrapper = innerHeader;
@@ -4594,7 +4717,7 @@
                 if (listRoot && listRoot !== document) {
                   syncQuickViewsStyleToRoot(listRoot);
                 }
-                return { popover: pop, listContainer, itemWrapper, headerEl: innerHeader };
+                return { popover: pop, listContainer, itemWrapper, headerEl: innerHeader, objectName };
               }
             }
           }
@@ -4604,7 +4727,8 @@
       return null;
     }
 
-    /**
+
+        /**
      * Find list view rows in the dropdown with STRICT 1-per-entry deduplication
      */
     function findDropdownRows(popover, headerEl) {
@@ -5297,7 +5421,7 @@
       }
     }
 
-    function setupSearchInputFilter(popover, listContainer) {
+    function setupSearchInputFilter(popover, listContainer, objectName) {
       const inputs = (popover || document).querySelectorAll(
         'input[placeholder*="Search lists" i], input[placeholder*="Search this list" i], input[placeholder*="Search..." i], input[type="search"].slds-input, input.slds-combobox__input'
       );
@@ -5310,7 +5434,7 @@
           const query = (searchInput.value || '').trim().toLowerCase();
           const quickWrapper = document.querySelector('.sf-quick-views-wrapper');
           if (quickWrapper) {
-            const currentViews = getQuickViews(getCurrentObjectName());
+            const currentViews = getQuickViews(objectName || getCurrentObjectName());
             if (currentViews.length === 0) {
               quickWrapper.style.display = 'none';
             } else if (!query) {
@@ -5542,13 +5666,12 @@
         return;
       }
       const ctx = findListViewDropdownContext();
-      if (!ctx) return;
+      if (!ctx || !ctx.objectName) return;
 
-      const { popover, listContainer, itemWrapper, headerEl } = ctx;
+      const { popover, listContainer, itemWrapper, headerEl, objectName } = ctx;
       if (popover) {
         observeShadowRoot(popover);
       }
-      const objectName = getCurrentObjectName();
 
       ensureQuickViewsStylesInjected();
 
@@ -5583,7 +5706,7 @@
         // 4. Attach buttons strictly 1 per unique view entry
         attachNativeBookmarkButtons(rowsWithLabels, quickViews, objectName, popover);
 
-        setupSearchInputFilter(popover, listContainer);
+        setupSearchInputFilter(popover, listContainer, objectName);
       } finally {
         isInternalDOMUpdate = false;
       }
