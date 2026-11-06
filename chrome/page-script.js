@@ -1345,6 +1345,12 @@
         z-index: 999999;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
       }
+      li.tabItem.sf-tab-drop-hover.sf-promote-hover::after {
+        content: "↳ Drop to promote to workspace tab" !important;
+      }
+      li.tabItem.sf-tab-drop-hover.sf-subtab-target-hover::after {
+        content: "↳ Drop to move to this workspace" !important;
+      }
       .navexConsoleTabContainer[aria-label="Active Workspace Subtabs"].sf-subtab-bar-drop-hover,
       .navexConsoleSubtabContainer.sf-subtab-bar-drop-hover,
       .subTabBarContainer.sf-subtab-bar-drop-hover,
@@ -1451,6 +1457,20 @@
     return li;
   }
 
+  function isPrimaryWorkspaceDropZone(target) {
+    if (!target) return false;
+    if (getSubtabBarContainer(target)) return false;
+    return !!target.closest(
+      '.navexConsoleTabContainer, ' +
+      '.oneWorkspaceNavigationTabs, ' +
+      '.tabBarContainer, ' +
+      '.navCenter, ' +
+      '.oneConsoleHeader, ' +
+      '.slds-context-bar, ' +
+      'ul.tabBarItems'
+    );
+  }
+
   async function getActiveWorkspaceTabId(ws) {
     if (!ws) {
       try {
@@ -1478,7 +1498,11 @@
 
   function clearTabDropHighlights(exceptEl = null) {
     document.querySelectorAll('.sf-tab-drop-hover').forEach((el) => {
-      if (el !== exceptEl) el.classList.remove('sf-tab-drop-hover');
+      if (el !== exceptEl) {
+        el.classList.remove('sf-tab-drop-hover');
+        el.classList.remove('sf-promote-hover');
+        el.classList.remove('sf-subtab-target-hover');
+      }
     });
     document.querySelectorAll('.sf-bar-drop-hover').forEach((el) => {
       if (el !== exceptEl) el.classList.remove('sf-bar-drop-hover');
@@ -1583,32 +1607,95 @@
         return;
       }
 
-      const primaryParams = { focus: true };
-      if (subInfo.recordId) primaryParams.recordId = subInfo.recordId;
-      if (subInfo.url) primaryParams.url = subInfo.url;
-      if (subInfo.pageReference) primaryParams.pageReference = subInfo.pageReference;
+      // Clean the URL and pageReference so Salesforce doesn't force it back into parent workspace
+      let cleanUrl = subInfo.url || '';
+      if (cleanUrl) {
+        cleanUrl = cleanUrl
+          .replace(/[?&]ws=[^&#]*/g, '')
+          .replace(/\?&/, '?')
+          .replace(/[?&]$/, '');
+      }
+
+      let cleanPageRef = null;
+      if (subInfo.pageReference) {
+        try {
+          cleanPageRef = JSON.parse(JSON.stringify(subInfo.pageReference));
+          if (cleanPageRef.state) {
+            delete cleanPageRef.state.ws;
+          }
+        } catch (_) {}
+      }
 
       let newTabId = null;
+
+      // First attempt: try opening primary tab while subtab is still open
       try {
-        newTabId = await ws.openTab(primaryParams);
-      } catch (err) {
-        if (subInfo.url) {
-          newTabId = await ws.openTab({ url: subInfo.url, focus: true });
-        } else {
-          throw err;
+        if (cleanPageRef) {
+          newTabId = await ws.openTab({ pageReference: cleanPageRef, focus: true });
+        } else if (cleanUrl) {
+          newTabId = await ws.openTab({ url: cleanUrl, focus: true });
+        } else if (subInfo.recordId) {
+          newTabId = await ws.openTab({ recordId: subInfo.recordId, focus: true });
+        }
+      } catch (openErr) {
+        console.warn('[Salesforce Enhancer] Initial openTab error:', openErr);
+      }
+
+      // If openTab didn't return a new tab ID or returned the SAME subtab ID
+      // (Salesforce's tab deduplication returns the existing subtab if still open)
+      if (!newTabId || newTabId === sourceSubtabId) {
+        // Close the subtab so the record is freed from the workspace tab registry
+        await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
+
+        // Now open as top-level workspace tab
+        try {
+          if (cleanUrl) {
+            newTabId = await ws.openTab({ url: cleanUrl, focus: true });
+          } else if (cleanPageRef) {
+            newTabId = await ws.openTab({ pageReference: cleanPageRef, focus: true });
+          } else if (subInfo.recordId) {
+            newTabId = await ws.openTab({ recordId: subInfo.recordId, focus: true });
+          }
+        } catch (retryErr) {
+          console.warn('[Salesforce Enhancer] Post-close openTab error:', retryErr);
+        }
+      } else {
+        // Tab opened successfully as a separate tab; close original subtab
+        await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
+      }
+
+      // Fallback: If Workspace API openTab still failed (e.g. strict Console navigation rules),
+      // navigate natively using Aura force:navigateToURL or force:navigateToSObject
+      if (!newTabId && window.$A && typeof window.$A.get === 'function') {
+        if (cleanUrl) {
+          const urlEvt = window.$A.get('e.force:navigateToURL');
+          if (urlEvt) {
+            urlEvt.setParams({ url: cleanUrl });
+            urlEvt.fire();
+            showToast('↳ Promoted subtab to workspace tab');
+            return;
+          }
+        }
+        if (subInfo.recordId) {
+          const navEvt = window.$A.get('e.force:navigateToSObject');
+          if (navEvt) {
+            navEvt.setParams({ recordId: subInfo.recordId, slideDevName: 'detail' });
+            navEvt.fire();
+            showToast('↳ Promoted subtab to workspace tab');
+            return;
+          }
         }
       }
 
-      // If a new tab was opened and it's not the same subtab, close original subtab
-      if (newTabId && newTabId !== sourceSubtabId) {
-        await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
+      if (newTabId) {
         await ws.focusTab({ tabId: newTabId }).catch(() => {});
-        setTimeout(() => {
-          ws.focusTab({ tabId: newTabId }).catch(() => {});
+        setTimeout(async () => {
+          await ws.focusTab({ tabId: newTabId }).catch(() => {});
         }, 80);
+        showToast('↳ Promoted subtab to workspace tab');
+      } else {
+        showToast('Could not promote subtab');
       }
-
-      showToast('↳ Promoted subtab to workspace tab');
     } catch (err) {
       console.error('[Salesforce Enhancer] Failed to promote subtab:', err);
       showToast('Could not promote subtab');
@@ -1744,6 +1831,10 @@
         if (!tabId) return;
 
         const isSubtab = !!getSubtabBarContainer(li) || li.classList.contains('slds-sub-tabs__item');
+        const activeWsEl = document.querySelector(
+          '.navexConsoleTabContainer[aria-label="Workspaces"] li.tabItem.slds-is-active, .navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]) li.tabItem.slds-is-active'
+        );
+        const parentTabId = activeWsEl ? getTabIdFromElement(activeWsEl) : null;
         const a = li.querySelector('a.tabHeader, a[data-tabid]');
         const title = (a ? a.getAttribute('title') : null) || li.innerText?.trim() || 'Tab';
 
@@ -1751,6 +1842,7 @@
           isEnhancerTabDrag: true,
           tabId,
           isSubtab,
+          parentTabId: isSubtab ? parentTabId : null,
           title,
           sourceElement: li
         };
@@ -1788,11 +1880,8 @@
 
       const targetSubtabBar = getSubtabBarContainer(e.target);
       const targetTabLi = getPrimaryWorkspaceTabLi(e.target);
-      const targetWorkspaceBar = !targetSubtabBar && !targetTabLi ? e.target.closest(
-        '.navexConsoleTabContainer[aria-label="Workspaces"], .navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]), .navCenter.tabBarContainer'
-      ) : null;
 
-      // Drop zone 1: Active Workspace Subtab Bar (add tab into currently active workspace)
+      // Drop zone 1: Active Workspace Subtab Bar
       if (targetSubtabBar) {
         e.preventDefault();
         e.stopPropagation();
@@ -1803,17 +1892,50 @@
         return;
       }
 
-      // Drop zone 2: Individual Primary Workspace Tab (convert to subtab of this workspace)
-      if (targetTabLi) {
+      // If dragging a subtab:
+      if (activeTabDragState.isSubtab) {
+        // Dragging over an individual primary workspace tab
+        if (targetTabLi) {
+          const targetTabId = getTabIdFromElement(targetTabLi);
+          if (targetTabId && targetTabId !== activeTabDragState.tabId) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            e.dataTransfer.dropEffect = 'move';
+            clearTabDropHighlights(targetTabLi);
+            targetTabLi.classList.add('sf-tab-drop-hover');
+
+            if (activeTabDragState.parentTabId && targetTabId === activeTabDragState.parentTabId) {
+              // Dragging onto its OWN parent workspace tab -> PROMOTE!
+              targetTabLi.classList.add('sf-promote-hover');
+            } else {
+              // Dragging onto a DIFFERENT workspace tab -> MOVE TO WORKSPACE!
+              targetTabLi.classList.add('sf-subtab-target-hover');
+            }
+            return;
+          }
+        }
+
+        // Dragging over primary workspace tab bar / header / context bar
+        if (isPrimaryWorkspaceDropZone(e.target)) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          e.dataTransfer.dropEffect = 'move';
+          clearTabDropHighlights();
+          const container = e.target.closest('.navexConsoleTabContainer, .oneWorkspaceNavigationTabs, .tabBarContainer') || e.target;
+          container.classList.add('sf-bar-drop-hover');
+          return;
+        }
+      }
+
+      // Drop zone 2: Individual Primary Workspace Tab (when dragging an outer tab)
+      if (targetTabLi && !activeTabDragState.isSubtab) {
         const targetTabId = getTabIdFromElement(targetTabLi);
         if (targetTabId && targetTabId !== activeTabDragState.tabId) {
-          let inDropZone = true;
-          // If dragging an outer workspace tab, reserve a subtle edge margin so user can still reorder tabs
-          if (!activeTabDragState.isSubtab) {
-            const rect = targetTabLi.getBoundingClientRect();
-            const edgeMargin = Math.min(18, Math.max(12, Math.floor(rect.width * 0.15)));
-            inDropZone = (e.clientX >= rect.left + edgeMargin) && (e.clientX <= rect.right - edgeMargin);
-          }
+          const rect = targetTabLi.getBoundingClientRect();
+          const edgeMargin = Math.min(18, Math.max(12, Math.floor(rect.width * 0.15)));
+          const inDropZone = (e.clientX >= rect.left + edgeMargin) && (e.clientX <= rect.right - edgeMargin);
 
           if (inDropZone) {
             e.preventDefault();
@@ -1829,18 +1951,6 @@
             return;
           }
         }
-      }
-
-      // Drop zone 3: Primary Workspaces Tab Bar (promote subtab to primary workspace tab)
-      if (targetWorkspaceBar && activeTabDragState.isSubtab) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        e.dataTransfer.dropEffect = 'move';
-        clearTabDropHighlights();
-        const container = targetWorkspaceBar.closest('.navexConsoleTabContainer') || targetWorkspaceBar;
-        container.classList.add('sf-bar-drop-hover');
-        return;
       }
 
       clearTabDropHighlights();
@@ -1876,9 +1986,6 @@
 
         const targetSubtabBar = getSubtabBarContainer(e.target);
         const targetTabLi = getPrimaryWorkspaceTabLi(e.target);
-        const targetWorkspaceBar = !targetSubtabBar && !targetTabLi ? e.target.closest(
-          '.navexConsoleTabContainer[aria-label="Workspaces"], .navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]), .navCenter.tabBarContainer'
-        ) : null;
 
         // Drop into Active Workspace Subtab Bar
         if (targetSubtabBar) {
@@ -1901,34 +2008,54 @@
           if (!dragData.isSubtab) {
             await movePrimaryTabToSubtab(dragData.tabId, activeWsId);
           } else {
+            if (dragData.parentTabId && dragData.parentTabId === activeWsId) {
+              showToast('Subtab is already in this workspace');
+              return;
+            }
             await moveSubtabToWorkspace(dragData.tabId, activeWsId);
           }
           return;
         }
 
-        // Drop onto an individual Primary Workspace Tab
-        if (targetTabLi) {
+        // If dragging a Subtab:
+        if (dragData.isSubtab) {
+          if (targetTabLi) {
+            const targetTabId = getTabIdFromElement(targetTabLi);
+            if (targetTabId && targetTabId !== dragData.tabId) {
+              e.preventDefault();
+              e.stopPropagation();
+              e.stopImmediatePropagation();
+
+              if (dragData.parentTabId && targetTabId === dragData.parentTabId) {
+                // Dropped on own parent workspace tab -> PROMOTE!
+                await promoteSubtabToPrimary(dragData.tabId);
+                return;
+              } else {
+                // Dropped on different workspace tab -> MOVE TO THAT WORKSPACE!
+                await moveSubtabToWorkspace(dragData.tabId, targetTabId);
+                return;
+              }
+            }
+          }
+
+          if (isPrimaryWorkspaceDropZone(e.target)) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            await promoteSubtabToPrimary(dragData.tabId);
+            return;
+          }
+        }
+
+        // If dragging an Outer Primary Tab:
+        if (!dragData.isSubtab && targetTabLi) {
           const targetTabId = getTabIdFromElement(targetTabLi);
           if (!targetTabId || targetTabId === dragData.tabId) return;
 
           e.preventDefault();
           e.stopPropagation();
           e.stopImmediatePropagation();
-
-          if (!dragData.isSubtab) {
-            await movePrimaryTabToSubtab(dragData.tabId, targetTabId);
-          } else {
-            await moveSubtabToWorkspace(dragData.tabId, targetTabId);
-          }
-          return;
-        }
-
-        // Drop onto Workspaces Bar (promote subtab to primary)
-        if (targetWorkspaceBar && dragData.isSubtab) {
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-          await promoteSubtabToPrimary(dragData.tabId);
+          await movePrimaryTabToSubtab(dragData.tabId, targetTabId);
           return;
         }
       },
