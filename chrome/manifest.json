@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Salesforce Enhancer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Streamlined Salesforce productivity: Subtabs & workspace shortcuts, Quick Views list bookmarking, developer themes (Gruvbox, Solarized, Nord, Dracula), and custom loading animations.",
   "permissions": [
     "storage",

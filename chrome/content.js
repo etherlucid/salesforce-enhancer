@@ -1422,6 +1422,110 @@
           border-color: ${baseTheme.border} !important;
         }
 
+        /* Global Search & Einstein Search Assistant (Left results pane, Right tips/guidance pane, and dialog) */
+        force-search-assistant,
+        force-search-assistant-layout,
+        force-search-assistant-results,
+        force-search-natural-language-help,
+        force-search-instant-result-item,
+        .forceSearchAssistant,
+        .forceSearchAssistantLayout,
+        .forceSearchAssistantDialog,
+        .forceSearchInstantResults,
+        .forceSearchGlobalSearch,
+        .forceSearchNaturalLanguageHelp,
+        .forceSearchAssistantNaturalLanguage,
+        div[class*="searchAssistant" i],
+        div[class*="SearchAssistant" i],
+        div[class*="search-assistant" i],
+        div[class*="assistantResults" i],
+        div[class*="assistantPreview" i],
+        div[class*="assistantTips" i],
+        div[class*="assistantRight" i],
+        div[class*="searchTips" i],
+        div[class*="SearchTips" i],
+        div[class*="searchHelp" i],
+        div[class*="SearchHelp" i],
+        div[class*="naturalLanguage" i],
+        div[class*="NaturalLanguage" i],
+        div[class*="doMoreWithSearch" i],
+        div[class*="DoMoreWithSearch" i],
+        div[class*="instantResult" i],
+        div[class*="InstantResult" i],
+        div[class*="search-preview" i],
+        div[class*="search-tips" i],
+        div[class*="search-results" i],
+        div[class*="searchPreview" i],
+        div[class*="searchResults" i],
+        .search-results-pane,
+        .search-preview-pane,
+        .searchResultsPane,
+        .searchPreviewPane,
+        .slds-search-results,
+        .slds-search-assistant,
+        .results-pane,
+        .preview-pane {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
+
+        force-search-assistant-results .slds-listbox,
+        .forceSearchAssistantResults .slds-listbox,
+        div[class*="searchAssistantResults" i] .slds-listbox,
+        div[class*="searchAssistantResults" i] ul,
+        div[class*="searchAssistantResults" i] li,
+        div[class*="assistantResults" i] .slds-listbox,
+        div[class*="assistantResults" i] li {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+        }
+
+        force-search-assistant-results .slds-listbox__option:hover,
+        force-search-assistant-results .slds-listbox__option.slds-has-focus,
+        force-search-assistant-results .slds-listbox__option.slds-is-selected,
+        .forceSearchAssistantResults .slds-listbox__option:hover,
+        .forceSearchAssistantResults .slds-listbox__option.slds-has-focus,
+        .forceSearchAssistantResults .slds-listbox__option.slds-is-selected,
+        div[class*="searchAssistantResults" i] .slds-listbox__option:hover,
+        div[class*="searchAssistantResults" i] .slds-listbox__option.slds-has-focus,
+        div[class*="searchAssistantResults" i] .slds-listbox__option.slds-is-selected,
+        div[class*="searchAssistantResults" i] li:hover,
+        div[class*="assistantResults" i] li:hover {
+          background-color: ${baseTheme.surfaceHeader} !important;
+          color: ${baseTheme.text} !important;
+        }
+
+        force-search-natural-language-help *,
+        div[class*="naturalLanguage" i] *,
+        div[class*="searchTips" i] *,
+        div[class*="doMoreWithSearch" i] * {
+          border-color: ${baseTheme.border} !important;
+        }
+
+        force-search-natural-language-help .slds-text-heading_medium,
+        force-search-natural-language-help .slds-text-heading_small,
+        force-search-natural-language-help .slds-text-body_regular,
+        force-search-natural-language-help .slds-text-body_small,
+        force-search-natural-language-help p,
+        force-search-natural-language-help span,
+        force-search-natural-language-help h2,
+        force-search-natural-language-help h3,
+        div[class*="naturalLanguage" i] p,
+        div[class*="naturalLanguage" i] span,
+        div[class*="naturalLanguage" i] h2,
+        div[class*="naturalLanguage" i] h3,
+        div[class*="searchTips" i] p,
+        div[class*="searchTips" i] span,
+        div[class*="searchTips" i] h2,
+        div[class*="searchTips" i] h3,
+        div[class*="doMoreWithSearch" i] p,
+        div[class*="doMoreWithSearch" i] span,
+        div[class*="doMoreWithSearch" i] h2,
+        div[class*="doMoreWithSearch" i] h3 {
+          color: ${baseTheme.text} !important;
+        }
+
         /* Buttons & Badges */
         button.slds-button_neutral,
         .slds-button_neutral,

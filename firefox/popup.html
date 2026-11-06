@@ -22,7 +22,7 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
     body {
-      width: 400px;
+      width: 430px;
       min-height: 520px;
       max-height: 600px;
       background: var(--bg);
@@ -31,6 +31,7 @@
       line-height: 1.4;
       padding: 14px 16px;
       overflow-y: auto;
+      overflow-x: hidden;
     }
 
     /* Header */
@@ -177,14 +178,16 @@
     /* Developer Theme Grid */
     .themes-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 6px;
       margin-bottom: 8px;
+      width: 100%;
+      box-sizing: border-box;
     }
     .theme-chip {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       padding: 5px 6px;
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -194,6 +197,9 @@
       font-weight: 500;
       transition: all 0.15s ease;
       user-select: none;
+      min-width: 0;
+      box-sizing: border-box;
+      overflow: hidden;
     }
     .theme-chip:hover {
       border-color: #94a3b8;
@@ -223,9 +229,11 @@
       border: 1px solid rgba(0,0,0,0.15);
     }
     .theme-chip-name {
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      flex: 1;
     }
 
     /* Custom color input */
@@ -260,9 +268,11 @@
     /* Preset GIF Grid */
     .preset-gif-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 6px;
       margin-bottom: 8px;
+      width: 100%;
+      box-sizing: border-box;
     }
     .gif-card {
       border: 1px solid var(--border);
@@ -273,6 +283,9 @@
       background: #ffffff;
       transition: all 0.15s ease;
       user-select: none;
+      min-width: 0;
+      box-sizing: border-box;
+      overflow: hidden;
     }
     .gif-card:hover {
       border-color: #94a3b8;
@@ -438,7 +451,7 @@
       <img src="icons/icon-32.png" alt="Logo" class="header-logo">
       <span class="header-title">Salesforce Enhancer</span>
     </div>
-    <span class="header-badge">v1.0.0</span>
+    <span class="header-badge">v1.0.1</span>
   </div>
 
   <!-- Module 1: Subtabs & Workspace Shortcuts -->

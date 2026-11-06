@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Salesforce Enhancer
 // @namespace    https://etherlucid.local/
-// @version      1.0.0
-// @description  Streamlined Salesforce productivity: Subtabs & workspace shortcuts, Quick Views list bookmarking, developer themes (Gruvbox, Solarized, Nord, Dracula), and animated GIF loading indicators.
+// @version      1.0.1
+// @description  Streamlined Salesforce productivity: Subtabs & workspace shortcuts, Quick Views list bookmarking, developer themes (Gruvbox, Solarized, Nord, Dracula), and custom loading animations.
 // @match        https://*.lightning.force.com/*
 // @match        https://*.salesforce.com/*
 // @match        https://*.force.com/*
@@ -280,6 +280,7 @@
   let cachedWorkspaceAPI = null;
   let lastNonSearchParentTabId = null;
   let preClickParentTabId = null;
+  let preClickFocusedTabId = null;
   let preClickPrimaryTabIds = new Set();
 
   // State for catching LWC Global Search instant-dropdown clicks where recordId isn't in DOM attributes
@@ -454,6 +455,7 @@
       }
 
       if (focused && focused.tabId) {
+        preClickFocusedTabId = focused.tabId;
         const parentId = focused.isSubtab ? focused.parentTabId : focused.tabId;
         preClickParentTabId = parentId;
         if (!isNonRecordHostTab(focused)) {
@@ -542,7 +544,7 @@
 
     try {
       const ws = await getWorkspaceAPI();
-      let parentTabId = (await findTargetParentTabId(ws, preferPinned)) || explicitParentTabId;
+      let parentTabId = explicitParentTabId || (await findTargetParentTabId(ws, preferPinned));
       if (!parentTabId) {
         // If there is no parent tab capable of hosting subtabs (e.g. currently viewing a List View or Search),
         // route directly into ws.openTab(). Salesforce Console Navigation Manager will automatically open or locate
@@ -581,7 +583,10 @@
             ws.focusTab({ tabId: newSubtabId }).catch(() => {});
           }, 80);
         } else if (openInBackground && ws.focusTab) {
-          await ws.focusTab({ tabId: parentTabId }).catch(() => {});
+          const tabToPreserve = preClickFocusedTabId || explicitParentTabId;
+          if (tabToPreserve) {
+            await ws.focusTab({ tabId: tabToPreserve }).catch(() => {});
+          }
         }
         showToast(openInBackground ? '↳ Opened in background subtab' : '↳ Opened in subtab');
         return true;
@@ -597,7 +602,10 @@
               if (!openInBackground && fallbackSubtabId && ws.focusTab) {
                 await ws.focusTab({ tabId: fallbackSubtabId }).catch(() => {});
               } else if (openInBackground && ws.focusTab) {
-                await ws.focusTab({ tabId: fallbackParentId }).catch(() => {});
+                const tabToPreserve = preClickFocusedTabId || explicitParentTabId;
+                if (tabToPreserve) {
+                  await ws.focusTab({ tabId: tabToPreserve }).catch(() => {});
+                }
               }
               showToast(openInBackground ? '↳ Opened in background subtab' : '↳ Opened in workspace subtab');
               return true;
@@ -617,10 +625,13 @@
 
           const newTabId = await ws.openTab(primaryParams);
           if (newTabId) {
-            if (openInBackground && ws.focusTab && parentTabId) {
-              setTimeout(() => {
-                ws.focusTab({ tabId: parentTabId }).catch(() => {});
-              }, 120);
+            if (openInBackground && ws.focusTab) {
+              const tabToPreserve = preClickFocusedTabId || explicitParentTabId;
+              if (tabToPreserve) {
+                setTimeout(() => {
+                  ws.focusTab({ tabId: tabToPreserve }).catch(() => {});
+                }, 120);
+              }
             } else if (!openInBackground && ws.focusTab) {
               await ws.focusTab({ tabId: newTabId }).catch(() => {});
               // If Salesforce opened the Account workspace tab, ensure the Case subtab inside it is created and focused!
@@ -818,6 +829,14 @@
         }
       }
 
+      const targetSel = (node.dataset && node.dataset.targetSelectionName) || (node.getAttribute ? node.getAttribute('data-target-selection-name') : null);
+      if (targetSel && typeof targetSel === 'string') {
+        const m = targetSel.match(/([a-zA-Z0-9]{15,18})/);
+        if (m && SF_ID_REGEX.test(m[1])) {
+          return { recordId: m[1] };
+        }
+      }
+
       if (node.dataset) {
         for (const key of ['recordid', 'recordId', 'id', 'targetId', 'value']) {
           const val = node.dataset[key];
@@ -918,10 +937,12 @@
     disarmNavigationIntercept();
 
     const parentTabId = preClickParentTabId || lastNonSearchParentTabId;
+    const focusedTabId = preClickFocusedTabId;
     const knownPrimaryTabs = new Set(preClickPrimaryTabIds);
 
     const state = {
       parentTabId,
+      focusedTabId,
       openInBackground,
       preferPinned,
       knownPrimaryTabs,
@@ -956,8 +977,8 @@
 
           if (hasSubtabs) {
             disarmNavigationIntercept();
-            if (state.openInBackground && state.parentTabId && ws.focusTab) {
-              await ws.focusTab({ tabId: state.parentTabId }).catch(() => {});
+            if (state.openInBackground && state.focusedTabId && ws.focusTab) {
+              await ws.focusTab({ tabId: state.focusedTabId }).catch(() => {});
             } else if (!state.openInBackground && ws.focusTab) {
               await ws.focusTab({ tabId: newPrimaryTab.tabId }).catch(() => {});
               const lastSub = freshInfo?.subtabs?.[freshInfo.subtabs.length - 1] || tabInfo?.subtabs?.[tabInfo.subtabs.length - 1];
@@ -987,13 +1008,21 @@
             explicitParentTabId: state.preferPinned ? null : state.parentTabId
           });
 
-          // ONLY close the new primary tab if openTargetAsSubtab successfully converted it to a subtab!
-          // But NEVER close it if it's the Account workspace tab that opened for this record!
-          if (success) {
-            const currentTabs = (await ws.getAllTabInfo()) || [];
-            const stillExists = currentTabs.find((t) => t.tabId === newPrimaryTab.tabId);
-            if (stillExists && (!Array.isArray(stillExists.subtabs) || stillExists.subtabs.length === 0)) {
-              await ws.closeTab({ tabId: newPrimaryTab.tabId }).catch(() => {});
+          // ONLY close the new primary tab if it was successfully attached as a subtab under parentTabId!
+          // NEVER close it if it's the parent Account workspace tab that opened for this record.
+          if (success && state.parentTabId && newPrimaryTab.tabId !== state.parentTabId) {
+            await new Promise((r) => setTimeout(r, 100));
+            const parentInfo = await ws.getTabInfo({ tabId: state.parentTabId }).catch(() => null);
+            const isUnderParent = parentInfo && Array.isArray(parentInfo.subtabs) && parentInfo.subtabs.some(
+              (s) => (target.recordId && s.recordId === target.recordId) ||
+                     (target.url && s.url && s.url.includes(target.url))
+            );
+            if (isUnderParent) {
+              const currentTabs = (await ws.getAllTabInfo()) || [];
+              const stillExists = currentTabs.find((t) => t.tabId === newPrimaryTab.tabId);
+              if (stillExists && (!Array.isArray(stillExists.subtabs) || stillExists.subtabs.length === 0)) {
+                await ws.closeTab({ tabId: newPrimaryTab.tabId }).catch(() => {});
+              }
             }
           }
         }
@@ -2475,6 +2504,110 @@
             background-color: ${baseTheme.surfaceHeader} !important;
             color: ${baseTheme.text} !important;
             border-color: ${baseTheme.border} !important;
+          }
+
+          /* Global Search & Einstein Search Assistant (Left results pane, Right tips/guidance pane, and dialog) */
+          force-search-assistant,
+          force-search-assistant-layout,
+          force-search-assistant-results,
+          force-search-natural-language-help,
+          force-search-instant-result-item,
+          .forceSearchAssistant,
+          .forceSearchAssistantLayout,
+          .forceSearchAssistantDialog,
+          .forceSearchInstantResults,
+          .forceSearchGlobalSearch,
+          .forceSearchNaturalLanguageHelp,
+          .forceSearchAssistantNaturalLanguage,
+          div[class*="searchAssistant" i],
+          div[class*="SearchAssistant" i],
+          div[class*="search-assistant" i],
+          div[class*="assistantResults" i],
+          div[class*="assistantPreview" i],
+          div[class*="assistantTips" i],
+          div[class*="assistantRight" i],
+          div[class*="searchTips" i],
+          div[class*="SearchTips" i],
+          div[class*="searchHelp" i],
+          div[class*="SearchHelp" i],
+          div[class*="naturalLanguage" i],
+          div[class*="NaturalLanguage" i],
+          div[class*="doMoreWithSearch" i],
+          div[class*="DoMoreWithSearch" i],
+          div[class*="instantResult" i],
+          div[class*="InstantResult" i],
+          div[class*="search-preview" i],
+          div[class*="search-tips" i],
+          div[class*="search-results" i],
+          div[class*="searchPreview" i],
+          div[class*="searchResults" i],
+          .search-results-pane,
+          .search-preview-pane,
+          .searchResultsPane,
+          .searchPreviewPane,
+          .slds-search-results,
+          .slds-search-assistant,
+          .results-pane,
+          .preview-pane {
+            background-color: ${baseTheme.surface} !important;
+            color: ${baseTheme.text} !important;
+            border-color: ${baseTheme.border} !important;
+          }
+
+          force-search-assistant-results .slds-listbox,
+          .forceSearchAssistantResults .slds-listbox,
+          div[class*="searchAssistantResults" i] .slds-listbox,
+          div[class*="searchAssistantResults" i] ul,
+          div[class*="searchAssistantResults" i] li,
+          div[class*="assistantResults" i] .slds-listbox,
+          div[class*="assistantResults" i] li {
+            background-color: ${baseTheme.surface} !important;
+            color: ${baseTheme.text} !important;
+          }
+
+          force-search-assistant-results .slds-listbox__option:hover,
+          force-search-assistant-results .slds-listbox__option.slds-has-focus,
+          force-search-assistant-results .slds-listbox__option.slds-is-selected,
+          .forceSearchAssistantResults .slds-listbox__option:hover,
+          .forceSearchAssistantResults .slds-listbox__option.slds-has-focus,
+          .forceSearchAssistantResults .slds-listbox__option.slds-is-selected,
+          div[class*="searchAssistantResults" i] .slds-listbox__option:hover,
+          div[class*="searchAssistantResults" i] .slds-listbox__option.slds-has-focus,
+          div[class*="searchAssistantResults" i] .slds-listbox__option.slds-is-selected,
+          div[class*="searchAssistantResults" i] li:hover,
+          div[class*="assistantResults" i] li:hover {
+            background-color: ${baseTheme.surfaceHeader} !important;
+            color: ${baseTheme.text} !important;
+          }
+
+          force-search-natural-language-help *,
+          div[class*="naturalLanguage" i] *,
+          div[class*="searchTips" i] *,
+          div[class*="doMoreWithSearch" i] * {
+            border-color: ${baseTheme.border} !important;
+          }
+
+          force-search-natural-language-help .slds-text-heading_medium,
+          force-search-natural-language-help .slds-text-heading_small,
+          force-search-natural-language-help .slds-text-body_regular,
+          force-search-natural-language-help .slds-text-body_small,
+          force-search-natural-language-help p,
+          force-search-natural-language-help span,
+          force-search-natural-language-help h2,
+          force-search-natural-language-help h3,
+          div[class*="naturalLanguage" i] p,
+          div[class*="naturalLanguage" i] span,
+          div[class*="naturalLanguage" i] h2,
+          div[class*="naturalLanguage" i] h3,
+          div[class*="searchTips" i] p,
+          div[class*="searchTips" i] span,
+          div[class*="searchTips" i] h2,
+          div[class*="searchTips" i] h3,
+          div[class*="doMoreWithSearch" i] p,
+          div[class*="doMoreWithSearch" i] span,
+          div[class*="doMoreWithSearch" i] h2,
+          div[class*="doMoreWithSearch" i] h3 {
+            color: ${baseTheme.text} !important;
           }
 
           /* Buttons & Badges */
@@ -5144,7 +5277,7 @@
       checkAndInjectQuickViews();
     }
 
-    // Observer on body mutations ignoring internal updates
+    // Observer on DOM mutations ignoring internal updates
     let checkScheduled = false;
     const dropdownObserver = new MutationObserver((mutations) => {
       if (isInternalDOMUpdate) return;
@@ -5163,7 +5296,24 @@
         checkAndInjectQuickViews();
       });
     });
-    dropdownObserver.observe(document.body, { childList: true, subtree: true });
+
+    const targetToObserve = document.documentElement || document.body;
+    if (targetToObserve) {
+      try {
+        dropdownObserver.observe(targetToObserve, { childList: true, subtree: true });
+      } catch (_) {}
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        const bodyTarget = document.body || document.documentElement;
+        if (bodyTarget) {
+          try {
+            dropdownObserver.observe(bodyTarget, { childList: true, subtree: true });
+          } catch (_) {}
+        }
+        checkAndInjectQuickViews();
+      });
+    }
 
     // Click & focus fallbacks for immediate responsiveness
     window.addEventListener(
