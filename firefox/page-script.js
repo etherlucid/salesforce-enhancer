@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salesforce Enhancer
 // @namespace    https://etherlucid.local/
-// @version      1.0.1
+// @version      1.1.0
 // @description  Streamlined Salesforce productivity: Subtabs & workspace shortcuts, Quick Views list bookmarking, developer themes (Gruvbox, Solarized, Nord, Dracula), and custom loading animations.
 // @match        https://*.lightning.force.com/*
 // @match        https://*.salesforce.com/*
@@ -200,7 +200,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    version: '1.0.0',
+    version: '1.1.0',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -227,7 +227,7 @@
     }
 
     const res = {
-      version: '1.0.0',
+      version: '1.1.0',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
@@ -1160,6 +1160,7 @@
   }
 
   if (isTopWindow) {
+    initTabDragAndDrop();
     const initInterval = setInterval(() => {
       if (window.$A && typeof window.$A.createComponent === 'function') {
         installAuraEventHook();
@@ -1293,6 +1294,480 @@
     },
     true
   );
+
+  /* ==========================================================================
+     TAB DRAG & DROP MODULE (v1.1.0)
+     Bidirectional workspace / subtab drag-and-drop:
+     - Drag a Primary Workspace Tab into another Primary Tab -> converts into a Subtab
+     - Drag a Subtab out onto the Primary Tab Bar -> promotes into an independent Workspace Tab
+     - Drag a Subtab into another Primary Tab -> moves Subtab into that Workspace
+     ========================================================================== */
+
+  let activeTabDragState = null;
+
+  function ensureTabDragStyles() {
+    if (!isTopWindow) return;
+    if (document.getElementById('sf-tab-drag-style')) return;
+
+    const styleEl = document.createElement('style');
+    styleEl.id = 'sf-tab-drag-style';
+    styleEl.textContent = `
+      li.tabItem.sf-tab-dragging {
+        opacity: 0.45 !important;
+        cursor: grabbing !important;
+      }
+      li.tabItem.sf-tab-draggable {
+        cursor: grab;
+      }
+      li.tabItem.sf-tab-drop-hover {
+        outline: 2px dashed var(--sf-theme-accent, #0176d3) !important;
+        outline-offset: -2px !important;
+        background-color: var(--sf-theme-accent-tint, rgba(1, 118, 211, 0.15)) !important;
+        border-radius: 4px !important;
+        position: relative !important;
+        transition: background-color 0.12s ease, outline 0.12s ease !important;
+      }
+      li.tabItem.sf-tab-drop-hover::after {
+        content: "↳ Drop to convert to subtab";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--sf-theme-accent, #0176d3);
+        color: var(--sf-theme-accent-contrast, #ffffff);
+        font-size: 11px;
+        font-weight: 600;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        padding: 3px 8px;
+        border-radius: 4px;
+        white-space: nowrap;
+        pointer-events: none;
+        z-index: 999999;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      }
+      .navexConsoleTabContainer[aria-label="Workspaces"].sf-bar-drop-hover,
+      .navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]).sf-bar-drop-hover,
+      .navCenter.tabBarContainer.sf-bar-drop-hover {
+        outline: 2px dashed var(--sf-theme-accent, #0176d3) !important;
+        outline-offset: -2px !important;
+        background-color: var(--sf-theme-accent-tint, rgba(1, 118, 211, 0.12)) !important;
+        border-radius: 4px !important;
+        position: relative !important;
+        transition: background-color 0.12s ease, outline 0.12s ease !important;
+      }
+      .navexConsoleTabContainer[aria-label="Workspaces"].sf-bar-drop-hover::after,
+      .navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]).sf-bar-drop-hover::after,
+      .navCenter.tabBarContainer.sf-bar-drop-hover::after {
+        content: "↳ Drop to promote to workspace tab";
+        position: absolute;
+        top: 100%;
+        left: 20px;
+        background: var(--sf-theme-accent, #0176d3);
+        color: var(--sf-theme-accent-contrast, #ffffff);
+        font-size: 11px;
+        font-weight: 600;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        padding: 3px 8px;
+        border-radius: 4px;
+        white-space: nowrap;
+        pointer-events: none;
+        z-index: 999999;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      }
+    `;
+    (document.head || document.documentElement).appendChild(styleEl);
+  }
+
+  function getTabIdFromElement(el) {
+    if (!el) return null;
+    const direct = el.getAttribute?.('data-tabid') || el.dataset?.tabid;
+    if (direct) return direct;
+    const a = el.closest?.('li.tabItem')?.querySelector('a[data-tabid], a.tabHeader');
+    if (a) return a.getAttribute('data-tabid') || a.dataset?.tabid;
+    const anc = el.closest?.('[data-tabid]');
+    return anc ? (anc.getAttribute('data-tabid') || anc.dataset?.tabid) : null;
+  }
+
+  function clearTabDropHighlights(exceptEl = null) {
+    document.querySelectorAll('.sf-tab-drop-hover').forEach((el) => {
+      if (el !== exceptEl) el.classList.remove('sf-tab-drop-hover');
+    });
+    document.querySelectorAll('.sf-bar-drop-hover').forEach((el) => {
+      if (el !== exceptEl) el.classList.remove('sf-bar-drop-hover');
+    });
+  }
+
+  /**
+   * Move a Primary Workspace Tab into another Primary Tab as a Subtab
+   */
+  async function movePrimaryTabToSubtab(sourceTabId, targetTabId) {
+    if (!sourceTabId || !targetTabId || sourceTabId === targetTabId) return;
+    showToast('Moving workspace into subtab...');
+    isInternalWorkspaceCall = true;
+    try {
+      const ws = await getWorkspaceAPI();
+      const [sourceInfo, targetInfo] = await Promise.all([
+        ws.getTabInfo({ tabId: sourceTabId }).catch(() => null),
+        ws.getTabInfo({ tabId: targetTabId }).catch(() => null)
+      ]);
+
+      if (!sourceInfo || !targetInfo) {
+        showToast('Tab information unavailable');
+        return;
+      }
+
+      if (isNonRecordHostTab(targetInfo)) {
+        showToast('List Views and Search tabs cannot host subtabs');
+        return;
+      }
+
+      // Open source tab as subtab of targetTabId
+      const subParams = {
+        parentTabId: targetTabId,
+        focus: true
+      };
+      if (sourceInfo.recordId) subParams.recordId = sourceInfo.recordId;
+      if (sourceInfo.url) subParams.url = sourceInfo.url;
+      if (sourceInfo.pageReference) subParams.pageReference = sourceInfo.pageReference;
+
+      let newSubtabId = null;
+      try {
+        newSubtabId = await ws.openSubtab(subParams);
+      } catch (err) {
+        if (sourceInfo.url) {
+          newSubtabId = await ws.openSubtab({ parentTabId: targetTabId, url: sourceInfo.url, focus: true });
+        } else {
+          throw err;
+        }
+      }
+
+      // If source tab had subtabs of its own, transfer them too!
+      if (Array.isArray(sourceInfo.subtabs) && sourceInfo.subtabs.length > 0) {
+        for (const st of sourceInfo.subtabs) {
+          if (st.tabId !== sourceTabId && (st.recordId || st.url)) {
+            await ws.openSubtab({
+              parentTabId: targetTabId,
+              recordId: st.recordId,
+              url: st.url,
+              focus: false
+            }).catch(() => {});
+          }
+        }
+      }
+
+      // Close the original source workspace tab
+      await ws.closeTab({ tabId: sourceTabId }).catch(() => {});
+
+      // Focus target parent workspace tab and newly opened subtab
+      await ws.focusTab({ tabId: targetTabId }).catch(() => {});
+      if (newSubtabId) {
+        await ws.focusTab({ tabId: newSubtabId }).catch(() => {});
+        setTimeout(async () => {
+          await ws.focusTab({ tabId: targetTabId }).catch(() => {});
+          await ws.focusTab({ tabId: newSubtabId }).catch(() => {});
+        }, 80);
+      }
+
+      showToast('↳ Moved tab into workspace as subtab');
+    } catch (err) {
+      console.error('[Salesforce Enhancer] Failed to move tab to subtab:', err);
+      showToast('Could not convert to subtab');
+    } finally {
+      isInternalWorkspaceCall = false;
+    }
+  }
+
+  /**
+   * Promote a Subtab to become a Primary Workspace Tab
+   */
+  async function promoteSubtabToPrimary(sourceSubtabId) {
+    if (!sourceSubtabId) return;
+    showToast('Promoting subtab to workspace...');
+    isInternalWorkspaceCall = true;
+    try {
+      const ws = await getWorkspaceAPI();
+      const subInfo = await ws.getTabInfo({ tabId: sourceSubtabId }).catch(() => null);
+      if (!subInfo) {
+        showToast('Subtab information unavailable');
+        return;
+      }
+
+      const primaryParams = { focus: true };
+      if (subInfo.recordId) primaryParams.recordId = subInfo.recordId;
+      if (subInfo.url) primaryParams.url = subInfo.url;
+      if (subInfo.pageReference) primaryParams.pageReference = subInfo.pageReference;
+
+      let newTabId = null;
+      try {
+        newTabId = await ws.openTab(primaryParams);
+      } catch (err) {
+        if (subInfo.url) {
+          newTabId = await ws.openTab({ url: subInfo.url, focus: true });
+        } else {
+          throw err;
+        }
+      }
+
+      // If a new tab was opened and it's not the same subtab, close original subtab
+      if (newTabId && newTabId !== sourceSubtabId) {
+        await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
+        await ws.focusTab({ tabId: newTabId }).catch(() => {});
+        setTimeout(() => {
+          ws.focusTab({ tabId: newTabId }).catch(() => {});
+        }, 80);
+      }
+
+      showToast('↳ Promoted subtab to workspace tab');
+    } catch (err) {
+      console.error('[Salesforce Enhancer] Failed to promote subtab:', err);
+      showToast('Could not promote subtab');
+    } finally {
+      isInternalWorkspaceCall = false;
+    }
+  }
+
+  /**
+   * Move a Subtab from its current workspace into a different Primary Workspace Tab
+   */
+  async function moveSubtabToWorkspace(sourceSubtabId, targetParentTabId) {
+    if (!sourceSubtabId || !targetParentTabId) return;
+    showToast('Moving subtab to workspace...');
+    isInternalWorkspaceCall = true;
+    try {
+      const ws = await getWorkspaceAPI();
+      const [subInfo, targetInfo] = await Promise.all([
+        ws.getTabInfo({ tabId: sourceSubtabId }).catch(() => null),
+        ws.getTabInfo({ tabId: targetParentTabId }).catch(() => null)
+      ]);
+
+      if (!subInfo || !targetInfo) {
+        showToast('Tab information unavailable');
+        return;
+      }
+
+      if (subInfo.parentTabId === targetParentTabId) {
+        showToast('Subtab is already in this workspace');
+        return;
+      }
+
+      if (isNonRecordHostTab(targetInfo)) {
+        showToast('List Views and Search tabs cannot host subtabs');
+        return;
+      }
+
+      const subParams = {
+        parentTabId: targetParentTabId,
+        focus: true
+      };
+      if (subInfo.recordId) subParams.recordId = subInfo.recordId;
+      if (subInfo.url) subParams.url = subInfo.url;
+      if (subInfo.pageReference) subParams.pageReference = subInfo.pageReference;
+
+      let newSubtabId = null;
+      try {
+        newSubtabId = await ws.openSubtab(subParams);
+      } catch (err) {
+        if (subInfo.url) {
+          newSubtabId = await ws.openSubtab({ parentTabId: targetParentTabId, url: subInfo.url, focus: true });
+        } else {
+          throw err;
+        }
+      }
+
+      // Close old subtab
+      await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
+
+      // Focus target workspace and new subtab
+      await ws.focusTab({ tabId: targetParentTabId }).catch(() => {});
+      if (newSubtabId) {
+        await ws.focusTab({ tabId: newSubtabId }).catch(() => {});
+        setTimeout(async () => {
+          await ws.focusTab({ tabId: targetParentTabId }).catch(() => {});
+          await ws.focusTab({ tabId: newSubtabId }).catch(() => {});
+        }, 80);
+      }
+
+      showToast('↳ Moved subtab to workspace');
+    } catch (err) {
+      console.error('[Salesforce Enhancer] Failed to move subtab:', err);
+      showToast('Could not move subtab');
+    } finally {
+      isInternalWorkspaceCall = false;
+    }
+  }
+
+  function initTabDragAndDrop() {
+    if (!isTopWindow) return;
+    ensureTabDragStyles();
+
+    // Enable draggable on hover
+    document.addEventListener(
+      'mouseover',
+      (e) => {
+        const _modSettings = getEnhancerSettings();
+        if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
+
+        const li = e.target.closest('li.tabItem, .navexConsoleTabItem');
+        if (!li) return;
+
+        // Never make buttons draggable
+        if (e.target.closest('button, .close, .slds-button')) {
+          if (li.getAttribute('draggable') === 'true') {
+            li.setAttribute('draggable', 'false');
+          }
+          return;
+        }
+
+        if (li.getAttribute('draggable') !== 'true') {
+          li.setAttribute('draggable', 'true');
+          li.classList.add('sf-tab-draggable');
+        }
+      },
+      true
+    );
+
+    // Drag start
+    document.addEventListener(
+      'dragstart',
+      (e) => {
+        const _modSettings = getEnhancerSettings();
+        if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
+
+        const li = e.target.closest('li.tabItem, .navexConsoleTabItem');
+        if (!li) return;
+
+        // Disallow drag if initiated from close button or dropdown actions
+        if (e.target.closest('button, .close, .slds-button, input, textarea')) {
+          e.preventDefault();
+          return;
+        }
+
+        const a = li.querySelector('a.tabHeader[data-tabid], a[data-tabid]');
+        const tabId = a ? (a.getAttribute('data-tabid') || a.dataset?.tabid) : (li.getAttribute('data-tabid') || li.dataset?.tabid);
+        if (!tabId) return;
+
+        const isSubtab = !!li.closest('.navexConsoleTabContainer[aria-label="Active Workspace Subtabs"]') ||
+                         li.classList.contains('slds-sub-tabs__item');
+        const title = (a ? a.getAttribute('title') : null) || li.innerText?.trim() || 'Tab';
+
+        activeTabDragState = {
+          isEnhancerTabDrag: true,
+          tabId,
+          isSubtab,
+          title,
+          sourceElement: li
+        };
+
+        try {
+          e.dataTransfer.setData('application/json', JSON.stringify(activeTabDragState));
+          e.dataTransfer.setData('text/plain', `sf-tab:${tabId}`);
+          e.dataTransfer.effectAllowed = 'move';
+        } catch (_) {}
+
+        li.classList.add('sf-tab-dragging');
+        document.documentElement.classList.add('sf-tab-drag-active');
+      },
+      true
+    );
+
+    // Drag end
+    document.addEventListener(
+      'dragend',
+      (e) => {
+        if (activeTabDragState && activeTabDragState.sourceElement) {
+          activeTabDragState.sourceElement.classList.remove('sf-tab-dragging');
+        }
+        document.querySelectorAll('.sf-tab-dragging').forEach((el) => el.classList.remove('sf-tab-dragging'));
+        clearTabDropHighlights();
+        document.documentElement.classList.remove('sf-tab-drag-active');
+        activeTabDragState = null;
+      },
+      true
+    );
+
+    // Drag over
+    document.addEventListener(
+      'dragover',
+      (e) => {
+        if (!activeTabDragState || !activeTabDragState.isEnhancerTabDrag) return;
+
+        const targetTabLi = e.target.closest('.navexConsoleTabContainer[aria-label="Workspaces"] li.tabItem, .navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]) li.tabItem');
+        const targetTabBar = e.target.closest('.navexConsoleTabContainer[aria-label="Workspaces"], .navCenter.tabBarContainer');
+
+        if (targetTabLi) {
+          const targetA = targetTabLi.querySelector('a.tabHeader[data-tabid], a[data-tabid]');
+          const targetTabId = targetA ? (targetA.getAttribute('data-tabid') || targetA.dataset?.tabid) : null;
+
+          if (targetTabId && targetTabId !== activeTabDragState.tabId) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            clearTabDropHighlights(targetTabLi);
+            targetTabLi.classList.add('sf-tab-drop-hover');
+            return;
+          }
+        } else if (targetTabBar && activeTabDragState.isSubtab) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          clearTabDropHighlights();
+          const container = targetTabBar.closest('.navexConsoleTabContainer') || targetTabBar;
+          container.classList.add('sf-bar-drop-hover');
+          return;
+        }
+
+        clearTabDropHighlights();
+      },
+      true
+    );
+
+    // Drag leave
+    document.addEventListener(
+      'dragleave',
+      (e) => {
+        if (!e.relatedTarget || !document.contains(e.relatedTarget)) {
+          clearTabDropHighlights();
+        }
+      },
+      true
+    );
+
+    // Drop
+    document.addEventListener(
+      'drop',
+      async (e) => {
+        if (!activeTabDragState || !activeTabDragState.isEnhancerTabDrag) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const dragData = { ...activeTabDragState };
+        clearTabDropHighlights();
+        if (activeTabDragState.sourceElement) {
+          activeTabDragState.sourceElement.classList.remove('sf-tab-dragging');
+        }
+        document.documentElement.classList.remove('sf-tab-drag-active');
+        activeTabDragState = null;
+
+        const targetTabLi = e.target.closest('.navexConsoleTabContainer[aria-label="Workspaces"] li.tabItem, .navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]) li.tabItem');
+        const targetTabBar = e.target.closest('.navexConsoleTabContainer[aria-label="Workspaces"], .navCenter.tabBarContainer');
+
+        if (targetTabLi) {
+          const targetA = targetTabLi.querySelector('a.tabHeader[data-tabid], a[data-tabid]');
+          const targetTabId = targetA ? (targetA.getAttribute('data-tabid') || targetA.dataset?.tabid) : null;
+
+          if (!targetTabId || targetTabId === dragData.tabId) return;
+
+          if (!dragData.isSubtab) {
+            await movePrimaryTabToSubtab(dragData.tabId, targetTabId);
+          } else {
+            await moveSubtabToWorkspace(dragData.tabId, targetTabId);
+          }
+        } else if (targetTabBar && dragData.isSubtab) {
+          await promoteSubtabToPrimary(dragData.tabId);
+        }
+      },
+      true
+    );
+  }
 
   /* ==========================================================================
      QUICK VIEWS & APPEARANCE MODULE

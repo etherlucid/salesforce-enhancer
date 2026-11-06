@@ -82,7 +82,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    version: '1.0.0',
+    version: '1.1.0',
     modules: {
       subtabs: true,
       quickViews: true,
