@@ -1,14 +1,12 @@
 {
-  "manifest_version": 3,
+  "manifest_version": 2,
   "name": "Salesforce Enhancer",
   "version": "1.0.1",
   "description": "Streamlined Salesforce productivity: Subtabs & workspace shortcuts, Quick Views list bookmarking, developer themes (Gruvbox, Solarized, Nord, Dracula), and custom loading animations.",
   "permissions": [
     "storage",
     "unlimitedStorage",
-    "tabs"
-  ],
-  "host_permissions": [
+    "tabs",
     "https://*.lightning.force.com/*",
     "https://*.salesforce.com/*",
     "https://*.force.com/*",
@@ -22,14 +20,16 @@
     "https://*.my.site.com/*"
   ],
   "icons": {
+    "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
-  "action": {
+  "browser_action": {
     "default_title": "Salesforce Enhancer",
     "default_popup": "popup.html",
     "default_icon": {
+      "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",
       "48": "icons/icon-48.png"
     }
@@ -57,31 +57,15 @@
     }
   ],
   "web_accessible_resources": [
-    {
-      "resources": [
-        "page-script.js",
-        "uploader.html",
-        "uploader.js",
-        "parrot.gif",
-        "nyan.gif",
-        "icons/icon-32.png",
-        "icons/icon-48.png",
-        "icons/icon-128.png"
-      ],
-      "matches": [
-        "https://*.lightning.force.com/*",
-        "https://*.salesforce.com/*",
-        "https://*.force.com/*",
-        "https://*.visualforce.com/*",
-        "https://*.salesforce-setup.com/*",
-        "https://*.salesforce-communities.com/*",
-        "https://*.site.com/*",
-        "https://*.cloudforce.com/*",
-        "https://*.salesforce-experience.com/*",
-        "https://*.my.salesforce.com/*",
-        "https://*.my.site.com/*"
-      ]
-    }
+    "page-script.js",
+    "uploader.html",
+    "uploader.js",
+    "parrot.gif",
+    "nyan.gif",
+    "icons/icon-16.png",
+    "icons/icon-32.png",
+    "icons/icon-48.png",
+    "icons/icon-128.png"
   ],
   "browser_specific_settings": {
     "gecko": {

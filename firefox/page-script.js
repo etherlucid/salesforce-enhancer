@@ -5448,8 +5448,10 @@
         if (!el || seenElements.has(el)) return;
         seenElements.add(el);
 
-        if (el.closest('.sf-quick-views-wrapper, .sf-pinned-section-wrapper')) return;
-        if (headerEl && (el === headerEl || el.contains(headerEl))) return;
+        if (el.closest && (el.closest('.sf-quick-views-wrapper, .sf-pinned-section-wrapper'))) return;
+        if (headerEl && (el === headerEl || el.contains(headerEl) || headerEl.contains(el))) return;
+        if (el.querySelector && el.querySelector('.slds-listbox__option-header, [data-value*="header"]')) return;
+        if (el.classList && el.classList.contains('slds-listbox__option-header')) return;
 
         let rawTxt = (el.innerText || el.textContent || '').trim();
         const sr = el.shadowRoot || el._sfShadowRoot;
@@ -5461,14 +5463,22 @@
         let label = rawTxt.split('\n')[0].trim();
         label = label.replace(/[✕▲▼].*$/, '').trim();
 
+        const lowerLabel = label.toLowerCase();
         if (
           !label ||
-          label === 'Recent List Views' ||
-          label === 'QUICK VIEWS' ||
-          label.startsWith('QUICK VIEWS') ||
-          label.startsWith('PINNED VIEWS') ||
-          label.startsWith('New ') ||
-          label.includes('New List View') ||
+          lowerLabel === 'recent list views' ||
+          lowerLabel === 'recent views' ||
+          lowerLabel === 'all other lists' ||
+          lowerLabel === 'other lists' ||
+          lowerLabel === 'other list views' ||
+          lowerLabel === 'pinned list view' ||
+          lowerLabel === 'pinned list views' ||
+          lowerLabel.includes('other lists') ||
+          lowerLabel.includes('recent list views') ||
+          lowerLabel.startsWith('quick views') ||
+          lowerLabel.startsWith('pinned views') ||
+          lowerLabel.startsWith('new ') ||
+          lowerLabel.includes('new list view') ||
           label.length > 90
         ) {
           return;
@@ -5480,14 +5490,15 @@
         }
 
         // Skip container wrappers that hold multiple row items
-        const childRows = el.querySelectorAll('li, [role="option"], [role="menuitem"], a.select');
+        const childRows = el.querySelectorAll ? el.querySelectorAll('li, [role="option"], [role="menuitem"], a.select') : [];
         if (childRows.length > 1) {
           for (const cr of childRows) evaluateCandidate(cr);
           return;
         }
 
+        const targetRow = (el.closest && (el.closest('li.slds-listbox__item') || el.closest('lightning-base-combobox-item'))) || el;
         processedLabels.add(label);
-        rows.push({ row: el, label });
+        rows.push({ row: targetRow, label });
       }
 
       // 1. Siblings after header
@@ -5510,7 +5521,7 @@
       // 2. Selectors across popover (handles search results and different SLDS templates)
       if (popover) {
         const candidates = popover.querySelectorAll(
-          'li, [role="option"], [role="menuitem"], .slds-listbox__item, .slds-dropdown__item, .uiMenuItem, lightning-base-combobox-item, a[role="menuitem"]'
+          'li.slds-listbox__item, lightning-base-combobox-item, li, [role="option"], [role="menuitem"], .slds-dropdown__item, .uiMenuItem, a[role="menuitem"]'
         );
         for (let i = 0; i < candidates.length; i++) {
           const c = candidates[i];
@@ -5521,7 +5532,7 @@
               evaluateCandidate(innerOptions[j]);
             }
           }
-          const container = c.closest ? (c.closest('li, lightning-base-combobox-item, [role="option"]') || c) : c;
+          const container = c.closest ? (c.closest('li.slds-listbox__item, lightning-base-combobox-item, [role="option"]') || c) : c;
           evaluateCandidate(container);
         }
       }
@@ -6089,27 +6100,20 @@
         const rowId = extractListViewId(row);
         const isBookmarked = (rowId && bookmarkedIds.has(rowId)) || bookmarkedNames.has(label);
 
-        let hostEl = row;
-        const comboboxItem = (row.tagName === 'LIGHTNING-BASE-COMBOBOX-ITEM')
-          ? row
-          : (row.closest ? row.closest('lightning-base-combobox-item') : null);
+        // Target the row's own distinct list item container so the button positions relative to THAT row
+        const hostEl = (row.closest && (row.closest('li.slds-listbox__item') || row.closest('lightning-base-combobox-item'))) || row.parentElement || row;
 
-        const sr = (comboboxItem && (comboboxItem.shadowRoot || comboboxItem._sfShadowRoot))
-          || (row.shadowRoot || row._sfShadowRoot)
-          || (row.getRootNode && row.getRootNode() !== document ? row.getRootNode() : null);
-
-        if (sr) {
-          syncQuickViewsStyleToRoot(sr);
-          hostEl = (sr.querySelector && sr.querySelector('[role="option"], .slds-listbox__option, .slds-media')) || hostEl;
-        } else {
-          hostEl = row.closest ? (row.closest('li, lightning-base-combobox-item, [role="option"]') || row) : row;
+        // Ensure shadow root styles for Quick Views are synced to this row's root
+        const rootNode = hostEl.getRootNode ? hostEl.getRootNode() : null;
+        if (rootNode && rootNode !== document) {
+          syncQuickViewsStyleToRoot(rootNode);
         }
 
-        // Check if button for this view already exists anywhere in hostEl or popover
+        // Check if button for this view already exists anywhere in hostEl
         let existingBtn = hostEl.querySelector ? hostEl.querySelector(`.sf-native-bookmark-btn[data-view-label="${CSS.escape(label)}"]`) : null;
-        if (!existingBtn && popover && popover.querySelectorAll) {
-          const matching = popover.querySelectorAll(`.sf-native-bookmark-btn[data-view-label="${CSS.escape(label)}"]`);
-          if (matching.length > 0) existingBtn = matching[0];
+        if (!existingBtn) {
+          const directBtn = hostEl.querySelector ? hostEl.querySelector('.sf-native-bookmark-btn') : null;
+          if (directBtn && directBtn.dataset.viewLabel === label) existingBtn = directBtn;
         }
 
         if (existingBtn) {
