@@ -32,6 +32,7 @@
     Element.prototype.attachShadow = function (...args) {
       const shadowRoot = origAttachShadow.apply(this, args);
       trackedShadowRoots.add(shadowRoot);
+      this._sfShadowRoot = shadowRoot;
       try {
         if (typeof syncStylesToShadowRoot === 'function') {
           syncStylesToShadowRoot(shadowRoot);
@@ -544,6 +545,9 @@
       const m = target.url.match(RECORD_URL_REGEX);
       if (m && m[1]) target.recordId = m[1];
     }
+    if (target.recordId && !target.url) {
+      target.url = `/lightning/r/${target.recordId}/view`;
+    }
 
     if (!isTopWindow) {
       window.top.postMessage(
@@ -562,6 +566,14 @@
     try {
       const ws = await getWorkspaceAPI();
       let parentTabId = explicitParentTabId || (await findTargetParentTabId(ws, preferPinned));
+      try {
+        const allTabs = (await ws.getAllTabInfo()) || [];
+        const exists = allTabs.some((t) => t.tabId === parentTabId);
+        if (!exists) {
+          parentTabId = await findTargetParentTabId(ws, preferPinned);
+        }
+      } catch (_) {}
+
       if (!parentTabId) {
         // If there is no parent tab capable of hosting subtabs (e.g. currently viewing a List View or Search),
         // route directly into ws.openTab(). Salesforce Console Navigation Manager will automatically open or locate
@@ -573,6 +585,7 @@
         const params = { parentTabId: pId, focus: !openInBackground };
         if (target.recordId) {
           params.recordId = target.recordId;
+          params.url = target.url || `/lightning/r/${target.recordId}/view`;
         } else if (target.url) {
           params.url = target.url;
         } else if (target.pageReference) {
@@ -700,6 +713,10 @@
             }
           }
         }
+        if (target.url) {
+          window.location.assign(target.url);
+          return true;
+        }
         throw firstErr;
       } finally {
         isInternalWorkspaceCall = false;
@@ -707,7 +724,7 @@
     } catch (err) {
       console.error('[SF Subtab Opener] Failed to open subtab:', err);
       if (target.url) {
-        window.location.href = target.url;
+        window.location.assign(target.url);
         return true;
       }
       return false;
@@ -1177,14 +1194,20 @@
           event.stopPropagation();
           event.stopImmediatePropagation();
 
-          setTimeout(() => {
-            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-          }, 50);
+          if (target.recordId && !target.url) {
+            target.url = `/lightning/r/${target.recordId}/view`;
+          }
 
           openTargetAsSubtab(target, {
             openInBackground,
             preferPinned,
             explicitParentTabId: preClickParentTabId
+          }).then(() => {
+            setTimeout(() => {
+              document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+            }, 120);
+          }).catch(() => {
+            if (target.url) window.location.assign(target.url);
           });
           return;
         }
@@ -1304,6 +1327,7 @@
     const accentBorder = hexToRgba(accent, 0.35);
     const baseBorder = (baseTheme && baseTheme.border) ? baseTheme.border : '#dddbda';
     const isDark = !!baseTheme.isDark;
+    const hoverBg = isDark ? hexToRgba(accent, 0.18) : '#eef4ff';
     const applyNav = themingEnabled && (!settings.theme || settings.theme.applyToNavigation !== false);
 
     let css = `
@@ -1511,6 +1535,14 @@
             --slds-c-split-view-color-background: ${baseTheme.surface} !important;
             --slds-c-popover-color-background: ${baseTheme.surface} !important;
             --slds-c-combobox-color-background: ${baseTheme.bg} !important;
+            --slds-c-listbox-color-background: ${baseTheme.surface} !important;
+            --slds-c-listbox-item-color-background-hover: ${hoverBg} !important;
+            --slds-c-listbox-item-color-background-focus: ${hoverBg} !important;
+            --slds-c-listbox-option-color-background-hover: ${hoverBg} !important;
+            --slds-c-listbox-option-color-background-focus: ${hoverBg} !important;
+            --slds-c-listbox-item-color-background-active: ${hoverBg} !important;
+            --lwc-colorBackgroundRowHover: ${hoverBg} !important;
+            --lwc-colorBackgroundRowSelected: ${hoverBg} !important;
 
             --slds-c-accordion-color-background: ${baseTheme.surface} !important;
             --slds-c-accordion-header-color-background: ${baseTheme.surface} !important;
@@ -2723,22 +2755,62 @@
             color: ${baseTheme.text} !important;
           }
 
+          /* Left Pane Search Result option hover/focus */
           search_assistant-assistant-dialog [role="option"]:hover,
-          search_assistant-instant-results-list [role="option"]:hover,
+          search_assistant-assistant-dialog [role="option"].slds-has-focus,
+          search_assistant-assistant-dialog [role="option"].slds-is-selected,
+          search_assistant-assistant-dialog [role="option"][aria-selected="true"],
+          search_assistant-assistant-dialog .slds-listbox__option:hover,
+          search_assistant-assistant-dialog .slds-listbox__option.slds-has-focus,
+          search_assistant-assistant-dialog .slds-listbox__option.slds-is-selected,
           search_assistant-assistant-dialog .slds-listbox__item:hover,
+          search_assistant-instant-results-list [role="option"]:hover,
+          search_assistant-instant-results-list [role="option"].slds-has-focus,
+          search_assistant-instant-results-list .slds-listbox__option:hover,
+          search_assistant-instant-results-list .slds-listbox__option.slds-has-focus,
           search_assistant-instant-results-list .slds-listbox__item:hover,
-          [class*="searchAssistant" i] .slds-listbox__item:hover,
           [class*="searchAssistant" i] [role="option"]:hover,
+          [class*="searchAssistant" i] [role="option"].slds-has-focus,
           [class*="searchAssistant" i] [role="option"].slds-is-selected,
-          [class*="searchAssistant" i] [role="option"][aria-selected="true"] {
-            background-color: ${baseTheme.surfaceHeader} !important;
+          [class*="searchAssistant" i] [role="option"][aria-selected="true"],
+          [class*="searchAssistant" i] .slds-listbox__option:hover,
+          [class*="searchAssistant" i] .slds-listbox__option.slds-has-focus,
+          [class*="searchAssistant" i] .slds-listbox__option.slds-is-selected,
+          [class*="searchAssistant" i] .slds-listbox__item:hover,
+          [class*="instantResult" i]:hover,
+          [class*="InstantResult" i]:hover,
+          lightning-base-combobox-item:hover,
+          force-search-instant-result-item:hover {
+            background-color: ${hoverBg} !important;
+            background: ${hoverBg} !important;
             color: ${baseTheme.text} !important;
           }
 
-          /* Right Pane: Empty State Guidance ("Do more with Search!") & Previews */
+          search_assistant-assistant-dialog [role="option"]:hover *,
+          search_assistant-assistant-dialog .slds-listbox__option:hover *,
+          search_assistant-instant-results-list [role="option"]:hover *,
+          [class*="searchAssistant" i] [role="option"]:hover *,
+          [class*="searchAssistant" i] .slds-listbox__option:hover * {
+            background-color: transparent !important;
+            background: transparent !important;
+            color: ${baseTheme.text} !important;
+          }
+
+          /* Right Pane: Complete surface coverage for guidance, previews & empty state columns */
           search_assistant-empty-state,
+          search_assistant-empty-state *,
           search_assistant-preview,
+          search_assistant-preview *,
           search_assistant-content-container,
+          search_assistant-content-container .slds-col,
+          search_assistant-content-container .slds-grid,
+          [class*="searchAssistant" i] .slds-split-view__detail,
+          [class*="searchAssistant" i] .slds-split-view__content,
+          [class*="searchAssistant" i] .slds-modal__content,
+          [class*="searchAssistant" i] .slds-col,
+          [class*="searchAssistant" i] .slds-grow,
+          [class*="searchAssistant" i] .slds-scrollable_y,
+          [class*="searchAssistant" i] .slds-scrollable,
           [class*="searchAssistant" i] .slds-illustration,
           [class*="searchAssistant" i] .slds-empty-state,
           [class*="searchAssistant" i] .slds-box,
@@ -2746,8 +2818,12 @@
           [class*="searchAssistant" i] .slds-rich-text-editor__output,
           [class*="searchAssistant" i] div[class*="empty" i],
           [class*="searchAssistant" i] div[class*="preview" i],
+          [class*="searchAssistant" i] div[class*="detail" i],
+          [class*="searchAssistant" i] div[class*="right" i],
+          [class*="searchAssistant" i] div[class*="guidance" i],
           [class*="searchAssistant" i] div[class*="tips" i] {
             background-color: ${baseTheme.surface} !important;
+            background: ${baseTheme.surface} !important;
             color: ${baseTheme.text} !important;
             border-color: ${baseTheme.border} !important;
           }
@@ -3055,6 +3131,7 @@
     const baseTheme = THEMES[themeKey] || THEMES['classic'];
     if (!baseTheme || !baseTheme.isDark) return;
     const accent = (themeKey === 'custom' && settings.theme?.customAccent) ? sanitizeHexColor(settings.theme.customAccent) : baseTheme.accent;
+    const hoverBg = baseTheme.isDark ? hexToRgba(accent, 0.18) : '#eef4ff';
 
     let style = shadowRoot.getElementById ? shadowRoot.getElementById('sf-shadow-theme-style') : null;
     if (!style) {
@@ -3084,6 +3161,20 @@
         --slds-c-split-view-color-background: ${baseTheme.surface} !important;
         --slds-c-popover-color-background: ${baseTheme.surface} !important;
         --slds-c-combobox-color-background: ${baseTheme.bg} !important;
+        --slds-c-listbox-color-background: ${baseTheme.surface} !important;
+        --slds-c-listbox-item-color-background-hover: ${hoverBg} !important;
+        --slds-c-listbox-item-color-background-focus: ${hoverBg} !important;
+        --slds-c-listbox-option-color-background-hover: ${hoverBg} !important;
+        --slds-c-listbox-option-color-background-focus: ${hoverBg} !important;
+        --slds-c-listbox-item-color-background-active: ${hoverBg} !important;
+        --slds-c-listbox-item-color-background-selected: ${hoverBg} !important;
+        --slds-c-listbox-option-color-background-selected: ${hoverBg} !important;
+        --slds-g-color-surface-container-high-hover: ${hoverBg} !important;
+        --slds-g-color-surface-container-highest-hover: ${hoverBg} !important;
+        --slds-g-color-surface-hover: ${hoverBg} !important;
+        --lwc-colorBackgroundRowHover: ${hoverBg} !important;
+        --lwc-colorBackgroundRowSelected: ${hoverBg} !important;
+        --lwc-colorBackgroundRowActive: ${hoverBg} !important;
         background-color: ${baseTheme.surface} !important;
         color: ${baseTheme.text} !important;
       }
@@ -3118,6 +3209,72 @@
         border-color: ${baseTheme.border} !important;
       }
 
+      /* Option hover inside shadow root */
+      :host(:hover),
+      :host(.slds-has-focus),
+      :host([aria-selected="true"]),
+      :host(.slds-is-selected),
+      .slds-listbox__option:hover,
+      .slds-listbox__option.slds-has-focus,
+      .slds-listbox__option.slds-is-selected,
+      .slds-listbox__option[aria-selected="true"],
+      .slds-listbox__item:hover,
+      .slds-listbox__item.slds-has-focus,
+      .slds-listbox__item.slds-is-selected,
+      [role="option"]:hover,
+      [role="option"].slds-has-focus,
+      [role="option"].slds-is-selected,
+      [role="option"][aria-selected="true"],
+      lightning-base-combobox-item:hover,
+      lightning-base-combobox-item.slds-has-focus,
+      force-search-instant-result-item:hover,
+      force-search-instant-result-item.slds-has-focus {
+        background-color: ${hoverBg} !important;
+        background: ${hoverBg} !important;
+        color: ${baseTheme.text} !important;
+      }
+
+      .slds-listbox__option:hover *,
+      .slds-listbox__option.slds-has-focus *,
+      [role="option"]:hover * {
+        background-color: transparent !important;
+        background: transparent !important;
+        color: ${baseTheme.text} !important;
+      }
+
+      /* Right Pane complete surface inside shadow roots */
+      search_assistant-preview,
+      search_assistant-preview *,
+      search_assistant-empty-state,
+      search_assistant-empty-state *,
+      search_assistant-content-container,
+      search_assistant-content-container *,
+      .slds-split-view,
+      .slds-split-view *,
+      .slds-split-view__detail,
+      .slds-split-view__content,
+      .slds-modal__content,
+      .slds-col,
+      .slds-grow,
+      .slds-scrollable_y,
+      .slds-scrollable,
+      .slds-illustration,
+      .slds-empty-state,
+      .slds-box,
+      .slds-text-longform,
+      .slds-rich-text-editor__output,
+      div[class*="preview" i],
+      div[class*="detail" i],
+      div[class*="right" i],
+      div[class*="guidance" i],
+      div[class*="tips" i],
+      div[class*="empty" i] {
+        background-color: ${baseTheme.surface} !important;
+        background: ${baseTheme.surface} !important;
+        color: ${baseTheme.text} !important;
+        border-color: ${baseTheme.border} !important;
+      }
+
       h1, h2, h3, h4, p, span, label, div {
         color: ${baseTheme.text} !important;
       }
@@ -3144,64 +3301,295 @@
 
   function syncQuickViewsStyleToRoot(root) {
     if (!root) return;
-    if (root.getElementById && root.getElementById('sf-quick-views-shadow-style')) return;
-    try {
-      const style = document.createElement('style');
+    const settings = getEnhancerSettings();
+    const themeKey = (settings.theme && settings.theme.preset) || 'classic';
+    const baseTheme = THEMES[themeKey] || THEMES['classic'];
+    const accent = (themeKey === 'custom' && settings.theme?.customAccent) ? sanitizeHexColor(settings.theme.customAccent) : (baseTheme ? baseTheme.accent : '#0176d3');
+    const isDark = !!baseTheme?.isDark;
+    const qvBg = isDark ? baseTheme.surface : '#ffffff';
+    const qvBorder = isDark ? baseTheme.border : '#dddbda';
+    const qvText = isDark ? baseTheme.text : '#181818';
+    const qvMuted = isDark ? baseTheme.textMuted : '#706e6b';
+    const qvHover = isDark ? (baseTheme.surfaceHeader || hexToRgba(accent, 0.18)) : '#f3f3f3';
+
+    let style = root.getElementById ? root.getElementById('sf-quick-views-shadow-style') : null;
+    if (!style) {
+      style = document.createElement('style');
       style.id = 'sf-quick-views-shadow-style';
-      style.textContent = `
-        .sf-native-bookmark-btn {
-          position: absolute !important;
-          right: 6px !important;
-          top: 50% !important;
-          transform: translateY(-50%) !important;
-          z-index: 9999 !important;
-          display: inline-flex !important;
-          align-items: center !important;
-          justify-content: center !important;
-          width: 24px !important;
-          height: 24px !important;
-          background: transparent !important;
-          border: none !important;
-          border-radius: 4px !important;
-          cursor: pointer !important;
-          box-shadow: none !important;
-          padding: 0 !important;
-          margin: 0 !important;
-          opacity: 0.75 !important;
-          visibility: visible !important;
-          pointer-events: auto !important;
-          transition: background 0.12s ease !important;
+      try {
+        root.appendChild(style);
+      } catch (_) {}
+    }
+
+    style.textContent = `
+      .sf-quick-views-wrapper {
+        display: block !important;
+        border-bottom: 1px solid ${qvBorder} !important;
+        margin-bottom: 4px !important;
+        padding-bottom: 4px !important;
+        background: ${qvBg} !important;
+        background-color: ${qvBg} !important;
+        list-style: none !important;
+        font-family: inherit !important;
+      }
+      .sf-quick-header-row {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        padding: 8px 12px 4px 12px !important;
+        user-select: none !important;
+        font-family: inherit !important;
+        background: ${qvBg} !important;
+        background-color: ${qvBg} !important;
+      }
+      .sf-quick-header-title {
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        color: ${qvMuted} !important;
+        letter-spacing: 0.0625rem !important;
+        text-transform: uppercase !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+        font-family: inherit !important;
+        line-height: 1.25 !important;
+      }
+      .sf-quick-count {
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        color: ${qvMuted} !important;
+        font-family: inherit !important;
+      }
+      .sf-quick-list {
+        list-style: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        font-family: inherit !important;
+        background: ${qvBg} !important;
+        background-color: ${qvBg} !important;
+      }
+      .sf-quick-item {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        padding: 6px 12px !important;
+        margin: 0 !important;
+        cursor: pointer !important;
+        border-radius: 0 !important;
+        transition: background 0.1s ease !important;
+        font-family: inherit !important;
+        background: ${qvBg} !important;
+        background-color: ${qvBg} !important;
+      }
+      .sf-quick-item:hover,
+      .sf-quick-item.slds-is-selected {
+        background: ${qvHover} !important;
+        background-color: ${qvHover} !important;
+      }
+      .sf-quick-item.slds-is-selected .sf-quick-item-label {
+        font-weight: 700 !important;
+        color: ${qvText} !important;
+      }
+      .sf-quick-item-icon {
+        margin-right: 8px !important;
+        flex: 0 0 auto !important;
+        display: flex !important;
+        align-items: center !important;
+      }
+      .sf-quick-item-label {
+        font-size: 13px !important;
+        font-weight: 400 !important;
+        color: ${qvText} !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        flex: 1 1 auto !important;
+        margin-right: 8px !important;
+        font-family: inherit !important;
+        line-height: 1.5 !important;
+      }
+      .sf-quick-item-controls {
+        display: none !important;
+        align-items: center !important;
+        gap: 2px !important;
+        flex: 0 0 auto !important;
+      }
+      .sf-quick-item:hover .sf-quick-item-controls {
+        display: flex !important;
+      }
+      .sf-quick-control-btn {
+        background: transparent !important;
+        border: none !important;
+        border-radius: 3px !important;
+        cursor: pointer !important;
+        font-size: 10px !important;
+        padding: 2px 4px !important;
+        color: ${qvMuted} !important;
+        line-height: 1 !important;
+        font-family: inherit !important;
+      }
+      .sf-quick-control-btn:hover {
+        background: rgba(0, 0, 0, 0.08) !important;
+        color: ${accent} !important;
+      }
+      .sf-quick-remove-btn:hover {
+        color: #ba0517 !important;
+        background: #fedfe0 !important;
+      }
+      .sf-native-bookmark-btn {
+        position: absolute !important;
+        right: 6px !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        z-index: 9999 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 24px !important;
+        height: 24px !important;
+        background: transparent !important;
+        border: none !important;
+        border-radius: 4px !important;
+        cursor: pointer !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        opacity: 0.75 !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
+        transition: background 0.12s ease !important;
+      }
+      .sf-native-bookmark-btn:hover {
+        background: rgba(0, 0, 0, 0.08) !important;
+        opacity: 1 !important;
+      }
+      .sf-native-bookmark-btn svg path {
+        stroke: ${qvMuted} !important;
+      }
+      .sf-native-bookmark-btn:hover svg path {
+        stroke: ${accent} !important;
+      }
+      .sf-native-bookmark-btn.is-bookmarked {
+        opacity: 1 !important;
+        background: transparent !important;
+      }
+      .sf-native-bookmark-btn.is-bookmarked svg path {
+        stroke: ${accent} !important;
+      }
+      .sf-native-bookmark-btn.is-bookmarked:hover {
+        background: rgba(1, 118, 211, 0.1) !important;
+      }
+      .sf-native-bookmark-btn svg,
+      .sf-quick-item-icon svg {
+        pointer-events: none !important;
+      }
+    `;
+  }
+
+  function setupSearchHoverHandler() {
+    if (window._sfSearchHoverHandlerAttached) return;
+    window._sfSearchHoverHandlerAttached = true;
+
+    function getOptionFromPath(path) {
+      if (!path || !path.length) return null;
+      for (let i = 0; i < path.length; i++) {
+        const node = path[i];
+        if (!node || node.nodeType !== 1) continue;
+        const tag = (node.tagName || '').toLowerCase();
+        if (
+          tag === 'lightning-base-combobox-item' ||
+          tag === 'force-search-instant-result-item' ||
+          (node.getAttribute && node.getAttribute('role') === 'option') ||
+          (node.classList && (node.classList.contains('slds-listbox__option') || node.classList.contains('slds-listbox__item')))
+        ) {
+          return node;
         }
-        .sf-native-bookmark-btn:hover {
-          background: rgba(0, 0, 0, 0.08) !important;
-          opacity: 1 !important;
+      }
+      return null;
+    }
+
+    function isPathInSearch(path) {
+      if (!path || !path.length) return false;
+      for (let i = 0; i < path.length; i++) {
+        const node = path[i];
+        if (!node || node.nodeType !== 1) continue;
+        const tag = (node.tagName || '').toLowerCase();
+        const cls = typeof node.className === 'string' ? node.className.toLowerCase() : '';
+        if (
+          tag.includes('search_assistant') ||
+          tag.includes('force-search') ||
+          cls.includes('searchassistant') ||
+          cls.includes('forcesearch')
+        ) {
+          return true;
         }
-        .sf-native-bookmark-btn svg path {
-          stroke: #706e6b !important;
+      }
+      return false;
+    }
+
+    document.addEventListener(
+      'mouseover',
+      (e) => {
+        const path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
+        if (!isPathInSearch(path)) return;
+        const opt = getOptionFromPath(path);
+        if (!opt) return;
+
+        const _s = getEnhancerSettings();
+        if (_s.modules?.theming !== true) return;
+        const tKey = (_s.theme && _s.theme.preset) || 'classic';
+        const bTheme = THEMES[tKey] || THEMES['classic'];
+        if (!bTheme || !bTheme.isDark) return;
+
+        const acc = (tKey === 'custom' && _s.theme?.customAccent) ? sanitizeHexColor(_s.theme.customAccent) : bTheme.accent;
+        const tint = hexToRgba(acc, 0.18);
+
+        opt.style.setProperty('background-color', tint, 'important');
+        opt.style.setProperty('background', tint, 'important');
+        opt.style.setProperty('color', bTheme.text, 'important');
+
+        const innerOption = opt.querySelector ? opt.querySelector('.slds-listbox__option, [role="option"]') : null;
+        if (innerOption) {
+          innerOption.style.setProperty('background-color', tint, 'important');
+          innerOption.style.setProperty('background', tint, 'important');
+          innerOption.style.setProperty('color', bTheme.text, 'important');
         }
-        .sf-native-bookmark-btn:hover svg path {
-          stroke: #0176d3 !important;
+
+        const kids = opt.querySelectorAll ? opt.querySelectorAll('span, div, p') : [];
+        for (let k = 0; k < kids.length; k++) {
+          kids[k].style.setProperty('background-color', 'transparent', 'important');
+          kids[k].style.setProperty('background', 'transparent', 'important');
+          kids[k].style.setProperty('color', bTheme.text, 'important');
         }
-        .sf-native-bookmark-btn.is-bookmarked {
-          opacity: 1 !important;
-          background: transparent !important;
+      },
+      true
+    );
+
+    document.addEventListener(
+      'mouseout',
+      (e) => {
+        const path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
+        if (!isPathInSearch(path)) return;
+        const opt = getOptionFromPath(path);
+        if (!opt) return;
+
+        if (!opt.matches?.('.slds-is-selected, [aria-selected="true"]')) {
+          opt.style.setProperty('background-color', 'transparent', 'important');
+          opt.style.setProperty('background', 'transparent', 'important');
+          const innerOption = opt.querySelector ? opt.querySelector('.slds-listbox__option, [role="option"]') : null;
+          if (innerOption && !innerOption.matches?.('.slds-is-selected, [aria-selected="true"]')) {
+            innerOption.style.setProperty('background-color', 'transparent', 'important');
+            innerOption.style.setProperty('background', 'transparent', 'important');
+          }
         }
-        .sf-native-bookmark-btn.is-bookmarked svg path {
-          stroke: #0176d3 !important;
-        }
-        .sf-native-bookmark-btn.is-bookmarked:hover {
-          background: rgba(1, 118, 211, 0.1) !important;
-        }
-        .sf-native-bookmark-btn svg {
-          pointer-events: none !important;
-        }
-      `;
-      root.appendChild(style);
-    } catch (_) {}
+      },
+      true
+    );
   }
 
   function themeSearchAssistantDOM(theme, specificRoot = null) {
     if (!theme || !theme.isDark) return;
+    setupSearchHoverHandler();
 
     function applyThemeToEl(el) {
       if (!el || el.nodeType !== 1) return;
@@ -3226,25 +3614,80 @@
             val.includes('Get insights') ||
             val.includes('search_ai_natural_lang_examples')
           ) {
-            let parent = textNode.parentElement;
+            let curr = textNode.parentElement;
             let depth = 0;
-            while (parent && parent !== document.body && parent !== document.documentElement && depth < 8) {
-              applyThemeToEl(parent);
+            let topDialog = null;
+            while (curr && curr !== document.body && curr !== document.documentElement && depth < 25) {
+              applyThemeToEl(curr);
               if (
-                parent.classList &&
-                (parent.classList.contains('slds-grid') ||
-                 parent.classList.contains('slds-split-view') ||
-                 parent.getAttribute('role') === 'dialog' ||
-                 parent.tagName.toLowerCase().includes('search_assistant'))
+                curr.getAttribute?.('role') === 'dialog' ||
+                curr.tagName.toLowerCase().includes('assistant-dialog') ||
+                curr.classList?.contains('slds-modal') ||
+                curr.classList?.contains('searchAssistantDialog')
               ) {
-                const gridKids = parent.querySelectorAll ? parent.querySelectorAll('div, section, article') : [];
-                for (let k = 0; k < gridKids.length; k++) {
-                  applyThemeToEl(gridKids[k]);
-                }
-                break;
+                topDialog = curr;
               }
-              parent = parent.parentElement || parent.parentNode;
+              if (!curr.parentElement && curr.getRootNode) {
+                try {
+                  const rootNode = curr.getRootNode();
+                  if (rootNode && rootNode.host) {
+                    curr = rootNode.host;
+                    applyThemeToEl(curr);
+                    continue;
+                  }
+                } catch (_) {}
+              }
+              curr = curr.parentElement || curr.parentNode;
               depth++;
+            }
+
+            const scope = topDialog || node;
+            const allElements = scope.querySelectorAll ? scope.querySelectorAll('*') : [];
+            for (let k = 0; k < allElements.length; k++) {
+              const el = allElements[k];
+              if (el.nodeType !== 1) continue;
+              const tag = el.tagName.toLowerCase();
+              if (tag === 'svg' || tag === 'path' || tag === 'img') continue;
+
+              if (tag === 'a') {
+                el.style.setProperty('color', theme.accent, 'important');
+                continue;
+              }
+
+              if (
+                el.classList?.contains('slds-col') ||
+                el.classList?.contains('slds-grid') ||
+                el.classList?.contains('slds-split-view__detail') ||
+                el.classList?.contains('slds-split-view__content') ||
+                el.classList?.contains('slds-split-view') ||
+                el.classList?.contains('slds-scrollable_y') ||
+                el.classList?.contains('slds-modal__content') ||
+                tag.includes('preview') ||
+                tag.includes('empty-state') ||
+                tag.includes('content-container') ||
+                el.className?.includes('preview') ||
+                el.className?.includes('detail') ||
+                el.className?.includes('right') ||
+                el.className?.includes('guidance') ||
+                el.className?.includes('tips')
+              ) {
+                applyThemeToEl(el);
+              }
+
+              try {
+                const compBg = window.getComputedStyle(el).backgroundColor;
+                if (
+                  compBg &&
+                  (compBg.includes('255, 255, 255') ||
+                   compBg.includes('243, 243, 243') ||
+                   compBg.includes('250, 250, 250') ||
+                   compBg.includes('248, 249, 250') ||
+                   compBg.includes('238, 244, 255') ||
+                   compBg === 'rgb(255, 255, 255)')
+                ) {
+                  applyThemeToEl(el);
+                }
+              } catch (_) {}
             }
           }
         }
@@ -3269,7 +3712,8 @@
           '[data-aura-class*="forceSearch" i]',
           '.slds-illustration',
           '.slds-empty-state',
-          '.slds-split-view'
+          '.slds-split-view',
+          '.slds-split-view__detail'
         ];
         const matches = node.querySelectorAll ? node.querySelectorAll(searchSelectors.join(',')) : [];
         for (let i = 0; i < matches.length; i++) {
@@ -3286,7 +3730,9 @@
                 cd.classList &&
                 (cd.classList.contains('slds-theme_default') ||
                  cd.classList.contains('slds-theme_shade') ||
-                 cd.classList.contains('slds-box'))
+                 cd.classList.contains('slds-box') ||
+                 cd.classList.contains('slds-col') ||
+                 cd.classList.contains('slds-grow'))
               ) {
                 applyThemeToEl(cd);
               }
@@ -4681,7 +5127,7 @@
       }
     }
 
-    function findRecentListViewsHeader(root = document) {
+    function findRecentListViewsHeader(root = null) {
       const isHeaderTxt = (txt) => {
         if (!txt) return false;
         const lower = txt.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -4691,134 +5137,190 @@
           lower === 'pinned list views' ||
           lower === 'list views' ||
           lower === 'other list views' ||
-          lower === 'lists' ||
-          lower === 'recent' ||
           lower.includes('recent list views') ||
           lower.includes('pinned list view')
         );
       };
 
-      const candidateHeaders = root.querySelectorAll(
-        '.slds-listbox__option-header, .slds-dropdown__header, [role="presentation"], h2, h3, span, div, p'
-      );
-      for (let i = 0; i < candidateHeaders.length; i++) {
-        const el = candidateHeaders[i];
-        if (el.closest && el.closest('.sf-quick-views-wrapper, .sf-pinned-section-wrapper')) continue;
-        const txt = (el.textContent || '').trim();
-        if (isHeaderTxt(txt)) {
-          return el;
+      const rootsToSearch = [];
+      if (root) {
+        rootsToSearch.push(root);
+      } else {
+        rootsToSearch.push(document);
+        if (typeof trackedShadowRoots !== 'undefined') {
+          for (const sr of trackedShadowRoots) {
+            if (sr && sr.isConnected !== false) rootsToSearch.push(sr);
+          }
         }
       }
 
-      if (root.createTreeWalker) {
+      for (let rIdx = 0; rIdx < rootsToSearch.length; rIdx++) {
+        const r = rootsToSearch[rIdx];
         try {
-          const walker = root.createTreeWalker(root.body || root, NodeFilter.SHOW_TEXT, null, false);
-          let node;
-          while ((node = walker.nextNode())) {
-            const txt = (node.nodeValue || '').trim();
+          const candidateHeaders = r.querySelectorAll(
+            '.slds-listbox__option-header, .slds-dropdown__header, [role="presentation"], [data-value*="header"], h2, h3, span, div'
+          );
+          for (let i = 0; i < candidateHeaders.length; i++) {
+            const el = candidateHeaders[i];
+            if (el.closest && el.closest('.sf-quick-views-wrapper, .sf-pinned-section-wrapper')) continue;
+            const txt = (el.textContent || '').trim();
             if (isHeaderTxt(txt)) {
-              const parent = node.parentElement;
-              if (parent && (!parent.closest || !parent.closest('.sf-quick-views-wrapper, .sf-pinned-section-wrapper'))) {
-                return parent;
-              }
+              return el;
             }
           }
         } catch (_) {}
+
+        if (r.createTreeWalker) {
+          try {
+            const walker = r.createTreeWalker(r.body || r, NodeFilter.SHOW_TEXT, null, false);
+            let node;
+            while ((node = walker.nextNode())) {
+              const txt = (node.nodeValue || '').trim();
+              if (isHeaderTxt(txt)) {
+                const parent = node.parentElement;
+                if (parent && (!parent.closest || !parent.closest('.sf-quick-views-wrapper, .sf-pinned-section-wrapper'))) {
+                  return parent;
+                }
+              }
+            }
+          } catch (_) {}
+        }
       }
 
       return null;
     }
 
     function findListViewDropdownContext() {
-      // 1. Check open, visible list view dropdown containers across the document and custom elements
-      const popoverCandidates = [];
-      const selectors = [
-        '.forceListViewPickerDesktop .slds-dropdown',
-        '.forceListViewPicker .slds-dropdown',
-        'div[class*="listViewPicker"] .slds-dropdown',
-        'div[class*="ListViewPicker"] .slds-dropdown',
-        'div[class*="forceListViewPicker"]',
-        'div[class*="listViewPicker"]',
-        '.slds-combobox[aria-expanded="true"] .slds-dropdown',
-        '.slds-combobox[aria-expanded="true"] [role="listbox"]',
-        '.slds-dropdown-trigger_click.slds-is-open .slds-dropdown',
-        '.slds-is-open > .slds-dropdown',
-        'div[role="listbox"][class*="slds-dropdown"]',
-        '.uiPanel--default.visible',
-        '.uiPanel.open',
-        '.panel-content:not(:empty)',
-        '.slds-dropdown',
-        '.slds-popover',
-        '[role="listbox"]'
-      ];
-      for (let s = 0; s < selectors.length; s++) {
-        const matches = document.querySelectorAll(selectors[s]);
-        for (let i = 0; i < matches.length; i++) popoverCandidates.push(matches[i]);
-      }
+      collectAllShadowRoots();
 
-      // Also check shadow roots of pickers/comboboxes
-      const customPickers = document.querySelectorAll('lightning-base-combobox, force-list-view-picker, force-list-view-manager-header, one-app-nav-bar');
-      for (let i = 0; i < customPickers.length; i++) {
-        const cp = customPickers[i];
-        if (cp.shadowRoot) {
-          const inShadow = cp.shadowRoot.querySelectorAll('.slds-dropdown, [role="listbox"], .slds-listbox');
-          for (let j = 0; j < inShadow.length; j++) popoverCandidates.push(inShadow[j]);
-        }
-      }
-
-      for (let i = 0; i < popoverCandidates.length; i++) {
-        const pop = popoverCandidates[i];
-        if (!pop || (pop.closest && pop.closest('.sf-quick-views-wrapper'))) continue;
-        const isVisible = pop.offsetParent !== null ||
-          (window.getComputedStyle(pop).display !== 'none' && window.getComputedStyle(pop).visibility !== 'hidden');
-        if (!isVisible) continue;
-
-        const hasOptions = pop.querySelector('li, [role="option"], lightning-base-combobox-item, .slds-listbox__item, input[placeholder*="Search" i]');
-        if (hasOptions) {
-          const headerEl = findRecentListViewsHeader(pop);
-          const listContainer = pop.querySelector('ul, ol, [role="listbox"], .slds-listbox') || pop;
-          let itemWrapper = headerEl;
-          while (itemWrapper && itemWrapper.parentElement && itemWrapper.parentElement !== listContainer) {
-            itemWrapper = itemWrapper.parentElement;
+      const rootsToSearch = [document];
+      if (typeof trackedShadowRoots !== 'undefined') {
+        for (const sr of trackedShadowRoots) {
+          if (sr && sr.isConnected !== false) {
+            rootsToSearch.push(sr);
           }
-          return { popover: pop, listContainer, itemWrapper, headerEl };
         }
       }
 
-      // 2. Fallback: locate via header anywhere in the document
-      const headerEl = findRecentListViewsHeader(document);
-      if (headerEl) {
-        const popover =
-          headerEl.closest(
-            '.slds-dropdown, .slds-popover, .uiPanel, .panel-content, [role="dialog"], [role="listbox"], [role="combobox"], div[class*="picker"], div[class*="Picker"], div[class*="dropdown"], div[class*="menu"], div[class*="panel"]'
-          ) || headerEl.parentElement?.parentElement?.parentElement || document.body;
-
-        let listContainer = headerEl.closest('ul, ol, [role="listbox"], .slds-listbox, .slds-dropdown__list');
-        if (!listContainer) {
-          listContainer = headerEl.parentElement;
+      const isListViewPickerComponent = (el) => {
+        if (!el) return false;
+        let curr = el;
+        let depth = 0;
+        while (curr && curr !== document.body && curr !== document.documentElement && depth < 20) {
+          const tag = (curr.tagName || '').toLowerCase();
+          const cls = typeof curr.className === 'string' ? curr.className.toLowerCase() : '';
+          if (
+            tag === 'force-list-view-picker' ||
+            tag === 'force-list-view-manager-header' ||
+            tag === 'lightning-grouped-combobox' ||
+            cls.includes('forcelistviewpicker') ||
+            cls.includes('listviewpicker') ||
+            (curr.getAttribute && curr.getAttribute('data-component-id')?.toLowerCase().includes('listviewpicker'))
+          ) {
+            return true;
+          }
+          if (!curr.parentElement && curr.getRootNode) {
+            try {
+              const r = curr.getRootNode();
+              if (r && r.host) {
+                curr = r.host;
+                continue;
+              }
+            } catch (_) {}
+          }
+          curr = curr.parentElement;
+          depth++;
         }
+        return false;
+      };
 
-        let itemWrapper = headerEl;
-        while (itemWrapper && itemWrapper.parentElement && itemWrapper.parentElement !== listContainer) {
-          itemWrapper = itemWrapper.parentElement;
+      const isCandidateVisible = (el) => {
+        if (!el || el.isConnected === false) return false;
+        if (el.offsetWidth > 0 && el.offsetHeight > 0) return true;
+        try {
+          const style = window.getComputedStyle(el);
+          return style.display !== 'none' && style.visibility !== 'hidden';
+        } catch (_) {
+          return false;
         }
+      };
 
-        return { popover, listContainer, itemWrapper, headerEl };
+      // 1. Search for visible dropdowns belonging to list view pickers
+      for (let rIdx = 0; rIdx < rootsToSearch.length; rIdx++) {
+        const root = rootsToSearch[rIdx];
+        try {
+          const candidates = root.querySelectorAll(
+            '.slds-dropdown, [role="listbox"], .slds-listbox, div[id*="dropdown-element"]'
+          );
+          for (let i = 0; i < candidates.length; i++) {
+            const pop = candidates[i];
+            if (!isCandidateVisible(pop)) continue;
+            if (pop.closest && pop.closest('search_assistant-assistant-dialog, force-search-assistant, [class*="searchAssistant" i]')) continue;
+            if (pop.closest && pop.closest('one-app-launcher-modal, .slds-app-launcher, one-notifications-flyout')) continue;
+
+            const isPicker = isListViewPickerComponent(pop);
+            const innerHeader = findRecentListViewsHeader(pop);
+            const hasListSearchInput = pop.querySelector ? pop.querySelector('input[placeholder*="Search lists" i], input[placeholder*="Search this list" i]') : null;
+
+            if (isPicker || innerHeader || hasListSearchInput) {
+              const listContainer = pop.querySelector('ul, ol, [role="listbox"], .slds-listbox') || pop;
+              let itemWrapper = innerHeader;
+              while (itemWrapper && itemWrapper.parentElement && itemWrapper.parentElement !== listContainer) {
+                itemWrapper = itemWrapper.parentElement;
+              }
+              const listRoot = listContainer.getRootNode ? listContainer.getRootNode() : null;
+              if (listRoot && listRoot !== document) {
+                syncQuickViewsStyleToRoot(listRoot);
+              }
+              return { popover: pop, listContainer, itemWrapper, headerEl: innerHeader };
+            }
+          }
+        } catch (_) {}
       }
 
-      // 3. Fallback: actively searching
-      const searchInputs = document.querySelectorAll(
-        'input[placeholder*="Search lists" i], input[placeholder*="Search this list" i], input[placeholder*="Search..." i], input[type="search"].slds-input, input.slds-combobox__input'
-      );
-      for (let i = 0; i < searchInputs.length; i++) {
-        const inp = searchInputs[i];
-        const popover = inp.closest(
-          '.slds-dropdown, .slds-popover, .uiPanel, .panel-content, [role="dialog"], [role="listbox"], [role="combobox"], div[class*="picker"], div[class*="Picker"], div[class*="dropdown"], div[class*="menu"], div[class*="panel"]'
-        );
-        if (popover && popover.offsetParent !== null) {
-          const listContainer = popover.querySelector('ul, ol, [role="listbox"], .slds-listbox') || popover;
-          return { popover, listContainer, itemWrapper: null, headerEl: null };
-        }
+      // 2. Locate via active trigger button with aria-expanded="true"
+      for (let rIdx = 0; rIdx < rootsToSearch.length; rIdx++) {
+        const root = rootsToSearch[rIdx];
+        try {
+          const triggers = root.querySelectorAll(
+            'button[title*="Select a List View" i], a[title*="Select a List View" i], button[aria-label*="Select a List View" i], .forceListViewPickerDesktop button, .forceListViewPicker button'
+          );
+          for (let i = 0; i < triggers.length; i++) {
+            const btn = triggers[i];
+            const isExpanded = btn.getAttribute('aria-expanded') === 'true' ||
+                               btn.closest?.('.slds-is-open, .slds-dropdown-trigger_click.slds-is-open');
+            if (isExpanded) {
+              const controlsId = btn.getAttribute('aria-controls');
+              let pop = null;
+              if (controlsId) {
+                for (const r of rootsToSearch) {
+                  pop = r.getElementById ? r.getElementById(controlsId) : null;
+                  if (pop) break;
+                }
+              }
+              if (!pop) {
+                const hostCombobox = btn.closest ? btn.closest('lightning-base-combobox, lightning-combobox, force-list-view-picker, .slds-combobox') : null;
+                if (hostCombobox) {
+                  const sr = hostCombobox.shadowRoot || hostCombobox._sfShadowRoot;
+                  pop = (sr ? sr.querySelector('.slds-dropdown, [role="listbox"]') : null) || hostCombobox.querySelector('.slds-dropdown, [role="listbox"]');
+                }
+              }
+              if (pop && isCandidateVisible(pop)) {
+                const listContainer = pop.querySelector('ul, ol, [role="listbox"], .slds-listbox') || pop;
+                const innerHeader = findRecentListViewsHeader(pop);
+                let itemWrapper = innerHeader;
+                while (itemWrapper && itemWrapper.parentElement && itemWrapper.parentElement !== listContainer) {
+                  itemWrapper = itemWrapper.parentElement;
+                }
+                const listRoot = listContainer.getRootNode ? listContainer.getRootNode() : null;
+                if (listRoot && listRoot !== document) {
+                  syncQuickViewsStyleToRoot(listRoot);
+                }
+                return { popover: pop, listContainer, itemWrapper, headerEl: innerHeader };
+              }
+            }
+          }
+        } catch (_) {}
       }
 
       return null;
@@ -4839,7 +5341,11 @@
         if (el.closest('.sf-quick-views-wrapper, .sf-pinned-section-wrapper')) return;
         if (headerEl && (el === headerEl || el.contains(headerEl))) return;
 
-        const rawTxt = (el.innerText || el.textContent || '').trim();
+        let rawTxt = (el.innerText || el.textContent || '').trim();
+        const sr = el.shadowRoot || el._sfShadowRoot;
+        if (!rawTxt && sr) {
+          rawTxt = (sr.innerText || sr.textContent || '').trim();
+        }
         if (!rawTxt) return;
 
         let label = rawTxt.split('\n')[0].trim();
@@ -4896,8 +5402,16 @@
         const candidates = popover.querySelectorAll(
           'li, [role="option"], [role="menuitem"], .slds-listbox__item, .slds-dropdown__item, .uiMenuItem, lightning-base-combobox-item, a[role="menuitem"]'
         );
-        for (const c of candidates) {
-          const container = c.closest('li, lightning-base-combobox-item, [role="option"]') || c;
+        for (let i = 0; i < candidates.length; i++) {
+          const c = candidates[i];
+          const sr = c.shadowRoot || c._sfShadowRoot;
+          if (sr) {
+            const innerOptions = sr.querySelectorAll('[role="option"], .slds-listbox__option, .slds-media, a, li');
+            for (let j = 0; j < innerOptions.length; j++) {
+              evaluateCandidate(innerOptions[j]);
+            }
+          }
+          const container = c.closest ? (c.closest('li, lightning-base-combobox-item, [role="option"]') || c) : c;
           evaluateCandidate(container);
         }
       }
@@ -5466,13 +5980,17 @@
         const isBookmarked = (rowId && bookmarkedIds.has(rowId)) || bookmarkedNames.has(label);
 
         let hostEl = row;
-        const comboboxItem = row.closest ? row.closest('lightning-base-combobox-item') : null;
-        if (comboboxItem && comboboxItem.shadowRoot) {
-          hostEl = comboboxItem.shadowRoot.querySelector('[role="option"], .slds-listbox__option, .slds-media') || comboboxItem.shadowRoot;
-          syncQuickViewsStyleToRoot(comboboxItem.shadowRoot);
-        } else if (row.shadowRoot) {
-          hostEl = row.shadowRoot.querySelector('[role="option"], .slds-listbox__option, .slds-media') || row.shadowRoot;
-          syncQuickViewsStyleToRoot(row.shadowRoot);
+        const comboboxItem = (row.tagName === 'LIGHTNING-BASE-COMBOBOX-ITEM')
+          ? row
+          : (row.closest ? row.closest('lightning-base-combobox-item') : null);
+
+        const sr = (comboboxItem && (comboboxItem.shadowRoot || comboboxItem._sfShadowRoot))
+          || (row.shadowRoot || row._sfShadowRoot)
+          || (row.getRootNode && row.getRootNode() !== document ? row.getRootNode() : null);
+
+        if (sr) {
+          syncQuickViewsStyleToRoot(sr);
+          hostEl = (sr.querySelector && sr.querySelector('[role="option"], .slds-listbox__option, .slds-media')) || hostEl;
         } else {
           hostEl = row.closest ? (row.closest('li, lightning-base-combobox-item, [role="option"]') || row) : row;
         }

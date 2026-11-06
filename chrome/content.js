@@ -215,6 +215,7 @@
     const accentBorder = hexToRgba(accent, 0.35);
     const baseBorder = (baseTheme && baseTheme.border) ? baseTheme.border : '#dddbda';
     const isDark = !!baseTheme.isDark;
+    const hoverBg = isDark ? hexToRgba(accent, 0.18) : '#eef4ff';
     const applyNav = !settings.theme || settings.theme.applyToNavigation !== false;
 
     let css = `
@@ -410,6 +411,20 @@
           --slds-c-split-view-color-background: ${baseTheme.surface} !important;
           --slds-c-popover-color-background: ${baseTheme.surface} !important;
           --slds-c-combobox-color-background: ${baseTheme.bg} !important;
+          --slds-c-listbox-color-background: ${baseTheme.surface} !important;
+          --slds-c-listbox-item-color-background-hover: ${hoverBg} !important;
+          --slds-c-listbox-item-color-background-focus: ${hoverBg} !important;
+          --slds-c-listbox-option-color-background-hover: ${hoverBg} !important;
+          --slds-c-listbox-option-color-background-focus: ${hoverBg} !important;
+          --slds-c-listbox-item-color-background-active: ${hoverBg} !important;
+          --slds-c-listbox-item-color-background-selected: ${hoverBg} !important;
+          --slds-c-listbox-option-color-background-selected: ${hoverBg} !important;
+          --slds-g-color-surface-container-high-hover: ${hoverBg} !important;
+          --slds-g-color-surface-container-highest-hover: ${hoverBg} !important;
+          --slds-g-color-surface-hover: ${hoverBg} !important;
+          --lwc-colorBackgroundRowHover: ${hoverBg} !important;
+          --lwc-colorBackgroundRowSelected: ${hoverBg} !important;
+          --lwc-colorBackgroundRowActive: ${hoverBg} !important;
 
           --slds-c-accordion-color-background: ${baseTheme.surface} !important;
           --slds-c-accordion-header-color-background: ${baseTheme.surface} !important;
@@ -1501,8 +1516,19 @@
 
         /* Search Assistant Right Pane Empty State ("Do more with Search!") & Illustration */
         search_assistant-empty-state,
+        search_assistant-empty-state *,
         search_assistant-preview,
+        search_assistant-preview *,
         search_assistant-content-container,
+        search_assistant-content-container .slds-col,
+        search_assistant-content-container .slds-grid,
+        [class*="searchAssistant" i] .slds-split-view__detail,
+        [class*="searchAssistant" i] .slds-split-view__content,
+        [class*="searchAssistant" i] .slds-modal__content,
+        [class*="searchAssistant" i] .slds-col,
+        [class*="searchAssistant" i] .slds-grow,
+        [class*="searchAssistant" i] .slds-scrollable_y,
+        [class*="searchAssistant" i] .slds-scrollable,
         [class*="searchAssistant" i] .slds-illustration,
         [class*="searchAssistant" i] .slds-empty-state,
         [class*="searchAssistant" i] .slds-box,
@@ -1510,8 +1536,12 @@
         [class*="searchAssistant" i] .slds-rich-text-editor__output,
         [class*="searchAssistant" i] div[class*="empty" i],
         [class*="searchAssistant" i] div[class*="preview" i],
+        [class*="searchAssistant" i] div[class*="detail" i],
+        [class*="searchAssistant" i] div[class*="right" i],
+        [class*="searchAssistant" i] div[class*="guidance" i],
         [class*="searchAssistant" i] div[class*="tips" i] {
           background-color: ${baseTheme.surface} !important;
+          background: ${baseTheme.surface} !important;
           color: ${baseTheme.text} !important;
           border-color: ${baseTheme.border} !important;
         }
@@ -1520,6 +1550,7 @@
           color: ${accent} !important;
         }
 
+        /* Search Assistant Left Pane Results List & Hover */
         force-search-assistant-results .slds-listbox,
         .forceSearchAssistantResults .slds-listbox,
         div[class*="searchAssistantResults" i] .slds-listbox,
@@ -1531,6 +1562,19 @@
           color: ${baseTheme.text} !important;
         }
 
+        search_assistant-assistant-dialog [role="option"]:hover,
+        search_assistant-assistant-dialog [role="option"].slds-has-focus,
+        search_assistant-assistant-dialog [role="option"].slds-is-selected,
+        search_assistant-assistant-dialog [role="option"][aria-selected="true"],
+        search_assistant-assistant-dialog .slds-listbox__option:hover,
+        search_assistant-assistant-dialog .slds-listbox__option.slds-has-focus,
+        search_assistant-assistant-dialog .slds-listbox__option.slds-is-selected,
+        search_assistant-assistant-dialog .slds-listbox__item:hover,
+        search_assistant-instant-results-list [role="option"]:hover,
+        search_assistant-instant-results-list [role="option"].slds-has-focus,
+        search_assistant-instant-results-list .slds-listbox__option:hover,
+        search_assistant-instant-results-list .slds-listbox__option.slds-has-focus,
+        search_assistant-instant-results-list .slds-listbox__item:hover,
         force-search-assistant-results .slds-listbox__option:hover,
         force-search-assistant-results .slds-listbox__option.slds-has-focus,
         force-search-assistant-results .slds-listbox__option.slds-is-selected,
@@ -1541,8 +1585,30 @@
         div[class*="searchAssistantResults" i] .slds-listbox__option.slds-has-focus,
         div[class*="searchAssistantResults" i] .slds-listbox__option.slds-is-selected,
         div[class*="searchAssistantResults" i] li:hover,
-        div[class*="assistantResults" i] li:hover {
-          background-color: ${baseTheme.surfaceHeader} !important;
+        div[class*="assistantResults" i] li:hover,
+        [class*="searchAssistant" i] [role="option"]:hover,
+        [class*="searchAssistant" i] [role="option"].slds-has-focus,
+        [class*="searchAssistant" i] [role="option"].slds-is-selected,
+        [class*="searchAssistant" i] [role="option"][aria-selected="true"],
+        [class*="searchAssistant" i] .slds-listbox__option:hover,
+        [class*="searchAssistant" i] .slds-listbox__option.slds-has-focus,
+        [class*="searchAssistant" i] .slds-listbox__item:hover,
+        [class*="instantResult" i]:hover,
+        [class*="InstantResult" i]:hover,
+        lightning-base-combobox-item:hover,
+        force-search-instant-result-item:hover {
+          background-color: ${hoverBg} !important;
+          background: ${hoverBg} !important;
+          color: ${baseTheme.text} !important;
+        }
+
+        search_assistant-assistant-dialog [role="option"]:hover *,
+        search_assistant-assistant-dialog .slds-listbox__option:hover *,
+        search_assistant-instant-results-list [role="option"]:hover *,
+        [class*="searchAssistant" i] [role="option"]:hover *,
+        [class*="searchAssistant" i] .slds-listbox__option:hover * {
+          background-color: transparent !important;
+          background: transparent !important;
           color: ${baseTheme.text} !important;
         }
 
