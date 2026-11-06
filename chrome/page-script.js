@@ -1512,6 +1512,47 @@
     });
   }
 
+  async function activateWorkspaceAndSubtab(ws, parentTabId, subtabId = null) {
+    if (!ws) {
+      try {
+        ws = await getWorkspaceAPI();
+      } catch (_) {}
+    }
+
+    const doFocus = async () => {
+      // 1. Focus parent workspace tab
+      if (parentTabId && ws && ws.focusTab) {
+        await ws.focusTab({ tabId: parentTabId }).catch(() => {});
+      }
+      if (parentTabId) {
+        const parentEl = document.querySelector(
+          `li.tabItem[data-tabid="${parentTabId}"] a, a[data-tabid="${parentTabId}"], li.tabItem[data-tabid="${parentTabId}"]`
+        );
+        if (parentEl) {
+          parentEl.click();
+        }
+      }
+
+      // 2. Focus subtab
+      if (subtabId && ws && ws.focusTab) {
+        await ws.focusTab({ tabId: subtabId }).catch(() => {});
+      }
+      if (subtabId) {
+        const subEl = document.querySelector(
+          `li.tabItem[data-tabid="${subtabId}"] a, a[data-tabid="${subtabId}"], li.tabItem[data-tabid="${subtabId}"]`
+        );
+        if (subEl) {
+          subEl.click();
+        }
+      }
+    };
+
+    await doFocus();
+    setTimeout(doFocus, 60);
+    setTimeout(doFocus, 180);
+    setTimeout(doFocus, 400);
+  }
+
   /**
    * Move a Primary Workspace Tab into another Primary Tab as a Subtab
    */
@@ -1570,18 +1611,30 @@
         }
       }
 
+      // Find newSubtabId if not directly returned
+      if (!newSubtabId) {
+        try {
+          const freshTargetInfo = await ws.getTabInfo({ tabId: targetTabId });
+          if (freshTargetInfo && Array.isArray(freshTargetInfo.subtabs) && freshTargetInfo.subtabs.length > 0) {
+            const matching = freshTargetInfo.subtabs.find(
+              (st) => (sourceInfo.recordId && st.recordId === sourceInfo.recordId) ||
+                      (sourceInfo.url && st.url === sourceInfo.url)
+            );
+            newSubtabId = matching ? matching.tabId : freshTargetInfo.subtabs[freshTargetInfo.subtabs.length - 1].tabId;
+          }
+        } catch (_) {}
+      }
+
+      // Focus target parent workspace tab and newly opened subtab BEFORE closing source tab
+      // This ensures sourceTabId is no longer the active tab when closed, preventing Salesforce
+      // from auto-focusing an unrelated adjacent tab
+      await activateWorkspaceAndSubtab(ws, targetTabId, newSubtabId);
+
       // Close the original source workspace tab
       await ws.closeTab({ tabId: sourceTabId }).catch(() => {});
 
-      // Focus target parent workspace tab and newly opened subtab
-      await ws.focusTab({ tabId: targetTabId }).catch(() => {});
-      if (newSubtabId) {
-        await ws.focusTab({ tabId: newSubtabId }).catch(() => {});
-        setTimeout(async () => {
-          await ws.focusTab({ tabId: targetTabId }).catch(() => {});
-          await ws.focusTab({ tabId: newSubtabId }).catch(() => {});
-        }, 80);
-      }
+      // Re-assert focus after closure
+      await activateWorkspaceAndSubtab(ws, targetTabId, newSubtabId);
 
       showToast('↳ Moved tab into workspace as subtab');
     } catch (err) {
@@ -1688,10 +1741,7 @@
       }
 
       if (newTabId) {
-        await ws.focusTab({ tabId: newTabId }).catch(() => {});
-        setTimeout(async () => {
-          await ws.focusTab({ tabId: newTabId }).catch(() => {});
-        }, 80);
+        await activateWorkspaceAndSubtab(ws, newTabId, null);
         showToast('↳ Promoted subtab to workspace tab');
       } else {
         showToast('Could not promote subtab');
@@ -1752,18 +1802,14 @@
         }
       }
 
+      // Focus target workspace and new subtab BEFORE closing old subtab
+      await activateWorkspaceAndSubtab(ws, targetParentTabId, newSubtabId);
+
       // Close old subtab
       await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
 
-      // Focus target workspace and new subtab
-      await ws.focusTab({ tabId: targetParentTabId }).catch(() => {});
-      if (newSubtabId) {
-        await ws.focusTab({ tabId: newSubtabId }).catch(() => {});
-        setTimeout(async () => {
-          await ws.focusTab({ tabId: targetParentTabId }).catch(() => {});
-          await ws.focusTab({ tabId: newSubtabId }).catch(() => {});
-        }, 80);
-      }
+      // Re-assert focus
+      await activateWorkspaceAndSubtab(ws, targetParentTabId, newSubtabId);
 
       showToast('↳ Moved subtab to workspace');
     } catch (err) {
