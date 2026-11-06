@@ -3439,7 +3439,7 @@
     const themingEnabled = settings?.modules?.theming === true;
     const themeKey = (settings?.theme && settings.theme.preset) || 'classic';
     const baseTheme = THEMES[themeKey] || THEMES['classic'];
-    const accent = (themeKey === 'custom' && settings?.theme?.customAccent) ? sanitizeHexColor(settings.theme.customAccent) : (baseTheme ? baseTheme.accent : '#0176d3');
+    const accent = getEffectiveAccent(settings);
     const isDark = themingEnabled && !!baseTheme?.isDark;
     const qvBg = isDark ? baseTheme.surface : '#ffffff';
     const qvBorder = isDark ? baseTheme.border : '#dddbda';
@@ -5541,9 +5541,14 @@
     }
 
     function ensureQuickViewsStylesInjected() {
-      if (document.getElementById('sf-quick-views-style')) return;
-      const style = document.createElement('style');
-      style.id = 'sf-quick-views-style';
+      const settings = getEnhancerSettings();
+      const accent = getEffectiveAccent(settings);
+      let style = document.getElementById('sf-quick-views-style');
+      if (!style) {
+        style = document.createElement('style');
+        style.id = 'sf-quick-views-style';
+        (document.head || document.documentElement).appendChild(style);
+      }
       style.textContent = `
         .sf-quick-views-wrapper {
           border-bottom: 1px solid var(--sf-qv-border, #dddbda) !important;
@@ -5687,7 +5692,7 @@
           opacity: 1 !important;
         }
         .sf-native-bookmark-btn:hover svg path {
-          stroke: #0176d3 !important;
+          stroke: ${accent} !important;
         }
         .sf-native-bookmark-btn.is-bookmarked {
           opacity: 1 !important;
