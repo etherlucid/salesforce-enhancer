@@ -3133,7 +3133,7 @@
     const accent = (themeKey === 'custom' && settings.theme?.customAccent) ? sanitizeHexColor(settings.theme.customAccent) : baseTheme.accent;
     const hoverBg = baseTheme.isDark ? hexToRgba(accent, 0.18) : '#eef4ff';
 
-    let style = shadowRoot.getElementById ? shadowRoot.getElementById('sf-shadow-theme-style') : null;
+    let style = shadowRoot.querySelector ? shadowRoot.querySelector('#sf-shadow-theme-style') : null;
     if (!style) {
       style = document.createElement('style');
       style.id = 'sf-shadow-theme-style';
@@ -3162,6 +3162,9 @@
         --slds-c-popover-color-background: ${baseTheme.surface} !important;
         --slds-c-combobox-color-background: ${baseTheme.bg} !important;
         --slds-c-listbox-color-background: ${baseTheme.surface} !important;
+        --slds-s-menu-item-color-background-active: ${hoverBg} !important;
+        --lwc-colorBackgroundDark: ${hoverBg} !important;
+        --slds-g-color-neutral-base-95: transparent !important;
         --slds-c-listbox-item-color-background-hover: ${hoverBg} !important;
         --slds-c-listbox-item-color-background-focus: ${hoverBg} !important;
         --slds-c-listbox-option-color-background-hover: ${hoverBg} !important;
@@ -3189,17 +3192,24 @@
       .slds-empty-state,
       .slds-box,
       .slds-card,
+      search_dialog-assistant-dialog,
+      search_dialog-instant-results-list,
+      search_dialog-assistant-dialog-help-panel,
+      search_dialog-instant-result-item,
       search_assistant-assistant-dialog,
       search_assistant-content-container,
       search_assistant-instant-results-list,
       search_assistant-empty-state,
       search_assistant-preview,
+      .forceSearchAssistantDialog,
       [class*="searchAssistant" i],
       [class*="search-assistant" i],
+      [class*="search_dialog" i],
       [class*="contentContainer" i],
       [class*="emptyState" i],
       [class*="preview" i],
       [class*="instantResult" i],
+      [class*="instant-result" i],
       [class*="naturalLanguage" i],
       [class*="tips" i],
       [class*="results-list" i],
@@ -3209,40 +3219,50 @@
         border-color: ${baseTheme.border} !important;
       }
 
-      /* Option hover inside shadow root */
+      /* Option hover inside shadow root - strictly :hover so it auto-reverts on unhover */
       :host(:hover),
-      :host(.slds-has-focus),
-      :host([aria-selected="true"]),
-      :host(.slds-is-selected),
       .slds-listbox__option:hover,
-      .slds-listbox__option.slds-has-focus,
-      .slds-listbox__option.slds-is-selected,
-      .slds-listbox__option[aria-selected="true"],
       .slds-listbox__item:hover,
-      .slds-listbox__item.slds-has-focus,
-      .slds-listbox__item.slds-is-selected,
       [role="option"]:hover,
-      [role="option"].slds-has-focus,
-      [role="option"].slds-is-selected,
-      [role="option"][aria-selected="true"],
+      .instant-result-item:hover,
+      search_dialog-instant-result-item:hover,
+      search_assistant-instant-result-item:hover,
       lightning-base-combobox-item:hover,
-      lightning-base-combobox-item.slds-has-focus,
-      force-search-instant-result-item:hover,
-      force-search-instant-result-item.slds-has-focus {
+      force-search-instant-result-item:hover {
         background-color: ${hoverBg} !important;
         background: ${hoverBg} !important;
         color: ${baseTheme.text} !important;
       }
 
+      /* Child transparency inside hovered item so no opaque text backgrounds appear */
+      :host(:hover) *,
       .slds-listbox__option:hover *,
-      .slds-listbox__option.slds-has-focus *,
-      [role="option"]:hover * {
+      .slds-listbox__item:hover *,
+      [role="option"]:hover *,
+      .instant-result-item:hover *,
+      search_dialog-instant-result-item:hover *,
+      search_assistant-instant-result-item:hover *,
+      lightning-base-combobox-item:hover *,
+      force-search-instant-result-item:hover *,
+      .data-match,
+      span.data-match,
+      [part="formatted-rich-text"],
+      [part="formatted-rich-text"] *,
+      lightning-formatted-rich-text,
+      lightning-formatted-rich-text * {
         background-color: transparent !important;
         background: transparent !important;
-        color: ${baseTheme.text} !important;
+      }
+
+      .data-match {
+        color: ${accent} !important;
+        font-weight: 700 !important;
+        text-decoration: underline !important;
       }
 
       /* Right Pane complete surface inside shadow roots */
+      search_dialog-assistant-dialog-help-panel,
+      search_dialog-assistant-dialog-help-panel *,
       search_assistant-preview,
       search_assistant-preview *,
       search_assistant-empty-state,
@@ -3268,6 +3288,7 @@
       div[class*="right" i],
       div[class*="guidance" i],
       div[class*="tips" i],
+      div[class*="help" i],
       div[class*="empty" i] {
         background-color: ${baseTheme.surface} !important;
         background: ${baseTheme.surface} !important;
@@ -3312,7 +3333,7 @@
     const qvMuted = isDark ? baseTheme.textMuted : '#706e6b';
     const qvHover = isDark ? (baseTheme.surfaceHeader || hexToRgba(accent, 0.18)) : '#f3f3f3';
 
-    let style = root.getElementById ? root.getElementById('sf-quick-views-shadow-style') : null;
+    let style = root.querySelector ? root.querySelector('#sf-quick-views-shadow-style') : null;
     if (!style) {
       style = document.createElement('style');
       style.id = 'sf-quick-views-shadow-style';
@@ -3487,109 +3508,11 @@
   }
 
   function setupSearchHoverHandler() {
-    if (window._sfSearchHoverHandlerAttached) return;
-    window._sfSearchHoverHandlerAttached = true;
-
-    function getOptionFromPath(path) {
-      if (!path || !path.length) return null;
-      for (let i = 0; i < path.length; i++) {
-        const node = path[i];
-        if (!node || node.nodeType !== 1) continue;
-        const tag = (node.tagName || '').toLowerCase();
-        if (
-          tag === 'lightning-base-combobox-item' ||
-          tag === 'force-search-instant-result-item' ||
-          (node.getAttribute && node.getAttribute('role') === 'option') ||
-          (node.classList && (node.classList.contains('slds-listbox__option') || node.classList.contains('slds-listbox__item')))
-        ) {
-          return node;
-        }
-      }
-      return null;
-    }
-
-    function isPathInSearch(path) {
-      if (!path || !path.length) return false;
-      for (let i = 0; i < path.length; i++) {
-        const node = path[i];
-        if (!node || node.nodeType !== 1) continue;
-        const tag = (node.tagName || '').toLowerCase();
-        const cls = typeof node.className === 'string' ? node.className.toLowerCase() : '';
-        if (
-          tag.includes('search_assistant') ||
-          tag.includes('force-search') ||
-          cls.includes('searchassistant') ||
-          cls.includes('forcesearch')
-        ) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    document.addEventListener(
-      'mouseover',
-      (e) => {
-        const path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
-        if (!isPathInSearch(path)) return;
-        const opt = getOptionFromPath(path);
-        if (!opt) return;
-
-        const _s = getEnhancerSettings();
-        if (_s.modules?.theming !== true) return;
-        const tKey = (_s.theme && _s.theme.preset) || 'classic';
-        const bTheme = THEMES[tKey] || THEMES['classic'];
-        if (!bTheme || !bTheme.isDark) return;
-
-        const acc = (tKey === 'custom' && _s.theme?.customAccent) ? sanitizeHexColor(_s.theme.customAccent) : bTheme.accent;
-        const tint = hexToRgba(acc, 0.18);
-
-        opt.style.setProperty('background-color', tint, 'important');
-        opt.style.setProperty('background', tint, 'important');
-        opt.style.setProperty('color', bTheme.text, 'important');
-
-        const innerOption = opt.querySelector ? opt.querySelector('.slds-listbox__option, [role="option"]') : null;
-        if (innerOption) {
-          innerOption.style.setProperty('background-color', tint, 'important');
-          innerOption.style.setProperty('background', tint, 'important');
-          innerOption.style.setProperty('color', bTheme.text, 'important');
-        }
-
-        const kids = opt.querySelectorAll ? opt.querySelectorAll('span, div, p') : [];
-        for (let k = 0; k < kids.length; k++) {
-          kids[k].style.setProperty('background-color', 'transparent', 'important');
-          kids[k].style.setProperty('background', 'transparent', 'important');
-          kids[k].style.setProperty('color', bTheme.text, 'important');
-        }
-      },
-      true
-    );
-
-    document.addEventListener(
-      'mouseout',
-      (e) => {
-        const path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
-        if (!isPathInSearch(path)) return;
-        const opt = getOptionFromPath(path);
-        if (!opt) return;
-
-        if (!opt.matches?.('.slds-is-selected, [aria-selected="true"]')) {
-          opt.style.setProperty('background-color', 'transparent', 'important');
-          opt.style.setProperty('background', 'transparent', 'important');
-          const innerOption = opt.querySelector ? opt.querySelector('.slds-listbox__option, [role="option"]') : null;
-          if (innerOption && !innerOption.matches?.('.slds-is-selected, [aria-selected="true"]')) {
-            innerOption.style.setProperty('background-color', 'transparent', 'important');
-            innerOption.style.setProperty('background', 'transparent', 'important');
-          }
-        }
-      },
-      true
-    );
+    // Pure CSS :hover manages hover states natively and reverts cleanly on unhover.
   }
 
   function themeSearchAssistantDOM(theme, specificRoot = null) {
     if (!theme || !theme.isDark) return;
-    setupSearchHoverHandler();
 
     function applyThemeToEl(el) {
       if (!el || el.nodeType !== 1) return;
@@ -5191,12 +5114,50 @@
     }
 
     function findListViewDropdownContext() {
-      collectAllShadowRoots();
+      // 1. Direct path check (instant O(1) in modern Salesforce Lightning)
+      try {
+        const directEl = document.querySelector('lst-object-home, force-object-home')
+          ?.shadowRoot?.querySelector('lst-list-view-manager, force-list-view-manager')
+          ?.shadowRoot?.querySelector('lst-common-list-internal, force-common-list-internal')
+          ?.shadowRoot?.querySelector('lst-list-view-manager-header, force-list-view-manager-header')
+          ?.shadowRoot?.querySelector('lst-list-view-picker, force-list-view-picker')
+          ?.shadowRoot?.querySelector('lst-list-view-picker-dropdown, force-list-view-picker-dropdown')
+          ?.shadowRoot?.querySelector('lightning-grouped-combobox')
+          ?.shadowRoot?.querySelector('lightning-base-combobox')
+          ?.shadowRoot?.querySelector('.slds-dropdown, [role="listbox"], .slds-listbox');
 
+        if (directEl && (directEl.offsetWidth > 0 || (directEl.isConnected && window.getComputedStyle(directEl).display !== 'none'))) {
+          const listContainer = directEl.querySelector('ul, ol, [role="listbox"], .slds-listbox') || directEl;
+          const innerHeader = findRecentListViewsHeader(directEl);
+          let itemWrapper = innerHeader;
+          while (itemWrapper && itemWrapper.parentElement && itemWrapper.parentElement !== listContainer) {
+            itemWrapper = itemWrapper.parentElement;
+          }
+          const listRoot = listContainer.getRootNode ? listContainer.getRootNode() : null;
+          if (listRoot && listRoot !== document) {
+            syncQuickViewsStyleToRoot(listRoot);
+          }
+          return { popover: directEl, listContainer, itemWrapper, headerEl: innerHeader };
+        }
+      } catch (_) {}
+
+      // 2. Recursive shadow root scan fallback
       const rootsToSearch = [document];
+      function scan(node) {
+        if (!node) return;
+        if (node.shadowRoot && !rootsToSearch.includes(node.shadowRoot)) {
+          rootsToSearch.push(node.shadowRoot);
+          scan(node.shadowRoot);
+        }
+        const ch = node.children || [];
+        for (let i = 0; i < ch.length; i++) scan(ch[i]);
+      }
+      try {
+        scan(document.documentElement);
+      } catch (_) {}
       if (typeof trackedShadowRoots !== 'undefined') {
         for (const sr of trackedShadowRoots) {
-          if (sr && sr.isConnected !== false) {
+          if (sr && sr.isConnected !== false && !rootsToSearch.includes(sr)) {
             rootsToSearch.push(sr);
           }
         }
@@ -5294,7 +5255,7 @@
               let pop = null;
               if (controlsId) {
                 for (const r of rootsToSearch) {
-                  pop = r.getElementById ? r.getElementById(controlsId) : null;
+                  pop = r.querySelector ? r.querySelector('#' + CSS.escape(controlsId)) : null;
                   if (pop) break;
                 }
               }

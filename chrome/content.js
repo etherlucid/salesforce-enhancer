@@ -412,6 +412,9 @@
           --slds-c-popover-color-background: ${baseTheme.surface} !important;
           --slds-c-combobox-color-background: ${baseTheme.bg} !important;
           --slds-c-listbox-color-background: ${baseTheme.surface} !important;
+          --slds-s-menu-item-color-background-active: ${hoverBg} !important;
+          --lwc-colorBackgroundDark: ${hoverBg} !important;
+          --slds-g-color-neutral-base-95: transparent !important;
           --slds-c-listbox-item-color-background-hover: ${hoverBg} !important;
           --slds-c-listbox-item-color-background-focus: ${hoverBg} !important;
           --slds-c-listbox-option-color-background-hover: ${hoverBg} !important;
@@ -1562,39 +1565,26 @@
           color: ${baseTheme.text} !important;
         }
 
+        /* Option hover inside search dialog - strictly :hover so it auto-reverts on unhover */
+        search_dialog-instant-result-item:hover,
+        search_dialog-instant-result-item:hover .instant-result-item,
         search_assistant-assistant-dialog [role="option"]:hover,
-        search_assistant-assistant-dialog [role="option"].slds-has-focus,
-        search_assistant-assistant-dialog [role="option"].slds-is-selected,
-        search_assistant-assistant-dialog [role="option"][aria-selected="true"],
         search_assistant-assistant-dialog .slds-listbox__option:hover,
-        search_assistant-assistant-dialog .slds-listbox__option.slds-has-focus,
-        search_assistant-assistant-dialog .slds-listbox__option.slds-is-selected,
         search_assistant-assistant-dialog .slds-listbox__item:hover,
         search_assistant-instant-results-list [role="option"]:hover,
-        search_assistant-instant-results-list [role="option"].slds-has-focus,
         search_assistant-instant-results-list .slds-listbox__option:hover,
-        search_assistant-instant-results-list .slds-listbox__option.slds-has-focus,
         search_assistant-instant-results-list .slds-listbox__item:hover,
         force-search-assistant-results .slds-listbox__option:hover,
-        force-search-assistant-results .slds-listbox__option.slds-has-focus,
-        force-search-assistant-results .slds-listbox__option.slds-is-selected,
         .forceSearchAssistantResults .slds-listbox__option:hover,
-        .forceSearchAssistantResults .slds-listbox__option.slds-has-focus,
-        .forceSearchAssistantResults .slds-listbox__option.slds-is-selected,
         div[class*="searchAssistantResults" i] .slds-listbox__option:hover,
-        div[class*="searchAssistantResults" i] .slds-listbox__option.slds-has-focus,
-        div[class*="searchAssistantResults" i] .slds-listbox__option.slds-is-selected,
         div[class*="searchAssistantResults" i] li:hover,
         div[class*="assistantResults" i] li:hover,
         [class*="searchAssistant" i] [role="option"]:hover,
-        [class*="searchAssistant" i] [role="option"].slds-has-focus,
-        [class*="searchAssistant" i] [role="option"].slds-is-selected,
-        [class*="searchAssistant" i] [role="option"][aria-selected="true"],
         [class*="searchAssistant" i] .slds-listbox__option:hover,
-        [class*="searchAssistant" i] .slds-listbox__option.slds-has-focus,
         [class*="searchAssistant" i] .slds-listbox__item:hover,
         [class*="instantResult" i]:hover,
         [class*="InstantResult" i]:hover,
+        .instant-result-item:hover,
         lightning-base-combobox-item:hover,
         force-search-instant-result-item:hover {
           background-color: ${hoverBg} !important;
@@ -1602,14 +1592,30 @@
           color: ${baseTheme.text} !important;
         }
 
+        /* Ensure all inner text spans, data-match, and rich text are transparent */
+        search_dialog-instant-result-item:hover *,
         search_assistant-assistant-dialog [role="option"]:hover *,
         search_assistant-assistant-dialog .slds-listbox__option:hover *,
         search_assistant-instant-results-list [role="option"]:hover *,
         [class*="searchAssistant" i] [role="option"]:hover *,
-        [class*="searchAssistant" i] .slds-listbox__option:hover * {
+        [class*="searchAssistant" i] .slds-listbox__option:hover *,
+        .instant-result-item:hover *,
+        lightning-base-combobox-item:hover *,
+        force-search-instant-result-item:hover *,
+        .data-match,
+        span.data-match,
+        [part="formatted-rich-text"],
+        [part="formatted-rich-text"] *,
+        lightning-formatted-rich-text,
+        lightning-formatted-rich-text * {
           background-color: transparent !important;
           background: transparent !important;
-          color: ${baseTheme.text} !important;
+        }
+
+        .data-match {
+          color: ${accent} !important;
+          font-weight: 700 !important;
+          text-decoration: underline !important;
         }
 
         force-search-natural-language-help *,
