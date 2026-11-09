@@ -2,7 +2,7 @@
 // @name         Salesforce Enhancer
 // @namespace    https://etherlucid.local/
 // @version      1.1.0
-// @description  Streamlined Salesforce productivity: Subtabs & workspace shortcuts, Quick Views list bookmarking, developer themes (Gruvbox, Solarized, Nord, Dracula), and custom loading animations.
+// @description  Salesforce productivity: subtabs & tab drag-and-drop, Quick Views list bookmarking, developer themes, and custom animations.
 // @match        https://*.lightning.force.com/*
 // @match        https://*.salesforce.com/*
 // @match        https://*.force.com/*
