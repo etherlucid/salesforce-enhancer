@@ -29,8 +29,32 @@
   const observedShadowRoots = new WeakSet();
   let dropdownObserver = null;
 
+  function isRelevantObserverShadowHost(host) {
+    if (!host || !host.tagName) return false;
+    const tag = host.tagName.toLowerCase();
+    return (
+      tag.includes('list-view') ||
+      tag.includes('object-home') ||
+      tag.includes('combobox') ||
+      tag.includes('listbox') ||
+      tag.includes('picker') ||
+      tag.includes('search') ||
+      tag.includes('assistant') ||
+      tag.includes('dialog')
+    );
+  }
+
+  function pruneTrackedShadowRoots() {
+    for (const sr of trackedShadowRoots) {
+      if (!sr || !sr.host || !sr.host.isConnected) {
+        trackedShadowRoots.delete(sr);
+      }
+    }
+  }
+
   function observeShadowRoot(sr) {
     if (!sr || !dropdownObserver || observedShadowRoots.has(sr)) return;
+    if (sr.host && !isRelevantObserverShadowHost(sr.host)) return;
     try {
       observedShadowRoots.add(sr);
       dropdownObserver.observe(sr, { childList: true, subtree: true });
@@ -44,9 +68,11 @@
       const shadowRoot = origAttachShadow.apply(this, args);
       trackedShadowRoots.add(shadowRoot);
       this._sfShadowRoot = shadowRoot;
-      observeShadowRoot(shadowRoot);
+      if (isRelevantObserverShadowHost(this)) {
+        observeShadowRoot(shadowRoot);
+      }
       try {
-        if (typeof syncStylesToShadowRoot === 'function') {
+        if (cachedSettings?.modules?.theming === true && typeof syncStylesToShadowRoot === 'function') {
           syncStylesToShadowRoot(shadowRoot);
         }
       } catch (_) {}
@@ -1180,16 +1206,26 @@
     true
   );
 
+  let snapshotDebounceTimer = null;
+  function scheduleSnapshotTabState(delay = 250) {
+    clearTimeout(snapshotDebounceTimer);
+    snapshotDebounceTimer = setTimeout(() => {
+      if (!activeTabDragState && !isInternalWorkspaceCall) {
+        snapshotTabState();
+      }
+    }, delay);
+  }
+
   window.addEventListener(
     'mousedown',
     (event) => {
       const _modSettings = getEnhancerSettings();
       if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
-      snapshotTabState();
       const isCmdOrCtrl = event.metaKey || event.ctrlKey;
       const isAlt = event.altKey;
 
       if ((isAlt || isCmdOrCtrl) && event.button === 0) {
+        snapshotTabState();
         event.preventDefault();
         try {
           window.getSelection()?.removeAllRanges();
@@ -1199,6 +1235,8 @@
         if (target) {
           event.stopPropagation();
         }
+      } else if (event.button === 0) {
+        scheduleSnapshotTabState(300);
       }
     },
     true
@@ -1301,6 +1339,8 @@
      ========================================================================== */
 
   let activeTabDragState = null;
+  let currentDropHighlightEl = null;
+  let currentDropHighlightMode = '';
 
   function ensureTabDragStyles() {
     if (!isTopWindow) return;
@@ -1309,22 +1349,31 @@
     const styleEl = document.createElement('style');
     styleEl.id = 'sf-tab-drag-style';
     styleEl.textContent = `
-      li.tabItem.sf-tab-dragging {
+      li.tabItem.sf-tab-dragging,
+      li.slds-sub-tabs__item.sf-tab-dragging,
+      .navexConsoleTabItem.sf-tab-dragging {
         opacity: 0.45 !important;
         cursor: grabbing !important;
       }
-      li.tabItem.sf-tab-draggable {
+      li.tabItem.sf-tab-draggable,
+      li.slds-sub-tabs__item.sf-tab-draggable,
+      .navexConsoleTabItem.sf-tab-draggable {
         cursor: grab;
       }
-      li.tabItem.sf-tab-drop-hover {
+      li.tabItem.sf-tab-drop-hover,
+      li.slds-sub-tabs__item.sf-tab-drop-hover,
+      .navexConsoleTabItem.sf-tab-drop-hover,
+      [role="tab"].sf-tab-drop-hover {
         outline: 2px dashed var(--sf-theme-accent, #0176d3) !important;
         outline-offset: -2px !important;
         background-color: var(--sf-theme-accent-tint, rgba(1, 118, 211, 0.15)) !important;
         border-radius: 4px !important;
         position: relative !important;
-        transition: background-color 0.12s ease, outline 0.12s ease !important;
       }
-      li.tabItem.sf-tab-drop-hover::after {
+      li.tabItem.sf-tab-drop-hover::after,
+      li.slds-sub-tabs__item.sf-tab-drop-hover::after,
+      .navexConsoleTabItem.sf-tab-drop-hover::after,
+      [role="tab"].sf-tab-drop-hover::after {
         content: "↳ Drop to convert to subtab";
         position: absolute;
         top: 100%;
@@ -1342,10 +1391,14 @@
         z-index: 999999;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
       }
-      li.tabItem.sf-tab-drop-hover.sf-promote-hover::after {
+      li.tabItem.sf-tab-drop-hover.sf-promote-hover::after,
+      .navexConsoleTabItem.sf-tab-drop-hover.sf-promote-hover::after,
+      [role="tab"].sf-tab-drop-hover.sf-promote-hover::after {
         content: "↳ Drop to promote to workspace tab" !important;
       }
-      li.tabItem.sf-tab-drop-hover.sf-subtab-target-hover::after {
+      li.tabItem.sf-tab-drop-hover.sf-subtab-target-hover::after,
+      .navexConsoleTabItem.sf-tab-drop-hover.sf-subtab-target-hover::after,
+      [role="tab"].sf-tab-drop-hover.sf-subtab-target-hover::after {
         content: "↳ Drop to move to this workspace" !important;
       }
       .navexConsoleTabContainer[aria-label="Active Workspace Subtabs"].sf-subtab-bar-drop-hover,
@@ -1358,7 +1411,6 @@
         background-color: var(--sf-theme-accent-tint, rgba(1, 118, 211, 0.15)) !important;
         border-radius: 4px !important;
         position: relative !important;
-        transition: background-color 0.12s ease, outline 0.12s ease !important;
       }
       .navexConsoleTabContainer[aria-label="Active Workspace Subtabs"].sf-subtab-bar-drop-hover::after,
       .navexConsoleSubtabContainer.sf-subtab-bar-drop-hover::after,
@@ -1389,7 +1441,6 @@
         background-color: var(--sf-theme-accent-tint, rgba(1, 118, 211, 0.12)) !important;
         border-radius: 4px !important;
         position: relative !important;
-        transition: background-color 0.12s ease, outline 0.12s ease !important;
       }
       .navexConsoleTabContainer[aria-label="Workspaces"].sf-bar-drop-hover::after,
       .navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]).sf-bar-drop-hover::after,
@@ -1414,29 +1465,54 @@
     (document.head || document.documentElement).appendChild(styleEl);
   }
 
-  function getTabIdFromElement(el) {
+  function getElementFromTarget(target) {
+    if (!target) return null;
+    if (target.nodeType === 1) return target;
+    return target.parentElement || null;
+  }
+
+  function getTabListItem(target) {
+    const el = getElementFromTarget(target);
+    if (!el || !el.closest) return null;
+    // Always prefer the outer <li> tab item before falling back to [role="tab"] (which is often the inner <a>)
+    return (
+      el.closest('li.tabItem, li.slds-sub-tabs__item, .navexConsoleTabItem') ||
+      el.closest('[role="tab"]')
+    );
+  }
+
+  function getTabIdFromElement(target) {
+    const el = getElementFromTarget(target);
     if (!el) return null;
     const direct = el.getAttribute?.('data-tabid') || el.dataset?.tabid;
     if (direct) return direct;
-    const a = el.closest?.('li.tabItem, li.slds-sub-tabs__item, .navexConsoleTabItem, [role="tab"]')?.querySelector('a[data-tabid], a.tabHeader');
-    if (a) return a.getAttribute('data-tabid') || a.dataset?.tabid;
+    const li = getTabListItem(el);
+    if (li) {
+      const liTabId = li.getAttribute?.('data-tabid') || li.dataset?.tabid;
+      if (liTabId) return liTabId;
+      const a = li.querySelector?.('a[data-tabid], a.tabHeader');
+      if (a) return a.getAttribute('data-tabid') || a.dataset?.tabid;
+    }
     const anc = el.closest?.('[data-tabid]');
     return anc ? (anc.getAttribute('data-tabid') || anc.dataset?.tabid) : null;
   }
 
-  function isSubtabElement(el) {
-    if (!el) return false;
-    const li = el.closest('li.tabItem, li.slds-sub-tabs__item, .navexConsoleTabItem, [role="tab"]');
-    if (li) {
-      if (li.classList.contains('slds-sub-tabs__item')) return true;
-      if (li.closest('.navexConsoleTabContainer[aria-label="Active Workspace Subtabs"], .navexConsoleSubtabContainer, .slds-sub-tabs, ul[role="tablist"].slds-sub-tabs')) return true;
-    }
-    return false;
+  function isSubtabElement(target) {
+    const li = getTabListItem(target);
+    if (!li) return false;
+    if (li.classList.contains('slds-sub-tabs__item')) return true;
+    return !!li.closest(
+      '.navexConsoleTabContainer[aria-label="Active Workspace Subtabs"], ' +
+      '.navexConsoleSubtabContainer, ' +
+      '.slds-sub-tabs, ' +
+      'ul[role="tablist"].slds-sub-tabs'
+    );
   }
 
   function getSubtabBarContainer(target) {
-    if (!target) return null;
-    return target.closest(
+    const el = getElementFromTarget(target);
+    if (!el || !el.closest) return null;
+    return el.closest(
       '.navexConsoleTabContainer[aria-label="Active Workspace Subtabs"], ' +
       '.navexConsoleSubtabContainer, ' +
       '.slds-sub-tabs, ' +
@@ -1445,10 +1521,10 @@
   }
 
   function getPrimaryWorkspaceTabLi(target) {
-    if (!target) return null;
-    if (isSubtabElement(target)) return null;
-    if (getSubtabBarContainer(target)) return null;
-    const li = target.closest('li.tabItem, .navexConsoleTabItem, [role="tab"]');
+    const el = getElementFromTarget(target);
+    if (!el || !el.closest) return null;
+    if (getSubtabBarContainer(el)) return null;
+    const li = el.closest('li.tabItem, .navexConsoleTabItem') || el.closest('[role="tab"]');
     if (!li) return null;
     if (li.classList.contains('slds-sub-tabs__item')) return null;
     if (li.closest('.navexConsoleTabContainer[aria-label="Active Workspace Subtabs"], .navexConsoleSubtabContainer, .slds-sub-tabs')) return null;
@@ -1456,9 +1532,10 @@
   }
 
   function isPrimaryWorkspaceDropZone(target) {
-    if (!target) return false;
-    if (isSubtabElement(target) || getSubtabBarContainer(target)) return false;
-    return !!target.closest(
+    const el = getElementFromTarget(target);
+    if (!el || !el.closest) return false;
+    if (isSubtabElement(el) || getSubtabBarContainer(el)) return false;
+    return !!el.closest(
       '.navexConsoleTabContainer[aria-label="Workspaces"], ' +
       '.navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]), ' +
       '.oneWorkspaceNavigationTabs, ' +
@@ -1467,6 +1544,20 @@
       '.oneConsoleHeader, ' +
       '.slds-context-bar'
     );
+  }
+
+  function isInTabCenterDropZone(clientX, tabLi) {
+    if (!tabLi || typeof clientX !== 'number') return true;
+    const now = performance.now();
+    if (!tabLi._sfCachedRect || !tabLi._sfCachedRectTime || now - tabLi._sfCachedRectTime > 120) {
+      tabLi._sfCachedRect = tabLi.getBoundingClientRect();
+      tabLi._sfCachedRectTime = now;
+    }
+    const rect = tabLi._sfCachedRect;
+    if (!rect || rect.width <= 0) return true;
+    // Small 10% (6px to 12px) edge margin on far left/right allows native tab reordering
+    const edgeMargin = Math.min(12, Math.max(6, Math.floor(rect.width * 0.10)));
+    return clientX >= rect.left + edgeMargin && clientX <= rect.right - edgeMargin;
   }
 
   async function getActiveWorkspaceTabId(ws) {
@@ -1494,20 +1585,70 @@
     return null;
   }
 
+  function setTabDropHighlight(el, mode = '') {
+    if (currentDropHighlightEl === el && currentDropHighlightMode === mode) {
+      return;
+    }
+    if (currentDropHighlightEl && currentDropHighlightEl !== el) {
+      currentDropHighlightEl.classList.remove(
+        'sf-tab-drop-hover',
+        'sf-promote-hover',
+        'sf-subtab-target-hover',
+        'sf-bar-drop-hover',
+        'sf-subtab-bar-drop-hover'
+      );
+    }
+    currentDropHighlightEl = el || null;
+    currentDropHighlightMode = mode || '';
+    if (!el) return;
+
+    el.classList.remove(
+      'sf-tab-drop-hover',
+      'sf-promote-hover',
+      'sf-subtab-target-hover',
+      'sf-bar-drop-hover',
+      'sf-subtab-bar-drop-hover'
+    );
+
+    if (mode === 'tab-convert') {
+      el.classList.add('sf-tab-drop-hover');
+    } else if (mode === 'tab-promote') {
+      el.classList.add('sf-tab-drop-hover', 'sf-promote-hover');
+    } else if (mode === 'tab-move-subtab') {
+      el.classList.add('sf-tab-drop-hover', 'sf-subtab-target-hover');
+    } else if (mode === 'bar-promote') {
+      el.classList.add('sf-bar-drop-hover');
+    } else if (mode === 'subtab-bar-add') {
+      el.classList.add('sf-subtab-bar-drop-hover');
+    }
+  }
+
   function clearTabDropHighlights(exceptEl = null) {
-    document.querySelectorAll('.sf-tab-drop-hover').forEach((el) => {
-      if (el !== exceptEl) {
-        el.classList.remove('sf-tab-drop-hover');
-        el.classList.remove('sf-promote-hover');
-        el.classList.remove('sf-subtab-target-hover');
+    if (!exceptEl) {
+      if (currentDropHighlightEl) {
+        currentDropHighlightEl.classList.remove(
+          'sf-tab-drop-hover',
+          'sf-promote-hover',
+          'sf-subtab-target-hover',
+          'sf-bar-drop-hover',
+          'sf-subtab-bar-drop-hover'
+        );
+        currentDropHighlightEl = null;
+        currentDropHighlightMode = '';
       }
-    });
-    document.querySelectorAll('.sf-bar-drop-hover').forEach((el) => {
-      if (el !== exceptEl) el.classList.remove('sf-bar-drop-hover');
-    });
-    document.querySelectorAll('.sf-subtab-bar-drop-hover').forEach((el) => {
-      if (el !== exceptEl) el.classList.remove('sf-subtab-bar-drop-hover');
-    });
+      return;
+    }
+    if (currentDropHighlightEl && currentDropHighlightEl !== exceptEl) {
+      currentDropHighlightEl.classList.remove(
+        'sf-tab-drop-hover',
+        'sf-promote-hover',
+        'sf-subtab-target-hover',
+        'sf-bar-drop-hover',
+        'sf-subtab-bar-drop-hover'
+      );
+      currentDropHighlightEl = null;
+      currentDropHighlightMode = '';
+    }
   }
 
   async function activateWorkspaceAndSubtab(ws, parentTabId, subtabId = null) {
@@ -1517,38 +1658,37 @@
       } catch (_) {}
     }
 
-    const doFocus = async () => {
-      // 1. Focus parent workspace tab
-      if (parentTabId && ws && ws.focusTab) {
-        await ws.focusTab({ tabId: parentTabId }).catch(() => {});
-      }
-      if (parentTabId) {
-        const parentEl = document.querySelector(
-          `li.tabItem[data-tabid="${parentTabId}"] a, a[data-tabid="${parentTabId}"], li.tabItem[data-tabid="${parentTabId}"]`
-        );
-        if (parentEl) {
-          parentEl.click();
+    const ensureFocus = async () => {
+      try {
+        if (ws && ws.focusTab) {
+          const focused = ws.getFocusedTabInfo ? await ws.getFocusedTabInfo().catch(() => null) : null;
+          if (subtabId) {
+            if (focused && focused.tabId === subtabId) return;
+            if (parentTabId && (!focused || (focused.tabId !== parentTabId && focused.parentTabId !== parentTabId))) {
+              await ws.focusTab({ tabId: parentTabId }).catch(() => {});
+            }
+            await ws.focusTab({ tabId: subtabId }).catch(() => {});
+          } else if (parentTabId) {
+            if (focused && focused.tabId === parentTabId) return;
+            await ws.focusTab({ tabId: parentTabId }).catch(() => {});
+          }
+          return;
         }
-      }
+      } catch (_) {}
 
-      // 2. Focus subtab
-      if (subtabId && ws && ws.focusTab) {
-        await ws.focusTab({ tabId: subtabId }).catch(() => {});
-      }
-      if (subtabId) {
-        const subEl = document.querySelector(
-          `li.tabItem[data-tabid="${subtabId}"] a, a[data-tabid="${subtabId}"], li.tabItem[data-tabid="${subtabId}"]`
+      // Fallback only if Workspace API is unavailable
+      const targetId = subtabId || parentTabId;
+      if (targetId) {
+        const el = document.querySelector(
+          `li.tabItem[data-tabid="${targetId}"] a, a[data-tabid="${targetId}"], li.tabItem[data-tabid="${targetId}"]`
         );
-        if (subEl) {
-          subEl.click();
-        }
+        if (el) el.click();
       }
     };
 
-    await doFocus();
-    setTimeout(doFocus, 60);
-    setTimeout(doFocus, 180);
-    setTimeout(doFocus, 400);
+    await ensureFocus();
+    setTimeout(ensureFocus, 100);
+    setTimeout(ensureFocus, 280);
   }
 
   /**
@@ -1596,41 +1736,44 @@
         } catch (_) {}
       }
 
-      // Open source tab as subtab of effectiveParentTabId
+      // 1. CRITICAL: Focus target parent workspace tab FIRST before closing sourceTabId!
+      // When sourceTabId is the currently active primary tab, switching focus to effectiveParentTabId
+      // first makes sourceTabId a background tab, preventing Salesforce Console's native
+      // "active tab closed -> jump to previous tab -> jump to first workspace tab" behavior!
+      if (ws.focusTab) {
+        await ws.focusTab({ tabId: effectiveParentTabId }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 45));
+      }
+
+      // 2. Close sourceTabId BEFORE calling openSubtab so Salesforce's tab deduplication
+      // never refocuses sourceTabId or blocks opening the record as a subtab.
+      await ws.closeTab({ tabId: sourceTabId }).catch(() => {});
+      await new Promise((r) => setTimeout(r, 40));
+
+      // 3. Open source tab as subtab of effectiveParentTabId
       const tryOpen = async () => {
         if (sourceInfo.recordId) {
           try {
             const res = await ws.openSubtab({ parentTabId: effectiveParentTabId, recordId: sourceInfo.recordId, focus: true });
-            if (res) return res;
+            if (res && res !== sourceTabId) return res;
           } catch (_) {}
         }
         if (cleanPageRef) {
           try {
             const res = await ws.openSubtab({ parentTabId: effectiveParentTabId, pageReference: cleanPageRef, focus: true });
-            if (res) return res;
+            if (res && res !== sourceTabId) return res;
           } catch (_) {}
         }
         if (cleanUrl) {
           try {
             const res = await ws.openSubtab({ parentTabId: effectiveParentTabId, url: cleanUrl, focus: true });
-            if (res) return res;
+            if (res && res !== sourceTabId) return res;
           } catch (_) {}
         }
         return null;
       };
 
       let newSubtabId = await tryOpen();
-
-      // Tab deduplication handling:
-      // If openSubtab was deduplicated (returned sourceTabId) or failed because the tab was already open,
-      // close sourceTabId first to free it from Console registry, then retry openSubtab
-      if (!newSubtabId || newSubtabId === sourceTabId) {
-        await ws.closeTab({ tabId: sourceTabId }).catch(() => {});
-        newSubtabId = await tryOpen();
-      } else {
-        // Successfully opened subtab while source was open; close source tab
-        await ws.closeTab({ tabId: sourceTabId }).catch(() => {});
-      }
 
       // If source tab had subtabs of its own, transfer them too!
       if (Array.isArray(sourceInfo.subtabs) && sourceInfo.subtabs.length > 0) {
@@ -1708,45 +1851,24 @@
         } catch (_) {}
       }
 
-      let newTabId = null;
+      // Close the subtab first so the record is freed from Salesforce's tab deduplication registry
+      await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
+      await new Promise((r) => setTimeout(r, 40));
 
-      // First attempt: try opening primary tab while subtab is still open
+      let newTabId = null;
       try {
-        if (cleanPageRef) {
-          newTabId = await ws.openTab({ pageReference: cleanPageRef, focus: true });
-        } else if (cleanUrl) {
+        if (cleanUrl) {
           newTabId = await ws.openTab({ url: cleanUrl, focus: true });
+        } else if (cleanPageRef) {
+          newTabId = await ws.openTab({ pageReference: cleanPageRef, focus: true });
         } else if (subInfo.recordId) {
           newTabId = await ws.openTab({ recordId: subInfo.recordId, focus: true });
         }
       } catch (openErr) {
-        console.warn('[Salesforce Enhancer] Initial openTab error:', openErr);
+        console.warn('[Salesforce Enhancer] openTab error:', openErr);
       }
 
-      // If openTab didn't return a new tab ID or returned the SAME subtab ID
-      // (Salesforce's tab deduplication returns the existing subtab if still open)
-      if (!newTabId || newTabId === sourceSubtabId) {
-        // Close the subtab so the record is freed from the workspace tab registry
-        await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
-
-        // Now open as top-level workspace tab
-        try {
-          if (cleanUrl) {
-            newTabId = await ws.openTab({ url: cleanUrl, focus: true });
-          } else if (cleanPageRef) {
-            newTabId = await ws.openTab({ pageReference: cleanPageRef, focus: true });
-          } else if (subInfo.recordId) {
-            newTabId = await ws.openTab({ recordId: subInfo.recordId, focus: true });
-          }
-        } catch (retryErr) {
-          console.warn('[Salesforce Enhancer] Post-close openTab error:', retryErr);
-        }
-      } else {
-        // Tab opened successfully as a separate tab; close original subtab
-        await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
-      }
-
-      // Fallback: If Workspace API openTab still failed (e.g. strict Console navigation rules),
+      // Fallback: If Workspace API openTab failed (e.g. strict Console navigation rules),
       // navigate natively using Aura force:navigateToURL or force:navigateToSObject
       if (!newTabId && window.$A && typeof window.$A.get === 'function') {
         if (cleanUrl) {
@@ -1827,38 +1949,39 @@
         } catch (_) {}
       }
 
+      // Focus target parent workspace first before closing source subtab
+      if (ws.focusTab) {
+        await ws.focusTab({ tabId: effectiveParentTabId }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 40));
+      }
+
+      // Close old subtab first to clear it from console deduplication registry
+      await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
+      await new Promise((r) => setTimeout(r, 40));
+
       const tryOpen = async () => {
         if (subInfo.recordId) {
           try {
             const res = await ws.openSubtab({ parentTabId: effectiveParentTabId, recordId: subInfo.recordId, focus: true });
-            if (res) return res;
+            if (res && res !== sourceSubtabId) return res;
           } catch (_) {}
         }
         if (cleanPageRef) {
           try {
             const res = await ws.openSubtab({ parentTabId: effectiveParentTabId, pageReference: cleanPageRef, focus: true });
-            if (res) return res;
+            if (res && res !== sourceSubtabId) return res;
           } catch (_) {}
         }
         if (cleanUrl) {
           try {
             const res = await ws.openSubtab({ parentTabId: effectiveParentTabId, url: cleanUrl, focus: true });
-            if (res) return res;
+            if (res && res !== sourceSubtabId) return res;
           } catch (_) {}
         }
         return null;
       };
 
       let newSubtabId = await tryOpen();
-
-      // Deduplication handling: if openSubtab was deduplicated or failed,
-      // close old subtab first to clear it from console registry, then retry
-      if (!newSubtabId || newSubtabId === sourceSubtabId) {
-        await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
-        newSubtabId = await tryOpen();
-      } else {
-        await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
-      }
 
       if (!newSubtabId) {
         try {
@@ -1888,16 +2011,19 @@
     if (!isTopWindow) return;
     ensureTabDragStyles();
 
-    // Ensure tab elements and background tabs are draggable on hover and mouse down
+    // Arm tab elements on pointerdown/mousedown (no global mouseover thrashing)
     const ensureDraggableTab = (e) => {
       const _modSettings = getEnhancerSettings();
       if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
 
-      const li = e.target.closest('li.tabItem, li.slds-sub-tabs__item, .navexConsoleTabItem, [role="tab"]');
+      const el = getElementFromTarget(e.target);
+      if (!el || !el.closest) return;
+
+      const li = getTabListItem(el);
       if (!li) return;
 
-      // Never make buttons draggable
-      if (e.target.closest('button, .close, .slds-button, input, textarea')) {
+      // Never make close buttons or action controls draggable
+      if (el.closest('button, .close, .slds-button, input, textarea')) {
         if (li.getAttribute('draggable') === 'true') {
           li.setAttribute('draggable', 'false');
         }
@@ -1910,16 +2036,17 @@
         li.classList.add('sf-tab-draggable');
       }
 
-      // Ensure child link doesn't preempt tab drag with native link-drag
-      const tabLink = li.querySelector('a.tabHeader, a[data-tabid]');
-      if (tabLink && tabLink.getAttribute('draggable') !== 'false') {
-        tabLink.setAttribute('draggable', 'false');
+      // Ensure child link or icon doesn't preempt tab drag with native link/image drag
+      const tabLinks = li.querySelectorAll('a, img');
+      for (let i = 0; i < tabLinks.length; i++) {
+        if (tabLinks[i].getAttribute('draggable') !== 'false') {
+          tabLinks[i].setAttribute('draggable', 'false');
+        }
       }
     };
 
-    document.addEventListener('mouseover', ensureDraggableTab, true);
-    document.addEventListener('mousedown', ensureDraggableTab, true);
     document.addEventListener('pointerdown', ensureDraggableTab, true);
+    document.addEventListener('mousedown', ensureDraggableTab, true);
 
     // Drag start
     document.addEventListener(
@@ -1928,11 +2055,14 @@
         const _modSettings = getEnhancerSettings();
         if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
 
-        const li = e.target.closest('li.tabItem, li.slds-sub-tabs__item, .navexConsoleTabItem, [role="tab"]');
+        const el = getElementFromTarget(e.target);
+        if (!el || !el.closest) return;
+
+        const li = getTabListItem(el);
         if (!li) return;
 
         // Disallow drag if initiated from close button or dropdown actions
-        if (e.target.closest('button, .close, .slds-button, input, textarea')) {
+        if (el.closest('button, .close, .slds-button, input, textarea')) {
           e.preventDefault();
           return;
         }
@@ -1958,7 +2088,12 @@
         };
 
         try {
-          e.dataTransfer.setData('application/x-sf-enhancer-tab', JSON.stringify(activeTabDragState));
+          e.dataTransfer.setData('application/x-sf-enhancer-tab', JSON.stringify({
+            tabId,
+            isSubtab,
+            parentTabId: isSubtab ? parentTabId : null,
+            title
+          }));
           e.dataTransfer.effectAllowed = 'move';
         } catch (_) {}
 
@@ -1971,11 +2106,10 @@
     // Drag end
     document.addEventListener(
       'dragend',
-      (e) => {
+      () => {
         if (activeTabDragState && activeTabDragState.sourceElement) {
           activeTabDragState.sourceElement.classList.remove('sf-tab-dragging');
         }
-        document.querySelectorAll('.sf-tab-dragging').forEach((el) => el.classList.remove('sf-tab-dragging'));
         clearTabDropHighlights();
         document.documentElement.classList.remove('sf-tab-drag-active');
         activeTabDragState = null;
@@ -1997,7 +2131,7 @@
         // Dragging subtab within its own workspace's subtab bar -> DO NOT INTERCEPT!
         // This lets Salesforce's native tab reordering operate without interference.
         if (targetSubtabBar) {
-          clearTabDropHighlights();
+          setTabDropHighlight(null);
           return;
         }
 
@@ -2009,15 +2143,13 @@
             e.stopPropagation();
             e.stopImmediatePropagation();
             e.dataTransfer.dropEffect = 'move';
-            clearTabDropHighlights(targetTabLi);
-            targetTabLi.classList.add('sf-tab-drop-hover');
 
             if (activeTabDragState.parentTabId && targetTabId === activeTabDragState.parentTabId) {
               // Dragging onto its OWN parent workspace tab -> PROMOTE!
-              targetTabLi.classList.add('sf-promote-hover');
+              setTabDropHighlight(targetTabLi, 'tab-promote');
             } else {
               // Dragging onto a DIFFERENT workspace tab -> MOVE TO WORKSPACE!
-              targetTabLi.classList.add('sf-subtab-target-hover');
+              setTabDropHighlight(targetTabLi, 'tab-move-subtab');
             }
             return;
           }
@@ -2029,13 +2161,13 @@
           e.stopPropagation();
           e.stopImmediatePropagation();
           e.dataTransfer.dropEffect = 'move';
-          clearTabDropHighlights();
-          const container = e.target.closest('.navexConsoleTabContainer, .oneWorkspaceNavigationTabs, .tabBarContainer') || e.target;
-          container.classList.add('sf-bar-drop-hover');
+          const el = getElementFromTarget(e.target);
+          const container = el?.closest('.navexConsoleTabContainer, .oneWorkspaceNavigationTabs, .tabBarContainer') || el;
+          setTabDropHighlight(container, 'bar-promote');
           return;
         }
 
-        clearTabDropHighlights();
+        setTabDropHighlight(null);
         return;
       }
 
@@ -2049,8 +2181,7 @@
           e.stopPropagation();
           e.stopImmediatePropagation();
           e.dataTransfer.dropEffect = 'move';
-          clearTabDropHighlights(targetSubtabBar);
-          targetSubtabBar.classList.add('sf-subtab-bar-drop-hover');
+          setTabDropHighlight(targetSubtabBar, 'subtab-bar-add');
           return;
         }
 
@@ -2058,28 +2189,22 @@
         if (targetTabLi) {
           const targetTabId = getTabIdFromElement(targetTabLi);
           if (targetTabId && targetTabId !== activeTabDragState.tabId) {
-            const rect = targetTabLi.getBoundingClientRect();
-            // 15% edge margin on left and right allows native tab reordering
-            const edgeMargin = Math.min(18, Math.max(8, Math.floor(rect.width * 0.15)));
-            const inDropZone = (e.clientX >= rect.left + edgeMargin) && (e.clientX <= rect.right - edgeMargin);
-
-            if (inDropZone) {
+            if (isInTabCenterDropZone(e.clientX, targetTabLi)) {
               e.preventDefault();
               e.stopPropagation();
               e.stopImmediatePropagation();
               e.dataTransfer.dropEffect = 'move';
-              clearTabDropHighlights(targetTabLi);
-              targetTabLi.classList.add('sf-tab-drop-hover');
+              setTabDropHighlight(targetTabLi, 'tab-convert');
               return;
             } else {
-              // In the edge margin: allow native reordering
-              clearTabDropHighlights();
+              // In the narrow far-left/right edge margin: allow native tab reordering
+              setTabDropHighlight(null);
               return;
             }
           }
         }
 
-        clearTabDropHighlights();
+        setTabDropHighlight(null);
         return;
       }
     };
@@ -2087,12 +2212,17 @@
     document.addEventListener('dragover', handleDragOverOrEnter, true);
     document.addEventListener('dragenter', handleDragOverOrEnter, true);
 
-    // Drag leave
+    // Drag leave: only clear highlight if cursor actually leaves the browser viewport
+    // (prevents child node / shadow boundary transitions inside a tab from flickering the outline)
     document.addEventListener(
       'dragleave',
       (e) => {
-        if (!e.relatedTarget || !document.contains(e.relatedTarget)) {
-          clearTabDropHighlights();
+        if (!activeTabDragState) return;
+        if (
+          !e.relatedTarget &&
+          (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight)
+        ) {
+          setTabDropHighlight(null);
         }
       },
       true
@@ -2105,7 +2235,7 @@
         if (!activeTabDragState || !activeTabDragState.isEnhancerTabDrag) return;
 
         const dragData = { ...activeTabDragState };
-        clearTabDropHighlights();
+        setTabDropHighlight(null);
         if (activeTabDragState.sourceElement) {
           activeTabDragState.sourceElement.classList.remove('sf-tab-dragging');
         }
@@ -2187,6 +2317,11 @@
           if (targetTabLi) {
             const targetTabId = getTabIdFromElement(targetTabLi);
             if (!targetTabId || targetTabId === dragData.tabId) return;
+
+            if (!isInTabCenterDropZone(e.clientX, targetTabLi)) {
+              // Dropped in far edge margin: allow native tab reordering
+              return;
+            }
 
             e.preventDefault();
             e.stopPropagation();
@@ -4582,142 +4717,29 @@
       el.style.setProperty('border-color', theme.border, 'important');
     }
 
-    function processSearchAssistantTree(node) {
-      if (!node) return;
+    const searchSelectors = [
+      'search_dialog-assistant-dialog',
+      'search_assistant-assistant-dialog',
+      'search_assistant-content-container',
+      'search_assistant-instant-results-list',
+      'search_assistant-empty-state',
+      'search_assistant-preview',
+      'search_assistant-natural-language-preview',
+      'force-search-assistant',
+      '[class*="searchAssistant" i]',
+      '[class*="search-assistant" i]',
+      '[class*="instantResult" i]',
+      '[class*="naturalLanguage" i]',
+      '[class*="searchTips" i]',
+      '[data-aura-class*="searchAssistant" i]',
+      '[data-aura-class*="forceSearch" i]'
+    ].join(',');
 
-      // 1. Text walker matching "Do more with Search!" empty state
+    function processSearchAssistantRoot(node) {
+      if (!node || !node.querySelectorAll) return;
       try {
-        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null, false);
-        let textNode;
-        while ((textNode = walker.nextNode())) {
-          const val = textNode.nodeValue || '';
-          if (
-            val.includes('Do more with Search') ||
-            val.includes('Get the right answers') ||
-            val.includes('Get insights') ||
-            val.includes('search_ai_natural_lang_examples')
-          ) {
-            let curr = textNode.parentElement;
-            let depth = 0;
-            let topDialog = null;
-            while (curr && depth < 20) {
-              const tag = (curr.tagName || '').toLowerCase();
-              const cls = typeof curr.className === 'string' ? curr.className : '';
-              const role = curr.getAttribute?.('role') || '';
-              if (
-                role === 'dialog' ||
-                tag.includes('assistant-dialog') ||
-                cls.includes('slds-modal') ||
-                cls.includes('searchAssistantDialog') ||
-                tag === 'search_dialog-assistant-dialog' ||
-                tag === 'search_assistant-assistant-dialog'
-              ) {
-                topDialog = curr;
-                break;
-              }
-              if (
-                curr === document.body ||
-                curr === document.documentElement ||
-                cls.includes('desktop') ||
-                cls.includes('oneHeader') ||
-                cls.includes('viewport')
-              ) {
-                break;
-              }
-              if (!curr.parentElement && curr.getRootNode) {
-                try {
-                  const rootNode = curr.getRootNode();
-                  if (rootNode && rootNode.host) {
-                    const hostTag = (rootNode.host.tagName || '').toLowerCase();
-                    if (hostTag.includes('assistant') || hostTag.includes('search')) {
-                      curr = rootNode.host;
-                      continue;
-                    }
-                  }
-                } catch (_) {}
-                break;
-              }
-              curr = curr.parentElement;
-              depth++;
-            }
-
-            const scope = topDialog || textNode.parentElement;
-            if (scope) {
-              applyThemeToEl(scope);
-              const allElements = scope.querySelectorAll ? scope.querySelectorAll('*') : [];
-              for (let k = 0; k < allElements.length; k++) {
-                const el = allElements[k];
-                if (el.nodeType !== 1) continue;
-                const tag = el.tagName.toLowerCase();
-                if (tag === 'svg' || tag === 'path' || tag === 'img') continue;
-
-                if (tag === 'a') {
-                  el.dataset.sfThemeApplied = 'true';
-                  el.style.setProperty('color', theme.accent, 'important');
-                  continue;
-                }
-
-                if (
-                  el.classList?.contains('slds-col') ||
-                  el.classList?.contains('slds-grid') ||
-                  el.classList?.contains('slds-split-view__detail') ||
-                  el.classList?.contains('slds-split-view__content') ||
-                  el.classList?.contains('slds-split-view') ||
-                  el.classList?.contains('slds-scrollable_y') ||
-                  el.classList?.contains('slds-modal__content') ||
-                  tag.includes('preview') ||
-                  tag.includes('empty-state') ||
-                  tag.includes('content-container') ||
-                  el.className?.includes('preview') ||
-                  el.className?.includes('detail') ||
-                  el.className?.includes('right') ||
-                  el.className?.includes('guidance') ||
-                  el.className?.includes('tips')
-                ) {
-                  applyThemeToEl(el);
-                }
-
-                try {
-                  const compBg = window.getComputedStyle(el).backgroundColor;
-                  if (
-                    compBg &&
-                    (compBg.includes('255, 255, 255') ||
-                     compBg.includes('243, 243, 243') ||
-                     compBg.includes('250, 250, 250') ||
-                     compBg.includes('248, 249, 250') ||
-                     compBg.includes('238, 244, 255') ||
-                     compBg === 'rgb(255, 255, 255)')
-                  ) {
-                    applyThemeToEl(el);
-                  }
-                } catch (_) {}
-              }
-            }
-          }
-        }
-      } catch (_) {}
-
-      // 2. Query selectors for search assistant and preview elements
-      try {
-        const searchSelectors = [
-          'search_assistant-assistant-dialog',
-          'search_assistant-content-container',
-          'search_assistant-instant-results-list',
-          'search_assistant-empty-state',
-          'search_assistant-preview',
-          'search_assistant-natural-language-preview',
-          'force-search-assistant',
-          '[class*="searchAssistant" i]',
-          '[class*="search-assistant" i]',
-          '[class*="instantResult" i]',
-          '[class*="naturalLanguage" i]',
-          '[class*="searchTips" i]',
-          '[data-aura-class*="searchAssistant" i]',
-          '[data-aura-class*="forceSearch" i]',
-          '.slds-illustration',
-          '.slds-empty-state'
-        ];
-        const matches = node.querySelectorAll ? node.querySelectorAll(searchSelectors.join(',')) : [];
+        const matches = node.querySelectorAll(searchSelectors);
+        if (!matches.length) return;
         for (let i = 0; i < matches.length; i++) {
           const m = matches[i];
           applyThemeToEl(m);
@@ -4736,35 +4758,33 @@
                  cd.classList.contains('slds-theme_shade') ||
                  cd.classList.contains('slds-box') ||
                  cd.classList.contains('slds-col') ||
-                 cd.classList.contains('slds-grow'))
+                 cd.classList.contains('slds-grow') ||
+                 cd.classList.contains('slds-split-view__detail') ||
+                 cd.classList.contains('slds-split-view__content') ||
+                 cd.classList.contains('slds-modal__content'))
               ) {
                 applyThemeToEl(cd);
               }
             }
           }
+          if (m.shadowRoot) {
+            processSearchAssistantRoot(m.shadowRoot);
+          }
         }
       } catch (_) {}
-
-      // 3. Recurse into open shadow roots
-      if (node.shadowRoot) {
-        processSearchAssistantTree(node.shadowRoot);
-      }
-      const children = node.children || [];
-      for (let i = 0; i < children.length; i++) {
-        if (children[i].shadowRoot) {
-          processSearchAssistantTree(children[i].shadowRoot);
-        }
-      }
     }
 
     if (specificRoot) {
-      processSearchAssistantTree(specificRoot);
+      processSearchAssistantRoot(specificRoot);
     } else {
-      processSearchAssistantTree(document.body || document.documentElement);
+      processSearchAssistantRoot(document);
       if (typeof trackedShadowRoots !== 'undefined') {
+        pruneTrackedShadowRoots();
         for (const sr of trackedShadowRoots) {
           try {
-            processSearchAssistantTree(sr);
+            if (sr.host && isRelevantObserverShadowHost(sr.host)) {
+              processSearchAssistantRoot(sr);
+            }
           } catch (_) {}
         }
       }
@@ -4774,69 +4794,39 @@
   function interceptAndReplaceMascot() {
     const settings = getEnhancerSettings();
     const customImgUrl = getEffectiveLoadingUrl(settings);
-    if (!customImgUrl) return;
+    if (!customImgUrl || !document.body) return;
 
     const anim = (settings.loadingImage && settings.loadingImage.rotate) ? 'sf-custom-spin 1.2s linear infinite' : 'none';
 
-    function processNode(el) {
-      if (!el || el.nodeType !== 1) return;
-
-      if (el.querySelectorAll) {
-        const imgs = el.querySelectorAll('img');
-        for (let i = 0; i < imgs.length; i++) {
-          processNode(imgs[i]);
-        }
-      }
-
-      if (el.tagName === 'IMG') {
-        const srcAttr = (el.src || el.getAttribute('src') || '').toLowerCase();
-        const altAttr = (el.alt || el.getAttribute('alt') || '').toLowerCase();
-        const titleAttr = (el.title || el.getAttribute('title') || '').toLowerCase();
-        const isMascot =
-          srcAttr.includes('astro') ||
-          srcAttr.includes('codey') ||
-          srcAttr.includes('einstein') ||
-          srcAttr.includes('cloudy') ||
-          srcAttr.includes('appy') ||
-          srcAttr.includes('mascot') ||
-          altAttr.includes('loading') ||
-          altAttr.includes('astro') ||
-          altAttr.includes('mascot') ||
-          titleAttr.includes('loading') ||
-          (el.closest && el.closest('#auraLoadingBox, .auraLoadingBox, .loadingBox, .oneLoading'));
-
-        if (isMascot && el.src !== customImgUrl) {
-          el.dataset.origSrc = el.dataset.origSrc || el.src;
-          el.src = customImgUrl;
-          el.srcset = '';
-          el.style.backgroundImage = 'none';
-          el.style.animation = anim;
-          el.style.objectFit = 'contain';
-        }
-      }
-
-      if (
-        el.id === 'auraLoadingBox' ||
-        (el.classList && el.classList.contains('auraLoadingBox')) ||
-        (el.classList && el.classList.contains('loadingBox')) ||
-        (el.classList && el.classList.contains('oneLoading'))
-      ) {
-        const logo = el.querySelector ? el.querySelector('.logo, div[class*="logo"]') : null;
-        if (logo) {
-          logo.style.setProperty('background-image', `url("${customImgUrl}")`, 'important');
-          logo.style.setProperty('background-size', 'contain', 'important');
-          logo.style.setProperty('background-repeat', 'no-repeat', 'important');
-          logo.style.setProperty('background-position', 'center', 'important');
-          logo.style.setProperty('animation', anim, 'important');
-          logo.style.setProperty('display', 'block', 'important');
-          logo.style.setProperty('opacity', '1', 'important');
-          logo.style.setProperty('visibility', 'visible', 'important');
-        }
-      }
-    }
-
     try {
-      processNode(document.body);
+      const candidates = document.body.querySelectorAll(
+        'img[src*="astro" i], img[src*="codey" i], img[src*="einstein" i], img[src*="cloudy" i], img[src*="appy" i], img[src*="mascot" i], #auraLoadingBox, .auraLoadingBox, .loadingBox, .oneLoading'
+      );
+      for (let i = 0; i < candidates.length; i++) {
+        const el = candidates[i];
+        if (el.tagName === 'IMG') {
+          if (el.src !== customImgUrl) {
+            el.dataset.origSrc = el.dataset.origSrc || el.src;
+            el.src = customImgUrl;
+            el.srcset = '';
+            el.style.backgroundImage = 'none';
+            el.style.animation = anim;
+            el.style.objectFit = 'contain';
+          }
+        } else {
+          const logo = el.querySelector ? el.querySelector('.logo, div[class*="logo"]') : null;
+          if (logo) {
+            logo.style.setProperty('background-image', `url("${customImgUrl}")`, 'important');
+            logo.style.setProperty('background-size', 'contain', 'important');
+            logo.style.setProperty('background-repeat', 'no-repeat', 'important');
+            logo.style.setProperty('background-position', 'center', 'important');
+            logo.style.setProperty('animation', anim, 'important');
+            logo.style.setProperty('display', 'block', 'important');
+            logo.style.setProperty('opacity', '1', 'important');
+            logo.style.setProperty('visibility', 'visible', 'important');
+          }
+        }
+      }
     } catch (_) {}
   }
 
@@ -5434,23 +5424,12 @@
         }
       } catch (_) {}
 
-      // 2. Recursive shadow root scan fallback
+      // 2. Targeted shadow root lookup (ONLY relevant list-view/combobox/picker shadow roots, NEVER a full-DOM crawl)
       const rootsToSearch = [document];
-      function scan(node) {
-        if (!node) return;
-        if (node.shadowRoot && !rootsToSearch.includes(node.shadowRoot)) {
-          rootsToSearch.push(node.shadowRoot);
-          scan(node.shadowRoot);
-        }
-        const ch = node.children || [];
-        for (let i = 0; i < ch.length; i++) scan(ch[i]);
-      }
-      try {
-        scan(document.documentElement);
-      } catch (_) {}
       if (typeof trackedShadowRoots !== 'undefined') {
+        pruneTrackedShadowRoots();
         for (const sr of trackedShadowRoots) {
-          if (sr && sr.isConnected !== false && !rootsToSearch.includes(sr)) {
+          if (sr && sr.host && sr.host.isConnected && isRelevantObserverShadowHost(sr.host)) {
             rootsToSearch.push(sr);
           }
         }
@@ -6626,22 +6605,45 @@
       checkAndInjectQuickViews();
     }
 
-    // Observer on DOM mutations ignoring internal updates
+    // Observer on DOM mutations ignoring internal updates and tab drag operations
     let checkScheduled = false;
-    dropdownObserver = new MutationObserver((mutations) => {
-      if (isInternalDOMUpdate) return;
+    let quickViewsDebounceTimer = null;
 
-      const isOurs = mutations.every((m) =>
-        Array.from(m.addedNodes).concat(Array.from(m.removedNodes)).every(
-          (n) => n.nodeType === 1 && (n.classList?.contains('sf-native-bookmark-btn') || n.closest?.('.sf-quick-views-wrapper'))
-        )
-      );
-      if (isOurs) return;
+    function scheduleQuickViewsCheck(delay = 50) {
+      if (activeTabDragState || isInternalWorkspaceCall || isInternalDOMUpdate) return;
+      clearTimeout(quickViewsDebounceTimer);
+      quickViewsDebounceTimer = setTimeout(() => {
+        if (!activeTabDragState && !isInternalWorkspaceCall && !isInternalDOMUpdate) {
+          checkAndInjectQuickViews();
+        }
+      }, delay);
+    }
+
+    dropdownObserver = new MutationObserver((mutations) => {
+      if (isInternalDOMUpdate || activeTabDragState || isInternalWorkspaceCall) return;
+
+      let hasRelevantAddedNode = false;
+      for (let i = 0; i < mutations.length; i++) {
+        const m = mutations[i];
+        const added = m.addedNodes;
+        for (let j = 0; j < added.length; j++) {
+          const n = added[j];
+          if (n.nodeType !== 1) continue;
+          if (n.classList?.contains('sf-native-bookmark-btn') || n.closest?.('.sf-quick-views-wrapper')) {
+            continue;
+          }
+          hasRelevantAddedNode = true;
+          break;
+        }
+        if (hasRelevantAddedNode) break;
+      }
+      if (!hasRelevantAddedNode) return;
 
       if (checkScheduled) return;
       checkScheduled = true;
       requestAnimationFrame(() => {
         checkScheduled = false;
+        if (activeTabDragState || isInternalWorkspaceCall || isInternalDOMUpdate) return;
         checkAndInjectQuickViews();
         const _s = getEnhancerSettings();
         if (_s.modules?.theming === true) {
@@ -6661,6 +6663,7 @@
       } catch (_) {}
     }
     if (typeof trackedShadowRoots !== 'undefined') {
+      pruneTrackedShadowRoots();
       for (const sr of trackedShadowRoots) {
         observeShadowRoot(sr);
       }
@@ -6674,6 +6677,7 @@
           } catch (_) {}
         }
         if (typeof trackedShadowRoots !== 'undefined') {
+          pruneTrackedShadowRoots();
           for (const sr of trackedShadowRoots) {
             observeShadowRoot(sr);
           }
@@ -6682,25 +6686,57 @@
       });
     }
 
-    // Click & focus fallbacks for immediate responsiveness
+    function isListViewOrSearchInteraction(e) {
+      const path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
+      for (let i = 0; i < path.length && i < 15; i++) {
+        const node = path[i];
+        if (!node || node.nodeType !== 1) continue;
+        const tag = (node.tagName || '').toLowerCase();
+        const cls = typeof node.className === 'string' ? node.className.toLowerCase() : '';
+        const title = (node.getAttribute?.('title') || node.getAttribute?.('aria-label') || '').toLowerCase();
+        if (
+          tag.includes('list-view') ||
+          tag.includes('combobox') ||
+          tag.includes('object-home') ||
+          cls.includes('listviewpicker') ||
+          cls.includes('slds-combobox') ||
+          cls.includes('slds-dropdown') ||
+          cls.includes('triggerlink') ||
+          title.includes('select a list view') ||
+          title.includes('search lists')
+        ) {
+          return 'listview';
+        }
+        if (
+          tag === 'input' ||
+          tag.includes('search') ||
+          cls.includes('search') ||
+          (node.getAttribute?.('placeholder') || '').toLowerCase().includes('search')
+        ) {
+          return 'search';
+        }
+      }
+      return null;
+    }
+
+    // Targeted click & focus handlers (only run when interacting with list view pickers or search)
     window.addEventListener(
       'click',
       (e) => {
-        [30, 100, 250, 500, 800, 1200, 2000].forEach((t) => setTimeout(checkAndInjectQuickViews, t));
-        if (typeof trackedShadowRoots !== 'undefined') {
-          for (const sr of trackedShadowRoots) {
-            observeShadowRoot(sr);
-          }
+        if (activeTabDragState) return;
+        const interactionType = isListViewOrSearchInteraction(e);
+        if (interactionType === 'listview' || interactionType === 'search') {
+          scheduleQuickViewsCheck(40);
+          setTimeout(() => scheduleQuickViewsCheck(10), 180);
         }
-        const t = e.target;
-        if (t && (t.closest?.('input[type="search"], input.slds-input, button[class*="search" i], [class*="searchAssistant" i]') || (t.getAttribute && (t.getAttribute('placeholder') || '').toLowerCase().includes('search')))) {
+        if (interactionType === 'search') {
           const _s = getEnhancerSettings();
           if (_s.modules?.theming === true) {
             const tKey = (_s.theme && _s.theme.preset) || 'classic';
             const bTheme = THEMES[tKey] || THEMES['classic'];
             if (bTheme && bTheme.isDark) {
-              setTimeout(() => themeSearchAssistantDOM(bTheme), 10);
-              setTimeout(() => themeSearchAssistantDOM(bTheme), 120);
+              setTimeout(() => themeSearchAssistantDOM(bTheme), 20);
+              setTimeout(() => themeSearchAssistantDOM(bTheme), 140);
             }
           }
         }
@@ -6711,21 +6747,20 @@
     window.addEventListener(
       'focusin',
       (e) => {
-        [30, 100, 250, 500, 800, 1200].forEach((t) => setTimeout(checkAndInjectQuickViews, t));
-        if (typeof trackedShadowRoots !== 'undefined') {
-          for (const sr of trackedShadowRoots) {
-            observeShadowRoot(sr);
-          }
+        if (activeTabDragState) return;
+        const interactionType = isListViewOrSearchInteraction(e);
+        if (interactionType === 'listview' || interactionType === 'search') {
+          scheduleQuickViewsCheck(40);
+          setTimeout(() => scheduleQuickViewsCheck(10), 180);
         }
-        const t = e.target;
-        if (t && (t.closest?.('input[type="search"], input.slds-input, button[class*="search" i]') || (t.getAttribute && (t.getAttribute('placeholder') || '').toLowerCase().includes('search')))) {
+        if (interactionType === 'search') {
           const _s = getEnhancerSettings();
           if (_s.modules?.theming === true) {
             const tKey = (_s.theme && _s.theme.preset) || 'classic';
             const bTheme = THEMES[tKey] || THEMES['classic'];
             if (bTheme && bTheme.isDark) {
-              setTimeout(() => themeSearchAssistantDOM(bTheme), 10);
-              setTimeout(() => themeSearchAssistantDOM(bTheme), 120);
+              setTimeout(() => themeSearchAssistantDOM(bTheme), 20);
+              setTimeout(() => themeSearchAssistantDOM(bTheme), 140);
             }
           }
         }
@@ -6736,15 +6771,16 @@
     window.addEventListener(
       'input',
       (e) => {
-        const t = e.target;
-        if (t && (t.closest?.('input[type="search"], input.slds-input') || (t.getAttribute && (t.getAttribute('placeholder') || '').toLowerCase().includes('search')))) {
+        if (activeTabDragState) return;
+        const interactionType = isListViewOrSearchInteraction(e);
+        if (interactionType === 'search') {
           const _s = getEnhancerSettings();
           if (_s.modules?.theming === true) {
             const tKey = (_s.theme && _s.theme.preset) || 'classic';
             const bTheme = THEMES[tKey] || THEMES['classic'];
             if (bTheme && bTheme.isDark) {
-              setTimeout(() => themeSearchAssistantDOM(bTheme), 10);
-              setTimeout(() => themeSearchAssistantDOM(bTheme), 100);
+              setTimeout(() => themeSearchAssistantDOM(bTheme), 20);
+              setTimeout(() => themeSearchAssistantDOM(bTheme), 120);
             }
           }
         }
@@ -6804,5 +6840,5 @@
     setTimeout(syncPageContextPeriodically, 600);
     setTimeout(syncPageContextPeriodically, 1800);
 
-  console.log('[Salesforce Enhancer v1.0.1] Ready — Modular shortcuts, Quick Views, developer themes & loading animations.');
+  console.log('[Salesforce Enhancer v1.2.0] Ready — Modular shortcuts, Quick Views, developer themes & loading animations.');
 })();

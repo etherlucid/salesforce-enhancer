@@ -2144,53 +2144,61 @@
     }
   }
 
+  let earlyMascotStopTimer = null;
+
   function startEarlyMascotInterceptor(customImgUrl, shouldRotate) {
     if (activeEarlyMascotObs) {
       try { activeEarlyMascotObs.disconnect(); } catch (_) {}
       activeEarlyMascotObs = null;
     }
+    clearTimeout(earlyMascotStopTimer);
 
     const anim = shouldRotate ? 'sf-custom-spin 1.2s linear infinite' : 'none';
+
+    function checkImg(el) {
+      const src = (el.src || el.getAttribute('src') || '').toLowerCase();
+      const alt = (el.alt || el.getAttribute('alt') || '').toLowerCase();
+      const title = (el.title || el.getAttribute('title') || '').toLowerCase();
+      const isMascot =
+        src.includes('astro') ||
+        src.includes('codey') ||
+        src.includes('einstein') ||
+        src.includes('cloudy') ||
+        src.includes('appy') ||
+        src.includes('bear') ||
+        src.includes('mascot') ||
+        src.includes('illustration') ||
+        src.includes('character') ||
+        src.includes('salesforce-logo') ||
+        alt.includes('loading') ||
+        alt.includes('astro') ||
+        title.includes('loading') ||
+        (el.closest && el.closest('#auraLoadingBox, .auraLoadingBox, .slds-spinner_container, .loadingBox, .oneLoading'));
+
+      if (isMascot && el.src !== customImgUrl) {
+        el.src = customImgUrl;
+        el.srcset = '';
+        el.style.setProperty('object-fit', 'contain', 'important');
+        el.style.setProperty('animation', anim, 'important');
+        if (el.parentElement) {
+          el.parentElement.style.setProperty('opacity', '1', 'important');
+          el.parentElement.style.setProperty('visibility', 'visible', 'important');
+        }
+      }
+    }
 
     function checkNode(el) {
       if (!el || el.nodeType !== 1) return;
 
+      if (el.tagName === 'IMG') {
+        checkImg(el);
+        return;
+      }
+
       if (el.querySelectorAll) {
         const imgs = el.querySelectorAll('img');
         for (let i = 0; i < imgs.length; i++) {
-          checkNode(imgs[i]);
-        }
-      }
-
-      if (el.tagName === 'IMG') {
-        const src = (el.src || el.getAttribute('src') || '').toLowerCase();
-        const alt = (el.alt || el.getAttribute('alt') || '').toLowerCase();
-        const title = (el.title || el.getAttribute('title') || '').toLowerCase();
-        const isMascot =
-          src.includes('astro') ||
-          src.includes('codey') ||
-          src.includes('einstein') ||
-          src.includes('cloudy') ||
-          src.includes('appy') ||
-          src.includes('bear') ||
-          src.includes('mascot') ||
-          src.includes('illustration') ||
-          src.includes('character') ||
-          src.includes('salesforce-logo') ||
-          alt.includes('loading') ||
-          alt.includes('astro') ||
-          title.includes('loading') ||
-          (el.closest && el.closest('#auraLoadingBox, .auraLoadingBox, .slds-spinner_container, .loadingBox, .oneLoading'));
-
-        if (isMascot && el.src !== customImgUrl) {
-          el.src = customImgUrl;
-          el.srcset = '';
-          el.style.setProperty('object-fit', 'contain', 'important');
-          el.style.setProperty('animation', anim, 'important');
-          if (el.parentElement) {
-            el.parentElement.style.setProperty('opacity', '1', 'important');
-            el.parentElement.style.setProperty('visibility', 'visible', 'important');
-          }
+          checkImg(imgs[i]);
         }
       }
 
@@ -2224,6 +2232,13 @@
         }
       });
       activeEarlyMascotObs.observe(document.documentElement, { childList: true, subtree: true });
+      // Auto-disconnect early splash observer after initial page boot (CSS handles all runtime spinners)
+      earlyMascotStopTimer = setTimeout(() => {
+        if (activeEarlyMascotObs) {
+          try { activeEarlyMascotObs.disconnect(); } catch (_) {}
+          activeEarlyMascotObs = null;
+        }
+      }, 12000);
     } catch (_) {}
   }
 
