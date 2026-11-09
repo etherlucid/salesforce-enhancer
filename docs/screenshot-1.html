@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Salesforce Enhancer - Workspace Tabs & Drag-Drop</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    html, body {
+      width: 1280px;
+      height: 800px;
+      overflow: hidden;
+      background: #f3f3f3;
+      color: #181818;
+    }
+
+    /* Global Header */
+    .global-header {
+      height: 50px;
+      background: #001639;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      color: #fff;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .app-waffle {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 3px;
+      padding: 2px;
+    }
+    .app-waffle div {
+      background: #fff;
+      border-radius: 2px;
+    }
+    .app-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.2px;
+    }
+    .search-bar {
+      width: 420px;
+      height: 32px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      gap: 8px;
+      color: #93a5be;
+      font-size: 13px;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .header-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+    }
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #0176d3;
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid #fff;
+    }
+
+    /* Primary Workspace Tab Bar */
+    .workspace-bar {
+      height: 42px;
+      background: #f3f3f3;
+      border-bottom: 1px solid #d8dde6;
+      display: flex;
+      align-items: flex-end;
+      padding: 0 12px;
+      gap: 4px;
+    }
+    .tab {
+      height: 36px;
+      background: #eef4ff;
+      border: 1px solid #d8dde6;
+      border-bottom: none;
+      border-radius: 5px 5px 0 0;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #0176d3;
+      cursor: pointer;
+      position: relative;
+    }
+    .tab.active {
+      background: #ffffff;
+      color: #080707;
+      border-top: 3px solid #0176d3;
+      height: 37px;
+      margin-bottom: -1px;
+      z-index: 2;
+    }
+    .tab-close {
+      color: #706e6b;
+      font-size: 14px;
+      margin-left: 4px;
+    }
+
+    /* Tab Drop Hover state */
+    .tab.drop-hover {
+      outline: 2px dashed #0176d3 !important;
+      outline-offset: -2px !important;
+      background: rgba(1, 118, 211, 0.18) !important;
+    }
+    .tab.drop-hover::after {
+      content: "↳ Drop to convert to subtab";
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #0176d3;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 999999;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    }
+
+    /* Dragging Tab Ghost */
+    .dragging-tab {
+      position: absolute;
+      top: 60px;
+      left: 280px;
+      height: 36px;
+      width: 210px;
+      background: #ffffff;
+      border: 1px solid #0176d3;
+      border-radius: 6px;
+      box-shadow: 0 8px 24px rgba(1, 118, 211, 0.35);
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #0176d3;
+      transform: rotate(2.5deg);
+      z-index: 10000;
+      pointer-events: none;
+    }
+
+    /* Subtab Bar */
+    .subtab-bar {
+      height: 36px;
+      background: #ffffff;
+      border-bottom: 1px solid #d8dde6;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 6px;
+    }
+    .subtab {
+      height: 28px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #444;
+    }
+    .subtab.active {
+      background: #eef4ff;
+      color: #0176d3;
+      border-color: #c9ddf7;
+    }
+
+    /* Page Content */
+    .page-body {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+      height: calc(800px - 128px);
+    }
+    .record-card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid #d8dde6;
+      padding: 18px;
+    }
+    .record-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #eef0f4;
+      padding-bottom: 14px;
+    }
+    .record-icon {
+      width: 40px;
+      height: 40px;
+      background: #7f8de1;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .record-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #080707;
+    }
+    .record-subtitle {
+      font-size: 12px;
+      color: #706e6b;
+      margin-top: 2px;
+    }
+    .fields-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      background: #f8fafc;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+    }
+    .field-item label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+      display: block;
+      margin-bottom: 2px;
+    }
+    .field-item span {
+      font-size: 13px;
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .timeline-title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: #1e293b;
+    }
+    .timeline-row {
+      display: flex;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 12px;
+    }
+
+    /* Enhancer Floating Popup */
+    .enhancer-popup {
+      position: absolute;
+      top: 58px;
+      right: 24px;
+      width: 410px;
+      background: #ffffff;
+      border-radius: 10px;
+      box-shadow: 0 16px 48px rgba(15, 23, 42, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.08);
+      padding: 16px;
+      z-index: 99999;
+    }
+    .popup-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #e2e8f0;
+      margin-bottom: 12px;
+    }
+    .popup-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .popup-brand-logo {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      background: #0176d3;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 800;
+    }
+    .popup-brand-name {
+      font-size: 15px;
+      font-weight: 800;
+      color: #0f172a;
+    }
+    .popup-badge {
+      background: #f1f5f9;
+      color: #475569;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 10px;
+      border: 1px solid #cbd5e1;
+    }
+    .module-item {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .module-info-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .module-info-desc {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    .toggle-active {
+      width: 36px;
+      height: 20px;
+      background: #0176d3;
+      border-radius: 10px;
+      position: relative;
+    }
+    .toggle-active::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 16px;
+      height: 16px;
+      background: #fff;
+      border-radius: 50%;
+    }
+
+    .theme-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .theme-pill {
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 6px 4px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: #334155;
+    }
+    .theme-pill.active {
+      background: #e0f2fe;
+      border-color: #0284c7;
+      color: #0369a1;
+    }
+
+    .callout-badge {
+      background: #0176d3;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Salesforce Global Header -->
+  <div class="global-header">
+    <div class="header-left">
+      <div class="app-waffle">
+        <div></div><div></div><div></div>
+        <div></div><div></div><div></div>
+        <div></div><div></div><div></div>
+      </div>
+      <span class="app-title">Service Console</span>
+      <div class="search-bar">
+        <span>🔍 Search cases, accounts, contacts...</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="header-icon">🔔</div>
+      <div class="header-icon">⚙️</div>
+      <div class="header-icon">❓</div>
+      <div class="avatar">JS</div>
+    </div>
+  </div>
+
+  <!-- Primary Workspace Tabs -->
+  <div class="workspace-bar">
+    <div class="tab">
+      <span>📋 Cases (All Open)</span>
+      <span class="tab-close">✕</span>
+    </div>
+    <div class="tab active drop-hover">
+      <span>🏢 Acme Corporation</span>
+      <span class="tab-close">✕</span>
+    </div>
+    <div class="tab">
+      <span>⚡ Global Logistics Inc</span>
+      <span class="tab-close">✕</span>
+    </div>
+    <div class="tab">
+      <span>➕</span>
+    </div>
+  </div>
+
+  <!-- Dragging Tab Ghost Representation -->
+  <div class="dragging-tab">
+    <span>📂 Case #10428 - High Latency</span>
+  </div>
+
+  <!-- Active Workspace Subtab Bar -->
+  <div class="subtab-bar">
+    <div class="subtab active">
+      <span>📌 Account Details</span>
+    </div>
+    <div class="subtab">
+      <span>🎫 Case #10391 (Resolved)</span>
+      <span class="tab-close">✕</span>
+    </div>
+    <div class="subtab">
+      <span>👥 Contacts (4)</span>
+      <span class="tab-close">✕</span>
+    </div>
+    <div class="subtab">
+      <span>📊 Activity Timeline</span>
+      <span class="tab-close">✕</span>
+    </div>
+    <div class="subtab">
+      <span>➕</span>
+    </div>
+  </div>
+
+  <!-- Main Record Body -->
+  <div class="page-body">
+    <div class="record-card">
+      <div class="record-header">
+        <div class="record-icon">🏢</div>
+        <div>
+          <div class="record-title">Acme Corporation</div>
+          <div class="record-subtitle">Account • Enterprise Tier • Active SLA</div>
+        </div>
+      </div>
+
+      <div class="fields-grid">
+        <div class="field-item">
+          <label>ACCOUNT OWNER</label>
+          <span>Jordan Smith</span>
+        </div>
+        <div class="field-item">
+          <label>PHONE</label>
+          <span>(555) 019-2834</span>
+        </div>
+        <div class="field-item">
+          <label>SLA LEVEL</label>
+          <span>Platinum (24/7)</span>
+        </div>
+        <div class="field-item">
+          <label>ANNUAL REVENUE</label>
+          <span>$14,200,000</span>
+        </div>
+      </div>
+
+      <div class="timeline-title">Recent Workspace Activity & Cases</div>
+      <div class="timeline-row">
+        <span>🟢 <strong>Case #10391</strong> - Cluster Deployment Automated Sync completed successfully.</span>
+      </div>
+      <div class="timeline-row">
+        <span>🟡 <strong>Case #10428</strong> - Hardware latency diagnostic scheduled for primary data center.</span>
+      </div>
+      <div class="timeline-row">
+        <span>🔵 <strong>Email Communication</strong> - Follow-up sent to VP of Infrastructure.</span>
+      </div>
+    </div>
+
+    <div class="record-card">
+      <div class="timeline-title">Workspace Details</div>
+      <div style="font-size:12px; color:#475569; line-height:1.6;">
+        <p><strong>Primary Workspace Tab:</strong> Acme Corporation</p>
+        <p><strong>Active Subtabs:</strong> 4 open records</p>
+        <p><strong>Drag & Drop:</strong> Enabled</p>
+        <br>
+        <div style="background:#e0f2fe; border:1px solid #bae6fd; padding:10px; border-radius:6px; font-size:11px; color:#0369a1;">
+          💡 <em>Drag any outer workspace tab into this tab or subtab bar to nest as a subtab!</em>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Enhancer Floating Popup Window -->
+  <div class="enhancer-popup">
+    <div class="popup-header">
+      <div class="popup-brand">
+        <div class="popup-brand-logo">⚡</div>
+        <span class="popup-brand-name">Salesforce Enhancer</span>
+      </div>
+      <span class="popup-badge">v1.1.0</span>
+    </div>
+
+    <div class="module-item">
+      <div>
+        <div class="module-info-title">Workspace Subtabs & Drag-Drop</div>
+        <div class="module-info-desc">Nest, promote, and drag tabs between workspaces</div>
+      </div>
+      <div class="toggle-active"></div>
+    </div>
+
+    <div class="module-item">
+      <div>
+        <div class="module-info-title">Quick Views List Bookmarking</div>
+        <div class="module-info-desc">Pin, sort & organize list views in native switcher</div>
+      </div>
+      <div class="toggle-active"></div>
+    </div>
+
+    <div class="module-item" style="flex-direction: column; align-items: flex-start;">
+      <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+        <div>
+          <div class="module-info-title">Developer Themes</div>
+          <div class="module-info-desc">Gruvbox, Solarized, Nord, Dracula</div>
+        </div>
+        <div class="toggle-active"></div>
+      </div>
+      <div class="theme-grid" style="width:100%; margin-top:8px;">
+        <div class="theme-pill active">Gruvbox</div>
+        <div class="theme-pill">Solarized</div>
+        <div class="theme-pill">Nord</div>
+        <div class="theme-pill">Dracula</div>
+      </div>
+    </div>
+
+    <div class="module-item">
+      <div>
+        <div class="module-info-title">Custom Loading Animation</div>
+        <div class="module-info-desc">Replace spinner with custom animated GIF</div>
+      </div>
+      <div class="toggle-active"></div>
+    </div>
+  </div>
+
+</body>
+</html>

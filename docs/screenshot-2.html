@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Salesforce Enhancer - Quick Views List Bookmarking</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    html, body {
+      width: 1280px;
+      height: 800px;
+      overflow: hidden;
+      background: #f3f3f3;
+      color: #181818;
+    }
+
+    /* Global Header */
+    .global-header {
+      height: 50px;
+      background: #001639;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      color: #fff;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .app-waffle {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 3px;
+      padding: 2px;
+    }
+    .app-waffle div {
+      background: #fff;
+      border-radius: 2px;
+    }
+    .app-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .search-bar {
+      width: 420px;
+      height: 32px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      color: #93a5be;
+      font-size: 13px;
+    }
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #0176d3;
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid #fff;
+    }
+
+    /* Workspace Bar */
+    .workspace-bar {
+      height: 42px;
+      background: #f3f3f3;
+      border-bottom: 1px solid #d8dde6;
+      display: flex;
+      align-items: flex-end;
+      padding: 0 12px;
+      gap: 4px;
+    }
+    .tab {
+      height: 36px;
+      background: #eef4ff;
+      border: 1px solid #d8dde6;
+      border-bottom: none;
+      border-radius: 5px 5px 0 0;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #0176d3;
+    }
+    .tab.active {
+      background: #ffffff;
+      color: #080707;
+      border-top: 3px solid #0176d3;
+      height: 37px;
+      margin-bottom: -1px;
+    }
+
+    /* List View Header */
+    .list-header {
+      background: #ffffff;
+      padding: 16px 20px;
+      border-bottom: 1px solid #d8dde6;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+    }
+    .list-title-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .entity-icon {
+      width: 36px;
+      height: 36px;
+      background: #f2637b;
+      border-radius: 6px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+    .list-name-btn {
+      font-size: 18px;
+      font-weight: 800;
+      color: #080707;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    /* Native List View Switcher Dropdown with QUICK VIEWS */
+    .switcher-dropdown {
+      position: absolute;
+      top: 60px;
+      left: 68px;
+      width: 380px;
+      background: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.1);
+      z-index: 99999;
+      overflow: hidden;
+    }
+    .quick-section-header {
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .quick-title {
+      font-size: 11px;
+      font-weight: 800;
+      color: #0176d3;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .quick-tools {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .quick-tool-btn {
+      font-size: 10px;
+      font-weight: 700;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #475569;
+    }
+
+    .quick-list-item {
+      padding: 9px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #f1f5f9;
+      background: #ffffff;
+      cursor: pointer;
+    }
+    .quick-list-item:hover {
+      background: #f0f7ff;
+    }
+    .quick-list-item.selected {
+      background: #eef4ff;
+      border-left: 3px solid #0176d3;
+    }
+    .quick-item-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .quick-item-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .arrow-btn {
+      font-size: 10px;
+      color: #64748b;
+      padding: 2px 4px;
+      border-radius: 3px;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+    }
+    .bookmark-star {
+      color: #0176d3;
+      font-size: 14px;
+      margin-left: 4px;
+    }
+
+    .native-section-header {
+      background: #f8fafc;
+      border-top: 2px solid #e2e8f0;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 6px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748b;
+      letter-spacing: 0.5px;
+    }
+    .native-list-item {
+      padding: 8px 12px;
+      font-size: 13px;
+      color: #334155;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .native-list-item:hover {
+      background: #f8fafc;
+    }
+    .unbookmarked-star {
+      color: #cbd5e1;
+      font-size: 14px;
+    }
+
+    /* List Table */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #ffffff;
+      font-size: 13px;
+    }
+    .data-table th {
+      background: #f8fafc;
+      color: #475569;
+      font-weight: 700;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 10px 16px;
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+    }
+    .data-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid #f1f5f9;
+      color: #1e293b;
+    }
+    .data-table tr:hover {
+      background: #f8fafc;
+    }
+    .badge-high {
+      background: #fee2e2;
+      color: #991b1b;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+    .badge-urgent {
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+    .badge-normal {
+      background: #e0f2fe;
+      color: #0369a1;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Global Header -->
+  <div class="global-header">
+    <div class="header-left">
+      <div class="app-waffle">
+        <div></div><div></div><div></div>
+        <div></div><div></div><div></div>
+        <div></div><div></div><div></div>
+      </div>
+      <span class="app-title">Service Console</span>
+      <div class="search-bar">
+        <span>🔍 Search cases, accounts, contacts...</span>
+      </div>
+    </div>
+    <div class="avatar">JS</div>
+  </div>
+
+  <!-- Primary Workspace Bar -->
+  <div class="workspace-bar">
+    <div class="tab active">
+      <span>📋 Cases (My Escalated Cases)</span>
+      <span>✕</span>
+    </div>
+    <div class="tab">
+      <span>🏢 Acme Corporation</span>
+      <span>✕</span>
+    </div>
+    <div class="tab">
+      <span>➕</span>
+    </div>
+  </div>
+
+  <!-- List View Header -->
+  <div class="list-header">
+    <div class="list-title-group">
+      <div class="entity-icon">📋</div>
+      <div>
+        <div style="font-size:11px; font-weight:700; color:#64748b;">CASES</div>
+        <div class="list-name-btn">
+          <span>My Escalated Cases</span>
+          <span style="font-size:12px; color:#64748b;">▼</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button style="padding:6px 14px; background:#0176d3; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:700;">New Case</button>
+      <button style="padding:6px 12px; background:#fff; border:1px solid #cbd5e1; border-radius:4px; font-size:12px; font-weight:600;">Refresh</button>
+    </div>
+
+    <!-- Active List View Switcher with QUICK VIEWS Section -->
+    <div class="switcher-dropdown">
+      <div class="quick-section-header">
+        <div class="quick-title">
+          <span>🔖</span>
+          <span>QUICK VIEWS (4)</span>
+        </div>
+        <div class="quick-tools">
+          <span class="quick-tool-btn">A-Z</span>
+        </div>
+      </div>
+
+      <div class="quick-list-item selected">
+        <span class="quick-item-label">⭐ My Escalated Cases</span>
+        <div class="quick-item-actions">
+          <span class="arrow-btn">▲</span>
+          <span class="arrow-btn">▼</span>
+          <span class="bookmark-star">★</span>
+        </div>
+      </div>
+
+      <div class="quick-list-item">
+        <span class="quick-item-label">Critical Outages (Tier 3)</span>
+        <div class="quick-item-actions">
+          <span class="arrow-btn">▲</span>
+          <span class="arrow-btn">▼</span>
+          <span class="bookmark-star">★</span>
+        </div>
+      </div>
+
+      <div class="quick-list-item">
+        <span class="quick-item-label">Hardware RMA Queue</span>
+        <div class="quick-item-actions">
+          <span class="arrow-btn">▲</span>
+          <span class="arrow-btn">▼</span>
+          <span class="bookmark-star">★</span>
+        </div>
+      </div>
+
+      <div class="quick-list-item">
+        <span class="quick-item-label">Pending Engineering Review</span>
+        <div class="quick-item-actions">
+          <span class="arrow-btn">▲</span>
+          <span class="arrow-btn">▼</span>
+          <span class="bookmark-star">★</span>
+        </div>
+      </div>
+
+      <div class="native-section-header">ALL LIST VIEWS</div>
+      <div class="native-list-item">
+        <span>All Closed Cases</span>
+        <span class="unbookmarked-star">☆</span>
+      </div>
+      <div class="native-list-item">
+        <span>All Open Cases</span>
+        <span class="unbookmarked-star">☆</span>
+      </div>
+      <div class="native-list-item">
+        <span>Recently Viewed</span>
+        <span class="unbookmarked-star">☆</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Background Data Table -->
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width:110px;">CASE NUMBER</th>
+        <th>SUBJECT</th>
+        <th>ACCOUNT</th>
+        <th>PRIORITY</th>
+        <th>STATUS</th>
+        <th>DATE OPENED</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="color:#0176d3; font-weight:700;">10428</td>
+        <td style="font-weight:600;">High latency investigation across primary cluster nodes</td>
+        <td>Acme Corporation</td>
+        <td><span class="badge-urgent">Critical</span></td>
+        <td>In Progress</td>
+        <td>Nov 9, 2026</td>
+      </tr>
+      <tr>
+        <td style="color:#0176d3; font-weight:700;">10419</td>
+        <td style="font-weight:600;">SAS SSD drive degraded - replacement dispatch required</td>
+        <td>Global Logistics Inc</td>
+        <td><span class="badge-high">High</span></td>
+        <td>Pending Dispatch</td>
+        <td>Nov 8, 2026</td>
+      </tr>
+      <tr>
+        <td style="color:#0176d3; font-weight:700;">10405</td>
+        <td style="font-weight:600;">HyperCore OS 9.3 rolling upgrade pre-check failure</td>
+        <td>Summit Health Systems</td>
+        <td><span class="badge-high">High</span></td>
+        <td>Under Investigation</td>
+        <td>Nov 8, 2026</td>
+      </tr>
+      <tr>
+        <td style="color:#0176d3; font-weight:700;">10398</td>
+        <td style="font-weight:600;">SSL certificate renewal for management portal</td>
+        <td>Vertex Financial</td>
+        <td><span class="badge-normal">Medium</span></td>
+        <td>Open</td>
+        <td>Nov 7, 2026</td>
+      </tr>
+      <tr>
+        <td style="color:#0176d3; font-weight:700;">10391</td>
+        <td style="font-weight:600;">Automated cluster backup validation script error</td>
+        <td>Acme Corporation</td>
+        <td><span class="badge-normal">Medium</span></td>
+        <td>Resolved</td>
+        <td>Nov 6, 2026</td>
+      </tr>
+    </tbody>
+  </table>
+
+</body>
+</html>
