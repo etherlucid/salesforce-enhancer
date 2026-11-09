@@ -1894,8 +1894,7 @@
         };
 
         try {
-          e.dataTransfer.setData('application/json', JSON.stringify(activeTabDragState));
-          e.dataTransfer.setData('text/plain', `sf-tab:${tabId}`);
+          e.dataTransfer.setData('application/x-sf-enhancer-tab', JSON.stringify(activeTabDragState));
           e.dataTransfer.effectAllowed = 'move';
         } catch (_) {}
 
@@ -1927,8 +1926,9 @@
       const targetSubtabBar = getSubtabBarContainer(e.target);
       const targetTabLi = getPrimaryWorkspaceTabLi(e.target);
 
-      // Drop zone 1: Active Workspace Subtab Bar
-      if (targetSubtabBar) {
+      // Drop zone 1: Active Workspace Subtab Bar (ONLY when dragging an outer primary tab into subtabs)
+      // When dragging a subtab within its own workspace subtab bar, let Salesforce handle native reordering!
+      if (targetSubtabBar && !activeTabDragState.isSubtab) {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
@@ -2033,8 +2033,9 @@
         const targetSubtabBar = getSubtabBarContainer(e.target);
         const targetTabLi = getPrimaryWorkspaceTabLi(e.target);
 
-        // Drop into Active Workspace Subtab Bar
-        if (targetSubtabBar) {
+        // Drop into Active Workspace Subtab Bar (ONLY when dropping an outer primary tab into this workspace)
+        // When dropping a subtab inside its own workspace subtab bar, let Salesforce handle native reordering!
+        if (targetSubtabBar && !dragData.isSubtab) {
           e.preventDefault();
           e.stopPropagation();
           e.stopImmediatePropagation();
@@ -2051,15 +2052,7 @@
             return;
           }
 
-          if (!dragData.isSubtab) {
-            await movePrimaryTabToSubtab(dragData.tabId, activeWsId);
-          } else {
-            if (dragData.parentTabId && dragData.parentTabId === activeWsId) {
-              showToast('Subtab is already in this workspace');
-              return;
-            }
-            await moveSubtabToWorkspace(dragData.tabId, activeWsId);
-          }
+          await movePrimaryTabToSubtab(dragData.tabId, activeWsId);
           return;
         }
 
