@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salesforce Enhancer
 // @namespace    https://etherlucid.local/
-// @version      1.1.1
+// @version      1.2.0
 // @description  Salesforce productivity: subtabs & tab drag-and-drop, Quick Views list bookmarking, developer themes, and custom animations.
 // @match        https://*.lightning.force.com/*
 // @match        https://*.salesforce.com/*
@@ -200,7 +200,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    version: '1.1.1',
+    version: '1.2.0',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -227,7 +227,7 @@
     }
 
     const res = {
-      version: '1.1.1',
+      version: '1.2.0',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
@@ -427,7 +427,8 @@
   }
 
   /**
-   * Check whether a tab cannot host subtabs (e.g. List Views, Search, Home, Reports, Dashboards)
+   * Check whether a tab cannot host subtabs (e.g. Search results or Home)
+   * Note: List Views (including Knowledge, Cases, Accounts) CAN host subtabs in Console!
    */
   function isNonRecordHostTab(tabInfo) {
     if (!tabInfo) return false;
@@ -435,12 +436,8 @@
     const url = tabInfo.url || '';
     const title = (tabInfo.title || '').trim();
     return (
-      url.includes('/list?filterName=') ||
-      (url.includes('/o/') && url.includes('/list')) ||
       url.includes('/lightning/page/home') ||
       url.includes('standard-home') ||
-      url.includes('/report/') ||
-      url.includes('/dashboard/') ||
       title === 'Home'
     );
   }
@@ -498,7 +495,7 @@
   /**
    * Determine the best parent workspace tab ID for opening the subtab:
    * - Normal Option+Click (⌥+Click): Opens inside the currently selected tab.
-   *   If the current tab is a List View, Search, or non-record tab that cannot host subtabs,
+   *   If the current tab is Search or Home that cannot host subtabs,
    *   routes into a pinned tab, last active record tab, or returns null so Salesforce
    *   can open the record under its proper Account per Console Navigation Rules.
    */
@@ -1296,7 +1293,7 @@
   );
 
   /* ==========================================================================
-     TAB DRAG & DROP MODULE (v1.1.1)
+     TAB DRAG & DROP MODULE (v1.2.0)
      Bidirectional workspace / subtab drag-and-drop:
      - Drag a Primary Workspace Tab into another Primary Tab -> converts into a Subtab
      - Drag a Subtab out onto the Primary Tab Bar -> promotes into an independent Workspace Tab
@@ -1572,39 +1569,75 @@
         return;
       }
 
-      if (isNonRecordHostTab(targetInfo)) {
-        showToast('List Views and Search tabs cannot host subtabs');
+      // If target is itself a subtab, nest under its parent workspace tab
+      const effectiveParentTabId = targetInfo.isSubtab ? targetInfo.parentTabId : targetTabId;
+      if (!effectiveParentTabId || effectiveParentTabId === sourceTabId) {
+        showToast('Cannot move tab into itself');
         return;
       }
 
-      // Open source tab as subtab of targetTabId
+      // Clean URL and pageReference so Salesforce doesn't force stale workspace routing
+      let cleanUrl = sourceInfo.url || '';
+      if (cleanUrl) {
+        cleanUrl = cleanUrl
+          .replace(/[?&]ws=[^&#]*/g, '')
+          .replace(/\?&/, '?')
+          .replace(/[?&]$/, '');
+      }
+
+      let cleanPageRef = null;
+      if (sourceInfo.pageReference) {
+        try {
+          cleanPageRef = JSON.parse(JSON.stringify(sourceInfo.pageReference));
+          if (cleanPageRef.state) {
+            delete cleanPageRef.state.ws;
+          }
+        } catch (_) {}
+      }
+
+      // Open source tab as subtab of effectiveParentTabId
       const subParams = {
-        parentTabId: targetTabId,
+        parentTabId: effectiveParentTabId,
         focus: true
       };
       if (sourceInfo.recordId) subParams.recordId = sourceInfo.recordId;
-      if (sourceInfo.url) subParams.url = sourceInfo.url;
-      if (sourceInfo.pageReference) subParams.pageReference = sourceInfo.pageReference;
+      if (cleanUrl) subParams.url = cleanUrl;
+      if (cleanPageRef) subParams.pageReference = cleanPageRef;
 
       let newSubtabId = null;
       try {
         newSubtabId = await ws.openSubtab(subParams);
-      } catch (err) {
-        if (sourceInfo.url) {
-          newSubtabId = await ws.openSubtab({ parentTabId: targetTabId, url: sourceInfo.url, focus: true });
-        } else {
-          throw err;
+      } catch (openErr) {
+        console.warn('[Salesforce Enhancer] Initial openSubtab error:', openErr);
+      }
+
+      // Tab deduplication handling:
+      // If openSubtab was deduplicated (returned sourceTabId) or failed because the tab was already open,
+      // close sourceTabId first to free it from Console registry, then retry openSubtab
+      if (!newSubtabId || newSubtabId === sourceTabId) {
+        await ws.closeTab({ tabId: sourceTabId }).catch(() => {});
+        try {
+          newSubtabId = await ws.openSubtab(subParams);
+        } catch (retryErr) {
+          if (cleanUrl) {
+            newSubtabId = await ws.openSubtab({ parentTabId: effectiveParentTabId, url: cleanUrl, focus: true }).catch(() => null);
+          }
         }
+      } else {
+        // Successfully opened subtab while source was open; close source tab
+        await ws.closeTab({ tabId: sourceTabId }).catch(() => {});
       }
 
       // If source tab had subtabs of its own, transfer them too!
       if (Array.isArray(sourceInfo.subtabs) && sourceInfo.subtabs.length > 0) {
         for (const st of sourceInfo.subtabs) {
           if (st.tabId !== sourceTabId && (st.recordId || st.url)) {
+            let stUrl = st.url || '';
+            if (stUrl) stUrl = stUrl.replace(/[?&]ws=[^&#]*/g, '').replace(/\?&/, '?').replace(/[?&]$/, '');
             await ws.openSubtab({
-              parentTabId: targetTabId,
+              parentTabId: effectiveParentTabId,
               recordId: st.recordId,
-              url: st.url,
+              url: stUrl,
               focus: false
             }).catch(() => {});
           }
@@ -1614,27 +1647,19 @@
       // Find newSubtabId if not directly returned
       if (!newSubtabId) {
         try {
-          const freshTargetInfo = await ws.getTabInfo({ tabId: targetTabId });
+          const freshTargetInfo = await ws.getTabInfo({ tabId: effectiveParentTabId });
           if (freshTargetInfo && Array.isArray(freshTargetInfo.subtabs) && freshTargetInfo.subtabs.length > 0) {
             const matching = freshTargetInfo.subtabs.find(
               (st) => (sourceInfo.recordId && st.recordId === sourceInfo.recordId) ||
-                      (sourceInfo.url && st.url === sourceInfo.url)
+                      (cleanUrl && st.url && st.url.includes(cleanUrl))
             );
             newSubtabId = matching ? matching.tabId : freshTargetInfo.subtabs[freshTargetInfo.subtabs.length - 1].tabId;
           }
         } catch (_) {}
       }
 
-      // Focus target parent workspace tab and newly opened subtab BEFORE closing source tab
-      // This ensures sourceTabId is no longer the active tab when closed, preventing Salesforce
-      // from auto-focusing an unrelated adjacent tab
-      await activateWorkspaceAndSubtab(ws, targetTabId, newSubtabId);
-
-      // Close the original source workspace tab
-      await ws.closeTab({ tabId: sourceTabId }).catch(() => {});
-
-      // Re-assert focus after closure
-      await activateWorkspaceAndSubtab(ws, targetTabId, newSubtabId);
+      // Focus target parent workspace tab and newly opened subtab
+      await activateWorkspaceAndSubtab(ws, effectiveParentTabId, newSubtabId);
 
       showToast('↳ Moved tab into workspace as subtab');
     } catch (err) {
@@ -1773,43 +1798,75 @@
         return;
       }
 
-      if (subInfo.parentTabId === targetParentTabId) {
+      const effectiveParentTabId = targetInfo.isSubtab ? targetInfo.parentTabId : targetParentTabId;
+
+      if (subInfo.parentTabId === effectiveParentTabId) {
         showToast('Subtab is already in this workspace');
         return;
       }
 
-      if (isNonRecordHostTab(targetInfo)) {
-        showToast('List Views and Search tabs cannot host subtabs');
-        return;
+      let cleanUrl = subInfo.url || '';
+      if (cleanUrl) {
+        cleanUrl = cleanUrl
+          .replace(/[?&]ws=[^&#]*/g, '')
+          .replace(/\?&/, '?')
+          .replace(/[?&]$/, '');
+      }
+
+      let cleanPageRef = null;
+      if (subInfo.pageReference) {
+        try {
+          cleanPageRef = JSON.parse(JSON.stringify(subInfo.pageReference));
+          if (cleanPageRef.state) {
+            delete cleanPageRef.state.ws;
+          }
+        } catch (_) {}
       }
 
       const subParams = {
-        parentTabId: targetParentTabId,
+        parentTabId: effectiveParentTabId,
         focus: true
       };
       if (subInfo.recordId) subParams.recordId = subInfo.recordId;
-      if (subInfo.url) subParams.url = subInfo.url;
-      if (subInfo.pageReference) subParams.pageReference = subInfo.pageReference;
+      if (cleanUrl) subParams.url = cleanUrl;
+      if (cleanPageRef) subParams.pageReference = cleanPageRef;
 
       let newSubtabId = null;
       try {
         newSubtabId = await ws.openSubtab(subParams);
       } catch (err) {
-        if (subInfo.url) {
-          newSubtabId = await ws.openSubtab({ parentTabId: targetParentTabId, url: subInfo.url, focus: true });
-        } else {
-          throw err;
-        }
+        console.warn('[Salesforce Enhancer] Initial openSubtab error in moveSubtab:', err);
       }
 
-      // Focus target workspace and new subtab BEFORE closing old subtab
-      await activateWorkspaceAndSubtab(ws, targetParentTabId, newSubtabId);
+      // Deduplication handling: if openSubtab was deduplicated or failed,
+      // close old subtab first to clear it from console registry, then retry
+      if (!newSubtabId || newSubtabId === sourceSubtabId) {
+        await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
+        try {
+          newSubtabId = await ws.openSubtab(subParams);
+        } catch (retryErr) {
+          if (cleanUrl) {
+            newSubtabId = await ws.openSubtab({ parentTabId: effectiveParentTabId, url: cleanUrl, focus: true }).catch(() => null);
+          }
+        }
+      } else {
+        await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
+      }
 
-      // Close old subtab
-      await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
+      if (!newSubtabId) {
+        try {
+          const freshTargetInfo = await ws.getTabInfo({ tabId: effectiveParentTabId });
+          if (freshTargetInfo && Array.isArray(freshTargetInfo.subtabs) && freshTargetInfo.subtabs.length > 0) {
+            const matching = freshTargetInfo.subtabs.find(
+              (st) => (subInfo.recordId && st.recordId === subInfo.recordId) ||
+                      (cleanUrl && st.url && st.url.includes(cleanUrl))
+            );
+            newSubtabId = matching ? matching.tabId : freshTargetInfo.subtabs[freshTargetInfo.subtabs.length - 1].tabId;
+          }
+        } catch (_) {}
+      }
 
-      // Re-assert focus
-      await activateWorkspaceAndSubtab(ws, targetParentTabId, newSubtabId);
+      await activateWorkspaceAndSubtab(ws, effectiveParentTabId, newSubtabId);
 
       showToast('↳ Moved subtab to workspace');
     } catch (err) {
@@ -1926,16 +1983,31 @@
       const targetSubtabBar = getSubtabBarContainer(e.target);
       const targetTabLi = getPrimaryWorkspaceTabLi(e.target);
 
-      // Drop zone 1: Active Workspace Subtab Bar (ONLY when dragging an outer primary tab into subtabs)
-      // When dragging a subtab within its own workspace subtab bar, let Salesforce handle native reordering!
-      if (targetSubtabBar && !activeTabDragState.isSubtab) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        e.dataTransfer.dropEffect = 'move';
-        clearTabDropHighlights(targetSubtabBar);
-        targetSubtabBar.classList.add('sf-subtab-bar-drop-hover');
-        return;
+      // Drop zone 1: Active Workspace Subtab Bar
+      // - When dragging an outer primary tab into subtabs: allow drop to add to this workspace
+      // - When dragging a subtab from a DIFFERENT workspace into this subtab bar: allow drop to move here
+      // - When dragging a subtab within its own workspace subtab bar, let Salesforce handle native reordering!
+      if (targetSubtabBar) {
+        let isReorderingOwnSubtab = false;
+        if (activeTabDragState.isSubtab) {
+          const activeWsLi = document.querySelector(
+            '.navexConsoleTabContainer[aria-label="Workspaces"] li.tabItem.slds-is-active, .navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]) li.tabItem.slds-is-active'
+          );
+          const activeWsId = activeWsLi ? getTabIdFromElement(activeWsLi) : null;
+          if (!activeWsId || (activeTabDragState.parentTabId && activeTabDragState.parentTabId === activeWsId)) {
+            isReorderingOwnSubtab = true;
+          }
+        }
+
+        if (!isReorderingOwnSubtab) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          e.dataTransfer.dropEffect = 'move';
+          clearTabDropHighlights(targetSubtabBar);
+          targetSubtabBar.classList.add('sf-subtab-bar-drop-hover');
+          return;
+        }
       }
 
       // If dragging a subtab:
@@ -2033,27 +2105,31 @@
         const targetSubtabBar = getSubtabBarContainer(e.target);
         const targetTabLi = getPrimaryWorkspaceTabLi(e.target);
 
-        // Drop into Active Workspace Subtab Bar (ONLY when dropping an outer primary tab into this workspace)
-        // When dropping a subtab inside its own workspace subtab bar, let Salesforce handle native reordering!
-        if (targetSubtabBar && !dragData.isSubtab) {
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-
+        // Drop into Active Workspace Subtab Bar
+        // (Outer primary tabs or subtabs dragged from other workspaces)
+        if (targetSubtabBar) {
           const ws = await getWorkspaceAPI().catch(() => null);
           const activeWsId = await getActiveWorkspaceTabId(ws);
-          if (!activeWsId) {
-            showToast('No active workspace tab found');
-            return;
-          }
+          if (activeWsId) {
+            const isOwnSubtab = dragData.isSubtab && dragData.parentTabId && dragData.parentTabId === activeWsId;
+            if (!isOwnSubtab) {
+              e.preventDefault();
+              e.stopPropagation();
+              e.stopImmediatePropagation();
 
-          if (dragData.tabId === activeWsId) {
-            showToast('Tab is already the active workspace');
-            return;
+              if (!dragData.isSubtab) {
+                if (dragData.tabId === activeWsId) {
+                  showToast('Tab is already the active workspace');
+                  return;
+                }
+                await movePrimaryTabToSubtab(dragData.tabId, activeWsId);
+                return;
+              } else {
+                await moveSubtabToWorkspace(dragData.tabId, activeWsId);
+                return;
+              }
+            }
           }
-
-          await movePrimaryTabToSubtab(dragData.tabId, activeWsId);
-          return;
         }
 
         // If dragging a Subtab:

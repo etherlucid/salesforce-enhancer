@@ -148,7 +148,7 @@
   function normalizeSettings(raw) {
     if (!raw || typeof raw !== 'object') {
       return {
-        version: '1.1.1',
+        version: '1.2.0',
         modules: { subtabs: true, quickViews: true, theming: false, loadingAnimation: false },
         theme: { preset: 'classic', customAccent: '#8b5cf6', applyToNavigation: true },
         loadingImage: { url: GIF_PARROT, size: 64, rotate: false }
@@ -156,7 +156,7 @@
     }
 
     const res = {
-      version: '1.1.1',
+      version: '1.2.0',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
