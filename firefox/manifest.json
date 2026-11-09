@@ -6,7 +6,6 @@
   "permissions": [
     "storage",
     "unlimitedStorage",
-    "tabs",
     "https://*.lightning.force.com/*",
     "https://*.salesforce.com/*",
     "https://*.force.com/*",
