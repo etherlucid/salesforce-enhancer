@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salesforce Enhancer
 // @namespace    https://etherlucid.local/
-// @version      1.1.0
+// @version      1.1.1
 // @description  Salesforce productivity: subtabs & tab drag-and-drop, Quick Views list bookmarking, developer themes, and custom animations.
 // @match        https://*.lightning.force.com/*
 // @match        https://*.salesforce.com/*
@@ -200,7 +200,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    version: '1.1.0',
+    version: '1.1.1',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -227,7 +227,7 @@
     }
 
     const res = {
-      version: '1.1.0',
+      version: '1.1.1',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
@@ -1296,7 +1296,7 @@
   );
 
   /* ==========================================================================
-     TAB DRAG & DROP MODULE (v1.1.0)
+     TAB DRAG & DROP MODULE (v1.1.1)
      Bidirectional workspace / subtab drag-and-drop:
      - Drag a Primary Workspace Tab into another Primary Tab -> converts into a Subtab
      - Drag a Subtab out onto the Primary Tab Bar -> promotes into an independent Workspace Tab
