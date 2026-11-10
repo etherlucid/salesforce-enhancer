@@ -2932,8 +2932,18 @@
 
           /* Quick Views List View Dropdown Section & Bar */
           .sf-quick-views-wrapper,
+          .sf-quick-views-wrapper:hover,
+          .sf-quick-views-wrapper:focus,
+          .sf-quick-views-wrapper:focus-within,
           .sf-quick-header-row,
+          .sf-quick-header-row:hover,
           .sf-quick-list,
+          .sf-quick-list:hover {
+            background: ${baseTheme.surface} !important;
+            background-color: ${baseTheme.surface} !important;
+            border-color: ${baseTheme.border} !important;
+            color: ${baseTheme.text} !important;
+          }
           .sf-quick-item {
             background: ${baseTheme.surface} !important;
             background-color: ${baseTheme.surface} !important;
@@ -4524,7 +4534,10 @@
     }
 
     style.textContent = `
-      .sf-quick-views-wrapper {
+      .sf-quick-views-wrapper,
+      .sf-quick-views-wrapper:hover,
+      .sf-quick-views-wrapper:focus,
+      .sf-quick-views-wrapper:focus-within {
         display: block !important;
         border-bottom: 1px solid ${qvBorder} !important;
         margin-bottom: 4px !important;
@@ -4534,7 +4547,8 @@
         list-style: none !important;
         font-family: inherit !important;
       }
-      .sf-quick-header-row {
+      .sf-quick-header-row,
+      .sf-quick-header-row:hover {
         display: flex !important;
         align-items: center !important;
         justify-content: space-between !important;
@@ -4562,7 +4576,8 @@
         color: ${qvMuted} !important;
         font-family: inherit !important;
       }
-      .sf-quick-list {
+      .sf-quick-list,
+      .sf-quick-list:hover {
         list-style: none !important;
         margin: 0 !important;
         padding: 0 !important;
@@ -5775,15 +5790,20 @@
         (document.head || document.documentElement).appendChild(style);
       }
       style.textContent = `
-        .sf-quick-views-wrapper {
+        .sf-quick-views-wrapper,
+        .sf-quick-views-wrapper:hover,
+        .sf-quick-views-wrapper:focus,
+        .sf-quick-views-wrapper:focus-within {
           border-bottom: 1px solid var(--sf-qv-border, #dddbda) !important;
           margin-bottom: 4px !important;
           padding-bottom: 4px !important;
           background: var(--sf-qv-bg, #ffffff) !important;
+          background-color: var(--sf-qv-bg, #ffffff) !important;
           list-style: none !important;
           font-family: inherit !important;
         }
-        .sf-quick-header-row {
+        .sf-quick-header-row,
+        .sf-quick-header-row:hover {
           display: flex !important;
           align-items: center !important;
           justify-content: space-between !important;
@@ -5791,6 +5811,7 @@
           user-select: none !important;
           font-family: inherit !important;
           background: var(--sf-qv-bg, #ffffff) !important;
+          background-color: var(--sf-qv-bg, #ffffff) !important;
         }
         .sf-quick-header-title {
           font-size: 11px !important;
@@ -5810,9 +5831,15 @@
           color: var(--sf-qv-muted, #706e6b) !important;
           font-family: inherit !important;
         }
-        .sf-quick-list {
+        .sf-quick-list,
+        .sf-quick-list:hover {
           list-style: none !important;
           margin: 0 !important;
+          padding: 0 !important;
+          font-family: inherit !important;
+          background: var(--sf-qv-bg, #ffffff) !important;
+          background-color: var(--sf-qv-bg, #ffffff) !important;
+        }
           padding: 0 !important;
           font-family: inherit !important;
           background: var(--sf-qv-bg, #ffffff) !important;
@@ -6670,13 +6697,16 @@
             if (!quickWrapper) {
               const isUl = listContainer.tagName === 'UL' || listContainer.tagName === 'OL';
               quickWrapper = document.createElement(isUl ? 'li' : 'div');
-              quickWrapper.className = 'sf-quick-views-wrapper slds-listbox__item';
+              quickWrapper.className = 'sf-quick-views-wrapper';
               quickWrapper.setAttribute('role', 'presentation');
               listContainer.insertBefore(quickWrapper, insertBeforeEl);
             } else if (quickWrapper.parentElement !== listContainer) {
               if (!quickWrapper.contains(listContainer) && listContainer !== quickWrapper) {
                 listContainer.insertBefore(quickWrapper, insertBeforeEl);
               }
+            }
+            if (quickWrapper && quickWrapper.classList) {
+              quickWrapper.classList.remove('slds-listbox__item');
             }
           } catch (insertErr) {
             console.warn('[Salesforce Enhancer] Could not insert quick views wrapper:', insertErr);
