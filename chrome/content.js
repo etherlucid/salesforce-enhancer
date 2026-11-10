@@ -1803,6 +1803,147 @@
       .slds-path__item.slds-is-incomplete .slds-path__title {
         color: #080707 !important;
       }
+
+      /* ==========================================================================
+         MESSAGING & CHAT BUBBLES (MessagingSession, Omni-Channel, Live Chat, SLDS Chat)
+         Guarantees crystal-clear, high-contrast readable text across all dark and light themes
+         ========================================================================== */
+      .slds-chat,
+      .slds-chat-list,
+      .slds-chat-listitem,
+      .slds-chat-message,
+      .slds-chat-message__body,
+      lightning-conversation-message,
+      force-conversation-message {
+        background-color: transparent !important;
+      }
+
+      /* Outbound messages (Sent by agent / bot) - colored bubble (Salesforce Blue) with crisp white text */
+      .slds-chat-message__text_outbound,
+      [class*="chat-message__text_outbound"],
+      .slds-chat-listitem_outbound .slds-chat-message__text,
+      [class*="chat-listitem_outbound"] [class*="chat-message__text"],
+      lightning-conversation-message[data-direction="outbound"] .slds-chat-message__text,
+      [data-message-direction="outbound"] .slds-chat-message__text,
+      .slds-chat-message__text_outbound-agent,
+      [class*="chat-message__text_outbound-agent"] {
+        background-color: #0176d3 !important;
+        background: #0176d3 !important;
+        color: #ffffff !important;
+        border: none !important;
+      }
+
+      .slds-chat-message__text_outbound,
+      .slds-chat-message__text_outbound *,
+      .slds-chat-message__text_outbound p,
+      .slds-chat-message__text_outbound span,
+      .slds-chat-message__text_outbound div,
+      .slds-chat-message__text_outbound label,
+      .slds-chat-message__text_outbound lightning-formatted-rich-text,
+      .slds-chat-message__text_outbound [part="formatted-rich-text"],
+      [class*="chat-message__text_outbound"] *,
+      .slds-chat-listitem_outbound .slds-chat-message__text *,
+      [class*="chat-listitem_outbound"] [class*="chat-message__text"] *,
+      lightning-conversation-message[data-direction="outbound"] .slds-chat-message__text *,
+      [data-message-direction="outbound"] .slds-chat-message__text *,
+      .slds-chat-message__text_outbound-agent * {
+        color: #ffffff !important;
+      }
+
+      .slds-chat-message__text_outbound a,
+      .slds-chat-message__text_outbound a *,
+      [class*="chat-message__text_outbound"] a {
+        color: #ffffff !important;
+        text-decoration: underline !important;
+      }
+
+      /* Inbound messages (Received from customer / visitor) */
+      .slds-chat-message__text_inbound,
+      [class*="chat-message__text_inbound"],
+      .slds-chat-listitem_inbound .slds-chat-message__text,
+      [class*="chat-listitem_inbound"] [class*="chat-message__text"],
+      lightning-conversation-message[data-direction="inbound"] .slds-chat-message__text,
+      [data-message-direction="inbound"] .slds-chat-message__text {
+        background-color: ${isDark ? baseTheme.surfaceHeader : '#f3f3f3'} !important;
+        background: ${isDark ? baseTheme.surfaceHeader : '#f3f3f3'} !important;
+        color: ${isDark ? baseTheme.text : '#181818'} !important;
+        border: ${isDark ? `1px solid ${baseTheme.border}` : '1px solid #e5e5e5'} !important;
+      }
+
+      .slds-chat-message__text_inbound,
+      .slds-chat-message__text_inbound *,
+      .slds-chat-message__text_inbound p,
+      .slds-chat-message__text_inbound span,
+      .slds-chat-message__text_inbound div,
+      .slds-chat-message__text_inbound label,
+      .slds-chat-message__text_inbound lightning-formatted-rich-text,
+      .slds-chat-message__text_inbound [part="formatted-rich-text"],
+      [class*="chat-message__text_inbound"] *,
+      .slds-chat-listitem_inbound .slds-chat-message__text *,
+      [class*="chat-listitem_inbound"] [class*="chat-message__text"] *,
+      lightning-conversation-message[data-direction="inbound"] .slds-chat-message__text *,
+      [data-message-direction="inbound"] .slds-chat-message__text * {
+        color: ${isDark ? baseTheme.text : '#181818'} !important;
+      }
+
+      .slds-chat-message__text_inbound a,
+      [class*="chat-message__text_inbound"] a {
+        color: ${accent} !important;
+        text-decoration: underline !important;
+      }
+
+      /* Agent Whisper / Supervisor Private Message / Internal Notes */
+      .slds-chat-message__text_agent,
+      [class*="chat-message__text_agent"],
+      .slds-chat-message__text_whisper,
+      [class*="chat-message__text_whisper"] {
+        background-color: ${isDark ? '#3b2d54' : '#ece5fb'} !important;
+        background: ${isDark ? '#3b2d54' : '#ece5fb'} !important;
+        border: 1px solid ${isDark ? '#6b46c1' : '#c4b5fd'} !important;
+        color: ${isDark ? '#f8f8f2' : '#321d5c'} !important;
+      }
+      .slds-chat-message__text_agent *,
+      [class*="chat-message__text_agent"] *,
+      .slds-chat-message__text_whisper *,
+      [class*="chat-message__text_whisper"] * {
+        color: ${isDark ? '#f8f8f2' : '#321d5c'} !important;
+      }
+
+      /* Delivery failure / alerts */
+      .slds-chat-message__text_delivery-failure,
+      [class*="chat-message__text_delivery-failure"] {
+        background-color: #fedfe0 !important;
+        background: #fedfe0 !important;
+        border: 1px solid #ea001e !important;
+        color: #ba0517 !important;
+      }
+      .slds-chat-message__text_delivery-failure * {
+        color: #ba0517 !important;
+      }
+
+      /* Chat message metadata (Timestamps, Sender names, Status checkmarks) */
+      .slds-chat-message__meta,
+      .slds-chat-message__meta span,
+      .slds-chat-message__meta time,
+      [class*="chat-message__meta"],
+      [class*="chat-message__meta"] * {
+        color: ${baseTheme.textMuted} !important;
+        background: transparent !important;
+      }
+
+      /* Chat events & divider bookends ("Agent accepted chat", "Transferred to Queue", timestamps) */
+      .slds-chat-event,
+      .slds-chat-event__body,
+      .slds-chat-event__rule,
+      .slds-chat-bookend,
+      .slds-chat-bookend__item {
+        background-color: transparent !important;
+        color: ${baseTheme.textMuted} !important;
+      }
+      .slds-chat-event__body,
+      .slds-chat-event__body * {
+        color: ${baseTheme.textMuted} !important;
+      }
     `;
 
     return css;
