@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salesforce Enhancer
 // @namespace    https://etherlucid.local/
-// @version      1.2.0
+// @version      1.2.1
 // @description  Salesforce productivity: subtabs & tab drag-and-drop, Quick Views list bookmarking, developer themes, and custom animations.
 // @match        https://*.lightning.force.com/*
 // @match        https://*.salesforce.com/*
@@ -226,7 +226,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    version: '1.2.0',
+    version: '1.2.1',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -253,7 +253,7 @@
     }
 
     const res = {
-      version: '1.2.0',
+      version: '1.2.1',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
@@ -1331,7 +1331,7 @@
   );
 
   /* ==========================================================================
-     TAB DRAG & DROP MODULE (v1.2.0)
+     TAB DRAG & DROP MODULE (v1.2.1)
      Bidirectional workspace / subtab drag-and-drop:
      - Drag a Primary Workspace Tab into another Primary Tab -> converts into a Subtab
      - Drag a Subtab out onto the Primary Tab Bar -> promotes into an independent Workspace Tab
@@ -5408,31 +5408,50 @@
           ?.shadowRoot?.querySelector('lightning-base-combobox')
           ?.shadowRoot?.querySelector('.slds-dropdown, [role="listbox"], .slds-listbox');
 
-        const isComboboxOpen = (el) => {
-          if (!el || !el.isConnected) return false;
-          if (el.offsetWidth <= 0 || el.offsetHeight <= 0) return false;
-          const hostCombobox = el.closest ? el.closest('.slds-combobox, lightning-base-combobox') : null;
-          if (hostCombobox) {
-            if (hostCombobox.classList.contains('slds-is-open')) return true;
-            const inputOrBtn = hostCombobox.querySelector('[aria-expanded="true"]');
-            if (inputOrBtn) return true;
-            return false;
+        function getValidListContainer(pop) {
+          if (!pop) return null;
+          const candidates = pop.querySelectorAll ? pop.querySelectorAll('ul, ol, [role="listbox"], .slds-listbox') : [];
+          for (let i = 0; i < candidates.length; i++) {
+            const cand = candidates[i];
+            if (!cand.closest || !cand.closest('.sf-quick-views-wrapper')) {
+              return cand;
+            }
           }
-          try {
-            const style = window.getComputedStyle(el);
-            return style.display !== 'none' && style.visibility !== 'hidden';
-          } catch (_) {
-            return false;
-          }
-        };
+          return pop;
+        }
 
-        if (directEl && isComboboxOpen(directEl)) {
-          const listContainer = directEl.querySelector('ul, ol, [role="listbox"], .slds-listbox') || directEl;
-          const innerHeader = findRecentListViewsHeader(directEl);
+        function getValidItemWrapper(innerHeader, listContainer) {
+          if (!innerHeader || !listContainer) return null;
           let itemWrapper = innerHeader;
           while (itemWrapper && itemWrapper.parentElement && itemWrapper.parentElement !== listContainer) {
             itemWrapper = itemWrapper.parentElement;
           }
+          return (itemWrapper && itemWrapper.parentElement === listContainer) ? itemWrapper : null;
+        }
+
+        const isComboboxOpen = (el) => {
+          if (!el || !el.isConnected) return false;
+          if (el.offsetWidth <= 0 || el.offsetHeight <= 0) return false;
+          const rootHost = el.getRootNode ? el.getRootNode().host : null;
+          const hostCombobox = (el.closest && el.closest('.slds-combobox, lightning-base-combobox')) || rootHost;
+          if (hostCombobox) {
+            if (hostCombobox.classList && hostCombobox.classList.contains('slds-is-open')) return true;
+            const searchScope = hostCombobox.shadowRoot || hostCombobox;
+            const inputOrBtn = searchScope.querySelector ? searchScope.querySelector('[aria-expanded]') : null;
+            if (inputOrBtn) {
+              return inputOrBtn.getAttribute('aria-expanded') === 'true';
+            }
+            if (hostCombobox.getAttribute && hostCombobox.getAttribute('aria-expanded') === 'true') {
+              return true;
+            }
+          }
+          return false;
+        };
+
+        if (directEl && isComboboxOpen(directEl)) {
+          const listContainer = getValidListContainer(directEl);
+          const innerHeader = findRecentListViewsHeader(directEl);
+          const itemWrapper = getValidItemWrapper(innerHeader, listContainer);
           const listRoot = listContainer.getRootNode ? listContainer.getRootNode() : null;
           if (listRoot && listRoot !== document) {
             syncQuickViewsStyleToRoot(listRoot);
@@ -5540,19 +5559,21 @@
       const isCandidateVisible = (el) => {
         if (!el || el.isConnected === false) return false;
         if (el.offsetWidth <= 0 || el.offsetHeight <= 0) return false;
-        const hostCombobox = el.closest ? el.closest('.slds-combobox, lightning-base-combobox') : null;
+        const rootHost = el.getRootNode ? el.getRootNode().host : null;
+        const hostCombobox = (el.closest && el.closest('.slds-combobox, lightning-base-combobox')) || rootHost;
         if (hostCombobox) {
-          if (hostCombobox.classList.contains('slds-is-open')) return true;
-          const inputOrBtn = hostCombobox.querySelector('[aria-expanded="true"]');
-          if (inputOrBtn) return true;
+          if (hostCombobox.classList && hostCombobox.classList.contains('slds-is-open')) return true;
+          const searchScope = hostCombobox.shadowRoot || hostCombobox;
+          const inputOrBtn = searchScope.querySelector ? searchScope.querySelector('[aria-expanded]') : null;
+          if (inputOrBtn) {
+            return inputOrBtn.getAttribute('aria-expanded') === 'true';
+          }
+          if (hostCombobox.getAttribute && hostCombobox.getAttribute('aria-expanded') === 'true') {
+            return true;
+          }
           return false;
         }
-        try {
-          const style = window.getComputedStyle(el);
-          return style.display !== 'none' && style.visibility !== 'hidden';
-        } catch (_) {
-          return false;
-        }
+        return false;
       };
 
       // 1. Search for visible dropdowns strictly belonging to list view pickers
@@ -5579,11 +5600,8 @@
               const objectName = getDropdownObjectName(pop);
               if (!objectName) continue;
 
-              const listContainer = pop.querySelector('ul, ol, [role="listbox"], .slds-listbox') || pop;
-              let itemWrapper = innerHeader;
-              while (itemWrapper && itemWrapper.parentElement && itemWrapper.parentElement !== listContainer) {
-                itemWrapper = itemWrapper.parentElement;
-              }
+              const listContainer = getValidListContainer(pop);
+              const itemWrapper = getValidItemWrapper(innerHeader, listContainer);
               const listRoot = listContainer.getRootNode ? listContainer.getRootNode() : null;
               if (listRoot && listRoot !== document) {
                 syncQuickViewsStyleToRoot(listRoot);
@@ -5625,12 +5643,9 @@
                 const objectName = getDropdownObjectName(pop) || getDropdownObjectName(btn);
                 if (!objectName) continue;
 
-                const listContainer = pop.querySelector('ul, ol, [role="listbox"], .slds-listbox') || pop;
+                const listContainer = getValidListContainer(pop);
                 const innerHeader = findRecentListViewsHeader(pop);
-                let itemWrapper = innerHeader;
-                while (itemWrapper && itemWrapper.parentElement && itemWrapper.parentElement !== listContainer) {
-                  itemWrapper = itemWrapper.parentElement;
-                }
+                const itemWrapper = getValidItemWrapper(innerHeader, listContainer);
                 const listRoot = listContainer.getRootNode ? listContainer.getRootNode() : null;
                 if (listRoot && listRoot !== document) {
                   syncQuickViewsStyleToRoot(listRoot);
@@ -6622,6 +6637,15 @@
         const existingInDoc = Array.from(document.querySelectorAll('.sf-quick-views-wrapper'));
         const allExisting = Array.from(new Set([...existingInPopover, ...existingInRoot, ...existingInDoc]));
 
+        // Prune any wrapper that is invalid or is an ancestor of / equal to listContainer
+        for (let i = allExisting.length - 1; i >= 0; i--) {
+          const el = allExisting[i];
+          if (!el || (listContainer && (el.contains(listContainer) || el === listContainer))) {
+            try { el.remove(); } catch (_) {}
+            allExisting.splice(i, 1);
+          }
+        }
+
         let quickWrapper = null;
         if (allExisting.length > 0) {
           const inContainer = allExisting.find((el) => listContainer && listContainer.contains(el));
@@ -6634,16 +6658,29 @@
         }
 
         if (listContainer) {
-          if (!quickWrapper) {
-            const isUl = listContainer.tagName === 'UL' || listContainer.tagName === 'OL';
-            quickWrapper = document.createElement(isUl ? 'li' : 'div');
-            quickWrapper.className = 'sf-quick-views-wrapper slds-listbox__item';
-            quickWrapper.setAttribute('role', 'presentation');
-            const insertBeforeEl = itemWrapper || listContainer.firstElementChild;
-            listContainer.insertBefore(quickWrapper, insertBeforeEl);
-          } else if (quickWrapper.parentElement !== listContainer) {
-            const insertBeforeEl = itemWrapper || listContainer.firstElementChild;
-            listContainer.insertBefore(quickWrapper, insertBeforeEl);
+          let insertBeforeEl = (itemWrapper && itemWrapper.parentElement === listContainer) ? itemWrapper : listContainer.firstElementChild;
+          if (insertBeforeEl === quickWrapper) {
+            insertBeforeEl = quickWrapper.nextElementSibling;
+          }
+          if (insertBeforeEl && insertBeforeEl.parentElement !== listContainer) {
+            insertBeforeEl = null;
+          }
+
+          try {
+            if (!quickWrapper) {
+              const isUl = listContainer.tagName === 'UL' || listContainer.tagName === 'OL';
+              quickWrapper = document.createElement(isUl ? 'li' : 'div');
+              quickWrapper.className = 'sf-quick-views-wrapper slds-listbox__item';
+              quickWrapper.setAttribute('role', 'presentation');
+              listContainer.insertBefore(quickWrapper, insertBeforeEl);
+            } else if (quickWrapper.parentElement !== listContainer) {
+              if (!quickWrapper.contains(listContainer) && listContainer !== quickWrapper) {
+                listContainer.insertBefore(quickWrapper, insertBeforeEl);
+              }
+            }
+          } catch (insertErr) {
+            console.warn('[Salesforce Enhancer] Could not insert quick views wrapper:', insertErr);
+            return;
           }
           renderQuickViewsSection(quickWrapper, quickViews, objectName, popover);
         }
@@ -6904,5 +6941,5 @@
     setTimeout(syncPageContextPeriodically, 600);
     setTimeout(syncPageContextPeriodically, 1800);
 
-  console.log('[Salesforce Enhancer v1.2.0] Ready — Modular shortcuts, Quick Views, developer themes & loading animations.');
+  console.log('[Salesforce Enhancer v1.2.1] Ready — Modular shortcuts, Quick Views, developer themes & loading animations.');
 })();
