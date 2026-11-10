@@ -5408,7 +5408,25 @@
           ?.shadowRoot?.querySelector('lightning-base-combobox')
           ?.shadowRoot?.querySelector('.slds-dropdown, [role="listbox"], .slds-listbox');
 
-        if (directEl && (directEl.offsetWidth > 0 || (directEl.isConnected && window.getComputedStyle(directEl).display !== 'none'))) {
+        const isComboboxOpen = (el) => {
+          if (!el || !el.isConnected) return false;
+          if (el.offsetWidth <= 0 || el.offsetHeight <= 0) return false;
+          const hostCombobox = el.closest ? el.closest('.slds-combobox, lightning-base-combobox') : null;
+          if (hostCombobox) {
+            if (hostCombobox.classList.contains('slds-is-open')) return true;
+            const inputOrBtn = hostCombobox.querySelector('[aria-expanded="true"]');
+            if (inputOrBtn) return true;
+            return false;
+          }
+          try {
+            const style = window.getComputedStyle(el);
+            return style.display !== 'none' && style.visibility !== 'hidden';
+          } catch (_) {
+            return false;
+          }
+        };
+
+        if (directEl && isComboboxOpen(directEl)) {
           const listContainer = directEl.querySelector('ul, ol, [role="listbox"], .slds-listbox') || directEl;
           const innerHeader = findRecentListViewsHeader(directEl);
           let itemWrapper = innerHeader;
@@ -5486,17 +5504,23 @@
             tag === 'force-list-view-picker' ||
             tag === 'lst-list-view-picker-dropdown' ||
             tag === 'force-list-view-picker-dropdown' ||
-            tag === 'lst-list-view-manager' ||
-            tag === 'force-list-view-manager' ||
-            tag === 'lst-list-view-manager-header' ||
-            tag === 'force-list-view-manager-header' ||
-            tag === 'lst-object-home' ||
-            tag === 'force-object-home' ||
             cls.includes('forcelistviewpicker') ||
             cls.includes('listviewpicker') ||
             (curr.getAttribute && curr.getAttribute('data-component-id')?.toLowerCase().includes('listviewpicker'))
           ) {
             return true;
+          }
+          // Explicitly reject search dialogs, global search, and record layout elements
+          if (
+            tag.includes('search_assistant') ||
+            tag.includes('search_dialog') ||
+            tag.includes('force-search') ||
+            cls.includes('searchassistant') ||
+            cls.includes('search_dialog') ||
+            tag.includes('record-') ||
+            cls.includes('record-')
+          ) {
+            return false;
           }
           if (!curr.parentElement && curr.getRootNode) {
             try {
@@ -5515,7 +5539,14 @@
 
       const isCandidateVisible = (el) => {
         if (!el || el.isConnected === false) return false;
-        if (el.offsetWidth > 0 && el.offsetHeight > 0) return true;
+        if (el.offsetWidth <= 0 || el.offsetHeight <= 0) return false;
+        const hostCombobox = el.closest ? el.closest('.slds-combobox, lightning-base-combobox') : null;
+        if (hostCombobox) {
+          if (hostCombobox.classList.contains('slds-is-open')) return true;
+          const inputOrBtn = hostCombobox.querySelector('[aria-expanded="true"]');
+          if (inputOrBtn) return true;
+          return false;
+        }
         try {
           const style = window.getComputedStyle(el);
           return style.display !== 'none' && style.visibility !== 'hidden';
@@ -5539,10 +5570,12 @@
             if (isRecordDetailComponent(pop)) continue;
 
             const isPicker = isListViewPickerComponent(pop);
-            const innerHeader = findRecentListViewsHeader(pop);
-            const hasListSearchInput = pop.querySelector ? pop.querySelector('input[placeholder*="Search lists" i], input[placeholder*="Search this list" i], input[aria-label*="Search lists" i]') : null;
+            if (!isPicker) continue;
 
-            if (isPicker && (innerHeader || hasListSearchInput || (pop.closest && pop.closest('lst-list-view-picker, force-list-view-picker')))) {
+            const innerHeader = findRecentListViewsHeader(pop);
+            const hasListSearchInput = pop.querySelector ? pop.querySelector('input[placeholder*="Search lists" i], input[aria-label*="Search lists" i]') : null;
+
+            if (innerHeader || hasListSearchInput || (pop.closest && pop.closest('lst-list-view-picker, force-list-view-picker'))) {
               const objectName = getDropdownObjectName(pop);
               if (!objectName) continue;
 
@@ -6307,9 +6340,12 @@
     }
 
     function setupSearchInputFilter(popover, listContainer, objectName) {
-      const inputs = (popover || document).querySelectorAll(
-        'input[placeholder*="Search lists" i], input[placeholder*="Search this list" i], input[placeholder*="Search..." i], input[type="search"].slds-input, input.slds-combobox__input'
-      );
+      const hostCombobox = popover.closest ? popover.closest('lightning-base-combobox, lst-list-view-picker, lst-list-view-picker-dropdown, .slds-combobox') : null;
+      const searchContext = hostCombobox || popover;
+
+      const inputs = searchContext.querySelectorAll ? searchContext.querySelectorAll(
+        'input[placeholder*="Search lists" i], input[aria-label*="Search lists" i], input.slds-combobox__input'
+      ) : [];
 
       inputs.forEach((searchInput) => {
         if (searchInput._sfFilterBound) return;
@@ -6317,7 +6353,11 @@
 
         const onSearch = () => {
           const query = (searchInput.value || '').trim().toLowerCase();
-          const quickWrapper = document.querySelector('.sf-quick-views-wrapper');
+          const rootNode = popover.getRootNode ? popover.getRootNode() : null;
+          const quickWrapper = searchContext.querySelector?.('.sf-quick-views-wrapper') ||
+                               popover.querySelector?.('.sf-quick-views-wrapper') ||
+                               (rootNode && rootNode.querySelector ? rootNode.querySelector('.sf-quick-views-wrapper') : null) ||
+                               document.querySelector('.sf-quick-views-wrapper');
           if (quickWrapper) {
             const currentViews = getQuickViews(objectName || getCurrentObjectName());
             if (currentViews.length === 0) {
@@ -6343,8 +6383,7 @@
           }
 
           // Search results re-rendered: attach buttons with debounce
-          setTimeout(checkAndInjectQuickViews, 50);
-          setTimeout(checkAndInjectQuickViews, 180);
+          scheduleQuickViewsCheck(50);
         };
 
         searchInput.addEventListener('input', onSearch);
@@ -6574,14 +6613,35 @@
         // Re-read quickViews after sync so UI always displays latest
         const quickViews = getQuickViews(objectName);
 
-        // 3. Inject and render Quick Views section (now guaranteed to have up-to-date names!)
+        // 3. Inject and render Quick Views section (guarantee strictly 1 wrapper across the entire popover/document)
+        const existingInPopover = popover.querySelectorAll ? Array.from(popover.querySelectorAll('.sf-quick-views-wrapper')) : [];
+        const popoverRoot = popover.getRootNode ? popover.getRootNode() : null;
+        const existingInRoot = (popoverRoot && popoverRoot !== document && popoverRoot.querySelectorAll)
+          ? Array.from(popoverRoot.querySelectorAll('.sf-quick-views-wrapper'))
+          : [];
+        const existingInDoc = Array.from(document.querySelectorAll('.sf-quick-views-wrapper'));
+        const allExisting = Array.from(new Set([...existingInPopover, ...existingInRoot, ...existingInDoc]));
+
+        let quickWrapper = null;
+        if (allExisting.length > 0) {
+          const inContainer = allExisting.find((el) => listContainer && listContainer.contains(el));
+          quickWrapper = inContainer || allExisting[0];
+          for (let i = 0; i < allExisting.length; i++) {
+            if (allExisting[i] !== quickWrapper) {
+              try { allExisting[i].remove(); } catch (_) {}
+            }
+          }
+        }
+
         if (listContainer) {
-          let quickWrapper = listContainer.querySelector('.sf-quick-views-wrapper');
           if (!quickWrapper) {
             const isUl = listContainer.tagName === 'UL' || listContainer.tagName === 'OL';
             quickWrapper = document.createElement(isUl ? 'li' : 'div');
             quickWrapper.className = 'sf-quick-views-wrapper slds-listbox__item';
             quickWrapper.setAttribute('role', 'presentation');
+            const insertBeforeEl = itemWrapper || listContainer.firstElementChild;
+            listContainer.insertBefore(quickWrapper, insertBeforeEl);
+          } else if (quickWrapper.parentElement !== listContainer) {
             const insertBeforeEl = itemWrapper || listContainer.firstElementChild;
             listContainer.insertBefore(quickWrapper, insertBeforeEl);
           }
@@ -6694,24 +6754,28 @@
         const tag = (node.tagName || '').toLowerCase();
         const cls = typeof node.className === 'string' ? node.className.toLowerCase() : '';
         const title = (node.getAttribute?.('title') || node.getAttribute?.('aria-label') || '').toLowerCase();
+        const placeholder = (node.getAttribute?.('placeholder') || '').toLowerCase();
+
+        // Specific to the list view switcher dropdown/picker
         if (
-          tag.includes('list-view') ||
-          tag.includes('combobox') ||
-          tag.includes('object-home') ||
+          tag.includes('list-view-picker') ||
+          tag.includes('forcelistviewpicker') ||
+          cls.includes('forcelistviewpicker') ||
           cls.includes('listviewpicker') ||
-          cls.includes('slds-combobox') ||
-          cls.includes('slds-dropdown') ||
           cls.includes('triggerlink') ||
           title.includes('select a list view') ||
-          title.includes('search lists')
+          title.includes('search lists') ||
+          placeholder.includes('search lists')
         ) {
           return 'listview';
         }
+
+        // Search inputs/containers (global search, table search like "Search this list...", etc.)
         if (
           tag === 'input' ||
           tag.includes('search') ||
           cls.includes('search') ||
-          (node.getAttribute?.('placeholder') || '').toLowerCase().includes('search')
+          placeholder.includes('search')
         ) {
           return 'search';
         }
@@ -6725,7 +6789,7 @@
       (e) => {
         if (activeTabDragState) return;
         const interactionType = isListViewOrSearchInteraction(e);
-        if (interactionType === 'listview' || interactionType === 'search') {
+        if (interactionType === 'listview') {
           scheduleQuickViewsCheck(40);
           setTimeout(() => scheduleQuickViewsCheck(10), 180);
         }
@@ -6749,7 +6813,7 @@
       (e) => {
         if (activeTabDragState) return;
         const interactionType = isListViewOrSearchInteraction(e);
-        if (interactionType === 'listview' || interactionType === 'search') {
+        if (interactionType === 'listview') {
           scheduleQuickViewsCheck(40);
           setTimeout(() => scheduleQuickViewsCheck(10), 180);
         }
