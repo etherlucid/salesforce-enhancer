@@ -2243,6 +2243,35 @@
     return '#0176d3';
   }
 
+  function getPinnedTabWidth() {
+    try {
+      const pinned = document.querySelector(
+        'ul.tabBarItems > li.tabItem.slds-is-pinned, ' +
+        'ul.tabBarItems > li.tabItem.pinned, ' +
+        'ul.tabBarItems > li.tabItem[data-pinned="true"], ' +
+        '.navexConsoleTabContainer li.tabItem.slds-is-pinned, ' +
+        '.navexConsoleTabContainer li.tabItem.pinned'
+      );
+      if (pinned) {
+        const w = pinned.getBoundingClientRect().width;
+        if (w >= 24 && w <= 56) return Math.max(30, Math.min(46, Math.round(w)));
+      }
+      const tabs = document.querySelectorAll(
+        'ul.tabBarItems > li.tabItem:not(.sf-home-tab-item), ' +
+        '.navexConsoleTabContainer li.tabItem:not(.sf-home-tab-item)'
+      );
+      for (const tab of tabs) {
+        const w = tab.getBoundingClientRect().width;
+        const closeBtn = tab.querySelector('button.close, button[title*="Close"], .closeButton');
+        const closeHidden = !closeBtn || window.getComputedStyle(closeBtn).display === 'none' || closeBtn.offsetWidth === 0;
+        if (w >= 24 && w <= 52 && closeHidden) {
+          return Math.max(30, Math.min(46, Math.round(w)));
+        }
+      }
+    } catch (_) {}
+    return 36;
+  }
+
   function findHomeCandidateElements() {
     const elements = new Set();
     try {
@@ -2264,10 +2293,16 @@
       const shouldHide = s ? ((s.modules?.subtabs !== false) && !!(s.hideAppName || s.subtabs?.hideAppName)) : false;
       const candidates = findHomeCandidateElements();
       const tabIconColor = getTabIconColor();
+      const pinnedWidth = getPinnedTabWidth();
 
       try {
         if (document.documentElement) {
           document.documentElement.style.setProperty('--sf-tab-icon-color', tabIconColor);
+          if (shouldHide) {
+            document.documentElement.style.setProperty('--sf-home-tab-width', `${pinnedWidth}px`);
+          } else {
+            document.documentElement.style.removeProperty('--sf-home-tab-width');
+          }
         }
       } catch (_) {}
 
@@ -2285,11 +2320,19 @@
             parentItem.style.removeProperty('width');
             parentItem.style.removeProperty('min-width');
             parentItem.style.removeProperty('max-width');
+            parentItem.style.removeProperty('flex');
             parentItem.style.removeProperty('padding');
             parentItem.style.removeProperty('margin');
             parentItem.style.removeProperty('border');
             parentItem.style.removeProperty('border-left');
             parentItem.style.removeProperty('border-right');
+            parentItem.style.removeProperty('box-shadow');
+            if (target.parentElement && target.parentElement !== parentItem) {
+              target.parentElement.style.removeProperty('padding');
+              target.parentElement.style.removeProperty('margin');
+              target.parentElement.style.removeProperty('min-width');
+              target.parentElement.style.removeProperty('width');
+            }
             parentItem.querySelectorAll('button.close, button[title*="Close"], .closeButton').forEach(btn => btn.style.removeProperty('display'));
             const iconAction = parentItem.querySelector('.slds-context-bar__icon-action, .slds-context-bar__dropdown-trigger');
             if (iconAction) {
@@ -2328,10 +2371,11 @@
           parentItem.style.setProperty('display', 'inline-flex', 'important');
           parentItem.style.setProperty('align-items', 'center', 'important');
           parentItem.style.setProperty('justify-content', 'center', 'important');
-          parentItem.style.setProperty('width', 'auto', 'important');
-          parentItem.style.setProperty('min-width', '44px', 'important');
-          parentItem.style.setProperty('max-width', '54px', 'important');
-          parentItem.style.setProperty('padding', '0 7px', 'important');
+          parentItem.style.setProperty('width', `${pinnedWidth}px`, 'important');
+          parentItem.style.setProperty('min-width', `${pinnedWidth}px`, 'important');
+          parentItem.style.setProperty('max-width', `${pinnedWidth}px`, 'important');
+          parentItem.style.setProperty('flex', `0 0 ${pinnedWidth}px`, 'important');
+          parentItem.style.setProperty('padding', '0 2px', 'important');
           parentItem.style.setProperty('margin', '0', 'important');
           parentItem.style.setProperty('border', 'none', 'important');
           parentItem.style.setProperty('border-left', 'none', 'important');
@@ -2339,6 +2383,12 @@
           parentItem.style.setProperty('box-shadow', 'none', 'important');
           parentItem.style.setProperty('visibility', 'visible', 'important');
           parentItem.style.setProperty('opacity', '1', 'important');
+          if (target.parentElement && target.parentElement !== parentItem) {
+            target.parentElement.style.setProperty('padding', '0', 'important');
+            target.parentElement.style.setProperty('margin', '0', 'important');
+            target.parentElement.style.setProperty('min-width', '0', 'important');
+            target.parentElement.style.setProperty('width', 'auto', 'important');
+          }
           parentItem.querySelectorAll('button.close, button[title*="Close"], .closeButton').forEach(btn => btn.style.setProperty('display', 'none', 'important'));
 
           // Integrate the dropdown arrow seamlessly into the tab with zero divider line
@@ -2353,7 +2403,7 @@
             iconAction.style.setProperty('box-shadow', 'none', 'important');
             iconAction.style.setProperty('background', 'transparent', 'important');
             iconAction.style.setProperty('padding', '0', 'important');
-            iconAction.style.setProperty('margin', '0 0 0 3px', 'important');
+            iconAction.style.setProperty('margin', '0 0 0 2px', 'important');
             const arrowBtn = iconAction.querySelector('button');
             if (arrowBtn) {
               arrowBtn.style.setProperty('display', 'inline-flex', 'important');
@@ -2370,8 +2420,8 @@
             if (arrowSvg) {
               arrowSvg.style.setProperty('fill', tabIconColor, 'important');
               arrowSvg.style.setProperty('color', tabIconColor, 'important');
-              arrowSvg.style.setProperty('width', '9px', 'important');
-              arrowSvg.style.setProperty('height', '9px', 'important');
+              arrowSvg.style.setProperty('width', '8px', 'important');
+              arrowSvg.style.setProperty('height', '8px', 'important');
               const p = arrowSvg.querySelector('path');
               if (p) p.setAttribute('fill', tabIconColor);
             }
@@ -2395,10 +2445,10 @@
           svg = document.createElementNS(svgNs, 'svg');
           svg.setAttribute('class', 'sf-home-icon');
           svg.setAttribute('viewBox', '0 0 24 24');
-          svg.setAttribute('width', '16');
-          svg.setAttribute('height', '16');
+          svg.setAttribute('width', '15');
+          svg.setAttribute('height', '15');
           svg.setAttribute('aria-hidden', 'true');
-          svg.setAttribute('style', `width: 16px !important; height: 16px !important; fill: ${tabIconColor} !important; color: ${tabIconColor} !important; display: block !important; margin: 0 !important; flex-shrink: 0 !important;`);
+          svg.setAttribute('style', `width: 15px !important; height: 15px !important; fill: ${tabIconColor} !important; color: ${tabIconColor} !important; display: block !important; margin: 0 !important; flex-shrink: 0 !important;`);
 
           const path = document.createElementNS(svgNs, 'path');
           path.setAttribute('d', 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z');
@@ -2407,6 +2457,10 @@
 
           target.appendChild(svg);
         } else {
+          svg.setAttribute('width', '15');
+          svg.setAttribute('height', '15');
+          svg.style.setProperty('width', '15px', 'important');
+          svg.style.setProperty('height', '15px', 'important');
           svg.style.setProperty('fill', tabIconColor, 'important');
           svg.style.setProperty('color', tabIconColor, 'important');
           svg.style.setProperty('margin', '0', 'important');
@@ -2538,13 +2592,35 @@
             opacity: 1 !important;
           }
 
-          /* Compact context bar primary container */
+          /* Compact context bar primary container & app launcher item */
           .slds-context-bar__primary {
+            min-width: 0 !important;
+            width: auto !important;
+            padding-right: 0 !important;
+            margin-right: 0 !important;
+          }
+
+          .slds-context-bar__primary .slds-context-bar__item:first-child {
+            padding-right: 0 !important;
+            margin-right: 0 !important;
             min-width: 0 !important;
             width: auto !important;
           }
 
-          /* Home Tab container: sized and styled to match a pinned console tab */
+          .slds-context-bar__primary .slds-context-bar__item:first-child .slds-context-bar__icon-action {
+            padding-right: 4px !important;
+            margin-right: 0 !important;
+          }
+
+          .oneConsoleObjectSwitcher,
+          one-console-object-switcher {
+            width: auto !important;
+            min-width: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+
+          /* Home Tab container: sized to exact pinned console tab width */
           .sf-home-tab-item,
           .slds-context-bar__primary .slds-context-bar__item:has(.sf-home-tab-link),
           .slds-context-bar__primary .slds-context-bar__item:has(a[href*="/lightning/o/Case"]),
@@ -2555,10 +2631,11 @@
             justify-content: center !important;
             height: 100% !important;
             min-height: 100% !important;
-            width: auto !important;
-            min-width: 44px !important;
-            max-width: 54px !important;
-            padding: 0 7px !important;
+            width: var(--sf-home-tab-width, 36px) !important;
+            min-width: var(--sf-home-tab-width, 36px) !important;
+            max-width: var(--sf-home-tab-width, 36px) !important;
+            flex: 0 0 var(--sf-home-tab-width, 36px) !important;
+            padding: 0 2px !important;
             margin: 0 !important;
             border: none !important;
             border-left: none !important;
@@ -2618,7 +2695,7 @@
             background: transparent !important;
             background-color: transparent !important;
             padding: 0 !important;
-            margin: 0 0 0 3px !important;
+            margin: 0 0 0 2px !important;
             height: 100% !important;
             min-height: 100% !important;
             width: auto !important;
@@ -2654,12 +2731,12 @@
           .sf-home-tab-item .slds-context-bar__icon-action lightning-primitive-icon,
           .slds-context-bar__object-switcher .slds-context-bar__icon-action svg,
           .sf-home-tab-item button.slds-context-bar__button svg {
-            width: 9px !important;
-            height: 9px !important;
-            min-width: 9px !important;
-            min-height: 9px !important;
-            max-width: 9px !important;
-            max-height: 9px !important;
+            width: 8px !important;
+            height: 8px !important;
+            min-width: 8px !important;
+            min-height: 8px !important;
+            max-width: 8px !important;
+            max-height: 8px !important;
             fill: var(--sf-tab-icon-color, #0176d3) !important;
             color: var(--sf-tab-icon-color, #0176d3) !important;
             display: inline-block !important;
@@ -2718,12 +2795,12 @@
           /* SVG Home Icon */
           .sf-home-icon,
           svg.sf-home-icon {
-            width: 16px !important;
-            height: 16px !important;
-            min-width: 16px !important;
-            min-height: 16px !important;
-            max-width: 16px !important;
-            max-height: 16px !important;
+            width: 15px !important;
+            height: 15px !important;
+            min-width: 15px !important;
+            min-height: 15px !important;
+            max-width: 15px !important;
+            max-height: 15px !important;
             display: block !important;
             margin: 0 !important;
             flex-shrink: 0 !important;
