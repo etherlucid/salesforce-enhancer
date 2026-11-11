@@ -2418,68 +2418,97 @@
           width: auto !important;
         }
 
-        /* Condense navigation tab ("Cases") into a compact Home icon button */
+        /* Home Tab container: fixed 40px width, flex centered, zero padding */
+        .sf-home-tab-item,
+        .slds-context-bar__primary .slds-context-bar__item:has(.sf-home-tab-link),
+        .slds-context-bar__primary .slds-context-bar__item:has(a[href*="/lightning/o/Case"]),
+        .slds-context-bar__object-switcher:has(.sf-home-tab-link) {
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          width: 40px !important;
+          min-width: 40px !important;
+          max-width: 40px !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          box-sizing: border-box !important;
+          visibility: visible !important;
+          opacity: 1 !important;
+        }
+
+        /* Hide close buttons, dropdown triggers, and extraneous elements in Home tab */
+        .sf-home-tab-item .slds-context-bar__button-action,
+        .sf-home-tab-item button.close,
+        .sf-home-tab-item button[title*="Close"],
+        .sf-home-tab-item .closeButton,
+        .sf-home-tab-item .slds-context-bar__icon-action,
+        .slds-context-bar__item:has(.sf-home-tab-link) .slds-context-bar__icon-action,
+        .slds-context-bar__item:has(.sf-home-tab-link) .slds-context-bar__button-action {
+          display: none !important;
+        }
+
+        /* Home tab link: full width/height, perfectly centered */
         .sf-home-tab-link,
         a.sf-home-tab-link,
         a[href*="/lightning/o/Case/list"],
         a[href*="/lightning/o/Case"],
-        .slds-context-bar__object-switcher a,
-        .slds-context-bar__primary .slds-context-bar__item:not(:first-child) a {
-          display: inline-flex !important;
+        .slds-context-bar__object-switcher a {
+          display: flex !important;
           align-items: center !important;
           justify-content: center !important;
-          padding: 0 0.5rem !important;
-          min-width: 34px !important;
+          width: 100% !important;
+          min-width: 100% !important;
+          max-width: 100% !important;
           height: 100% !important;
-          cursor: pointer !important;
+          padding: 0 !important;
+          margin: 0 auto !important;
+          box-sizing: border-box !important;
+          text-align: center !important;
+          color: var(--sf-tab-icon-color, #0176d3) !important;
           text-decoration: none !important;
+          cursor: pointer !important;
           visibility: visible !important;
           opacity: 1 !important;
         }
 
-        /* Keep parent container visible with minimum button width */
-        .slds-context-bar__primary .slds-context-bar__item:has(.sf-home-tab-link),
-        .slds-context-bar__primary .slds-context-bar__item:has(a[href*="/lightning/o/Case"]),
-        .slds-context-bar__object-switcher {
-          min-width: 34px !important;
-          visibility: visible !important;
-          opacity: 1 !important;
-        }
-
-        /* Hide text label inside the Home tab so it stays compact */
-        .sf-home-tab-link .slds-truncate,
-        a[href*="/lightning/o/Case/list"] .slds-truncate,
-        a[href*="/lightning/o/Case"] .slds-truncate,
-        .slds-context-bar__object-switcher a .slds-truncate,
-        .slds-context-bar__primary .slds-context-bar__item:not(:first-child) a .slds-truncate {
+        /* Hide all other children of the Home link except the home icon */
+        .sf-home-tab-link > *:not(.sf-home-icon),
+        a[href*="/lightning/o/Case/list"] > *:not(.sf-home-icon),
+        a[href*="/lightning/o/Case"] > *:not(.sf-home-icon) {
           display: none !important;
         }
 
-        /* SVG Home Icon */
-        .sf-home-icon {
+        .sf-home-tab-link::before,
+        .sf-home-tab-link::after,
+        a[href*="/lightning/o/Case/list"]::before,
+        a[href*="/lightning/o/Case/list"]::after {
+          display: none !important;
+          content: none !important;
+        }
+
+        /* SVG Home Icon: precisely centered with single matching tab icon color */
+        .sf-home-icon,
+        svg.sf-home-icon {
           width: 16px !important;
           height: 16px !important;
-          fill: currentColor !important;
-          display: inline-block !important;
-          vertical-align: middle !important;
-          flex-shrink: 0 !important;
+          min-width: 16px !important;
+          min-height: 16px !important;
+          max-width: 16px !important;
+          max-height: 16px !important;
+          display: block !important;
           margin: 0 auto !important;
+          flex-shrink: 0 !important;
+          fill: var(--sf-tab-icon-color, #0176d3) !important;
+          color: var(--sf-tab-icon-color, #0176d3) !important;
         }
 
-        /* CSS Fallback Home Icon if SVG is pending insertion */
-        .sf-home-tab-link:not(:has(.sf-home-icon))::before,
-        a[href*="/lightning/o/Case/list"]:not(:has(.sf-home-icon))::before,
-        .slds-context-bar__object-switcher a:not(:has(.sf-home-icon))::before {
-          content: "🏠" !important;
-          font-size: 15px !important;
-          line-height: 1 !important;
-          display: inline-block !important;
+        .sf-home-icon path {
+          fill: var(--sf-tab-icon-color, #0176d3) !important;
         }
 
-        .sf-home-tab-link:hover,
-        a[href*="/lightning/o/Case/list"]:hover,
-        .slds-context-bar__object-switcher a:hover {
-          opacity: 0.8 !important;
+        /* Hover state */
+        .sf-home-tab-item:hover .sf-home-tab-link {
+          background-color: rgba(1, 118, 211, 0.08) !important;
         }
       `;
       syncHomeIconNavContext();
@@ -7314,6 +7343,43 @@
     // Request fresh settings from extension storage in case localStorage was not primed
     window.postMessage({ __sfEnhancerAction: 'requestSettings', __sfAppearanceAction: 'requestSettings' }, '*');
 
+    function getTabIconColor() {
+      try {
+        const otherTabs = document.querySelectorAll(
+          'ul.tabBarItems > li.tabItem:not(.sf-home-tab-item), ' +
+          '.navexConsoleTabContainer li.tabItem:not(.sf-home-tab-item), ' +
+          'one-app-nav-bar-item-root:not(.sf-home-tab-item)'
+        );
+        for (const tab of otherTabs) {
+          const icon = tab.querySelector('svg, lightning-icon, lightning-primitive-icon, .slds-icon');
+          if (icon) {
+            const cs = window.getComputedStyle(icon);
+            const col = cs.fill || cs.color;
+            if (col && col !== 'none' && col !== 'transparent' && col !== 'rgba(0, 0, 0, 0)' &&
+                col !== 'rgb(0, 0, 0)' && col !== 'rgb(24, 24, 24)' && col !== '#000000' && col !== '#181818') {
+              return col;
+            }
+          }
+          const text = tab.querySelector('.slds-truncate, a');
+          if (text) {
+            const cs = window.getComputedStyle(text);
+            if (cs.color && cs.color !== 'rgb(0, 0, 0)' && cs.color !== 'rgb(24, 24, 24)' && cs.color !== '#000000' && cs.color !== '#181818') {
+              return cs.color;
+            }
+          }
+        }
+      } catch (_) {}
+
+      try {
+        const s = getEnhancerSettings();
+        if (s && s.modules?.theming && s.theme?.preset && THEMES[s.theme.preset]) {
+          return THEMES[s.theme.preset].primary || THEMES[s.theme.preset].textMuted || '#0176d3';
+        }
+      } catch (_) {}
+
+      return '#0176d3';
+    }
+
     function findHomeCandidateElements() {
       const elements = new Set();
       try {
@@ -7334,32 +7400,61 @@
         const s = getEnhancerSettings();
         const shouldHide = (s.modules && s.modules.subtabs !== false) && !!(s.hideAppName || s.subtabs?.hideAppName);
         const candidates = findHomeCandidateElements();
+        const tabIconColor = getTabIconColor();
+
+        try {
+          if (document.documentElement) {
+            document.documentElement.style.setProperty('--sf-tab-icon-color', tabIconColor);
+          }
+        } catch (_) {}
 
         candidates.forEach((el) => {
           const target = el.tagName === 'A' ? el : (el.querySelector('a') || el);
+          const parentItem = target.closest('.slds-context-bar__item, li.tabItem, one-app-nav-bar-item-root');
 
           if (!shouldHide) {
             target.classList.remove('sf-home-tab-link');
+            if (parentItem) parentItem.classList.remove('sf-home-tab-item');
             const icon = target.querySelector('.sf-home-icon');
             if (icon) icon.remove();
-            const trunc = target.querySelector('.slds-truncate');
-            if (trunc) trunc.style.removeProperty('display');
+            Array.from(target.children).forEach(ch => ch.style.removeProperty('display'));
+            if (parentItem) {
+              parentItem.style.removeProperty('width');
+              parentItem.style.removeProperty('min-width');
+              parentItem.style.removeProperty('max-width');
+              parentItem.style.removeProperty('padding');
+              parentItem.style.removeProperty('margin');
+              parentItem.querySelectorAll('.slds-context-bar__button-action, button.close, button[title*="Close"], .closeButton, .slds-context-bar__icon-action').forEach(btn => btn.style.removeProperty('display'));
+            }
             return;
           }
 
           target.classList.add('sf-home-tab-link');
-          target.style.setProperty('display', 'inline-flex', 'important');
+          target.style.setProperty('display', 'flex', 'important');
           target.style.setProperty('align-items', 'center', 'important');
           target.style.setProperty('justify-content', 'center', 'important');
-          target.style.setProperty('min-width', '34px', 'important');
+          target.style.setProperty('width', '100%', 'important');
+          target.style.setProperty('height', '100%', 'important');
+          target.style.setProperty('margin', '0 auto', 'important');
+          target.style.setProperty('padding', '0', 'important');
+          target.style.setProperty('color', tabIconColor, 'important');
+          target.style.setProperty('text-align', 'center', 'important');
           target.style.setProperty('visibility', 'visible', 'important');
           target.style.setProperty('opacity', '1', 'important');
 
-          const parentItem = target.closest('.slds-context-bar__item, li.tabItem, one-app-nav-bar-item-root');
           if (parentItem) {
-            parentItem.style.setProperty('min-width', '34px', 'important');
+            parentItem.classList.add('sf-home-tab-item');
+            parentItem.style.setProperty('display', 'inline-flex', 'important');
+            parentItem.style.setProperty('align-items', 'center', 'important');
+            parentItem.style.setProperty('justify-content', 'center', 'important');
+            parentItem.style.setProperty('width', '40px', 'important');
+            parentItem.style.setProperty('min-width', '40px', 'important');
+            parentItem.style.setProperty('max-width', '40px', 'important');
+            parentItem.style.setProperty('padding', '0', 'important');
+            parentItem.style.setProperty('margin', '0', 'important');
             parentItem.style.setProperty('visibility', 'visible', 'important');
             parentItem.style.setProperty('opacity', '1', 'important');
+            parentItem.querySelectorAll('.slds-context-bar__button-action, button.close, button[title*="Close"], .closeButton, .slds-context-bar__icon-action, button').forEach(btn => btn.style.setProperty('display', 'none', 'important'));
           }
 
           if (!target.getAttribute('title') || target.getAttribute('title') === 'Cases') {
@@ -7369,28 +7464,41 @@
             target.setAttribute('aria-label', 'Cases (Home)');
           }
 
-          const truncSpans = target.querySelectorAll('.slds-truncate');
-          truncSpans.forEach((sp) => {
-            sp.style.setProperty('display', 'none', 'important');
-          });
+          // Clean up any old span icons
+          target.querySelectorAll('span.sf-home-icon').forEach(sp => sp.remove());
 
-          if (!target.querySelector('.sf-home-icon')) {
+          // Ensure single-color SVG Home icon matching tab icon color
+          let svg = target.querySelector('svg.sf-home-icon');
+          if (!svg) {
             const svgNs = 'http://www.w3.org/2000/svg';
-            const svg = document.createElementNS(svgNs, 'svg');
+            svg = document.createElementNS(svgNs, 'svg');
             svg.setAttribute('class', 'sf-home-icon');
             svg.setAttribute('viewBox', '0 0 24 24');
             svg.setAttribute('width', '16');
             svg.setAttribute('height', '16');
             svg.setAttribute('aria-hidden', 'true');
-            svg.setAttribute('style', 'width: 16px !important; height: 16px !important; fill: currentColor !important; display: inline-block !important; vertical-align: middle !important; flex-shrink: 0 !important; margin: 0 auto !important;');
+            svg.setAttribute('style', `width: 16px !important; height: 16px !important; fill: ${tabIconColor} !important; color: ${tabIconColor} !important; display: block !important; margin: 0 auto !important; flex-shrink: 0 !important;`);
 
             const path = document.createElementNS(svgNs, 'path');
             path.setAttribute('d', 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z');
-            path.setAttribute('fill', 'currentColor');
+            path.setAttribute('fill', tabIconColor);
             svg.appendChild(path);
 
-            target.insertBefore(svg, target.firstChild);
+            target.appendChild(svg);
+          } else {
+            svg.style.setProperty('fill', tabIconColor, 'important');
+            svg.style.setProperty('color', tabIconColor, 'important');
+            svg.style.setProperty('margin', '0 auto', 'important');
+            svg.style.setProperty('display', 'block', 'important');
+            const path = svg.querySelector('path');
+            if (path) path.setAttribute('fill', tabIconColor);
           }
+
+          Array.from(target.children).forEach((child) => {
+            if (child !== svg) {
+              child.style.setProperty('display', 'none', 'important');
+            }
+          });
         });
       } catch (_) {}
     }
