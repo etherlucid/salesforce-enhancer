@@ -2214,6 +2214,87 @@
 
   let activeEarlyMascotObs = null;
 
+  function findHomeCandidateElements() {
+    const elements = new Set();
+    try {
+      document.querySelectorAll('a[href*="/lightning/o/Case/list"], a[href*="/lightning/o/Case"]').forEach(el => elements.add(el));
+      document.querySelectorAll('.slds-context-bar__object-switcher a, .slds-context-bar__object-switcher button').forEach(el => elements.add(el));
+      document.querySelectorAll('.slds-context-bar__primary .slds-context-bar__item:not(:first-child) a').forEach(el => elements.add(el));
+      document.querySelectorAll('.slds-context-bar [title="Cases"], .slds-context-bar [data-id="Case"] a, .slds-context-bar [data-id="home"] a').forEach(el => elements.add(el));
+      const firstTab = document.querySelector('.tabBarItems > li:first-child a, one-app-nav-bar-item-root:first-child a');
+      if (firstTab && (firstTab.href?.includes('/lightning/o/Case') || firstTab.getAttribute('title') === 'Cases')) {
+        elements.add(firstTab);
+      }
+    } catch (_) {}
+    return Array.from(elements);
+  }
+
+  function syncHomeIconNavContext(rawSettings) {
+    try {
+      const s = rawSettings ? normalizeSettings(rawSettings) : null;
+      const shouldHide = s ? ((s.modules?.subtabs !== false) && !!(s.hideAppName || s.subtabs?.hideAppName)) : false;
+      const candidates = findHomeCandidateElements();
+
+      candidates.forEach((el) => {
+        const target = el.tagName === 'A' ? el : (el.querySelector('a') || el);
+
+        if (!shouldHide) {
+          target.classList.remove('sf-home-tab-link');
+          const icon = target.querySelector('.sf-home-icon');
+          if (icon) icon.remove();
+          const trunc = target.querySelector('.slds-truncate');
+          if (trunc) trunc.style.removeProperty('display');
+          return;
+        }
+
+        target.classList.add('sf-home-tab-link');
+        target.style.setProperty('display', 'inline-flex', 'important');
+        target.style.setProperty('align-items', 'center', 'important');
+        target.style.setProperty('justify-content', 'center', 'important');
+        target.style.setProperty('min-width', '34px', 'important');
+        target.style.setProperty('visibility', 'visible', 'important');
+        target.style.setProperty('opacity', '1', 'important');
+
+        const parentItem = target.closest('.slds-context-bar__item, li.tabItem, one-app-nav-bar-item-root');
+        if (parentItem) {
+          parentItem.style.setProperty('min-width', '34px', 'important');
+          parentItem.style.setProperty('visibility', 'visible', 'important');
+          parentItem.style.setProperty('opacity', '1', 'important');
+        }
+
+        if (!target.getAttribute('title') || target.getAttribute('title') === 'Cases') {
+          target.setAttribute('title', 'Cases (Home)');
+        }
+        if (!target.getAttribute('aria-label')) {
+          target.setAttribute('aria-label', 'Cases (Home)');
+        }
+
+        const truncSpans = target.querySelectorAll('.slds-truncate');
+        truncSpans.forEach((sp) => {
+          sp.style.setProperty('display', 'none', 'important');
+        });
+
+        if (!target.querySelector('.sf-home-icon')) {
+          const svgNs = 'http://www.w3.org/2000/svg';
+          const svg = document.createElementNS(svgNs, 'svg');
+          svg.setAttribute('class', 'sf-home-icon');
+          svg.setAttribute('viewBox', '0 0 24 24');
+          svg.setAttribute('width', '16');
+          svg.setAttribute('height', '16');
+          svg.setAttribute('aria-hidden', 'true');
+          svg.setAttribute('style', 'width: 16px !important; height: 16px !important; fill: currentColor !important; display: inline-block !important; vertical-align: middle !important; flex-shrink: 0 !important; margin: 0 auto !important;');
+
+          const path = document.createElementNS(svgNs, 'path');
+          path.setAttribute('d', 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z');
+          path.setAttribute('fill', 'currentColor');
+          svg.appendChild(path);
+
+          target.insertBefore(svg, target.firstChild);
+        }
+      });
+    } catch (_) {}
+  }
+
   function injectPreloadStyles(rawSettings) {
     let settings = rawSettings;
     try {
@@ -2291,7 +2372,7 @@
       themingStyle.remove();
     }
 
-    // 3. Hide App Name (Service Console label) to free space for tabs & add Home icon to navigation tab
+    // 3. Hide App Name (Service Console label) & convert navigation tab into Home icon button
     const hideAppNameStyle = document.getElementById('sf-hide-app-name-style');
     const shouldHideAppName = (settings.modules?.subtabs !== false) && !!(settings.hideAppName || settings.subtabs?.hideAppName);
     if (shouldHideAppName) {
@@ -2304,64 +2385,95 @@
       }
       if (el) {
         el.textContent = `
-          /* Hide App Name label ("Service Console") next to App Launcher */
-          .slds-context-bar__primary .slds-context-bar__item:first-child .slds-context-bar__label-action,
-          .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) .slds-context-bar__label-action,
-          .slds-context-bar__primary .slds-context-bar__app-name,
-          .slds-context-bar__primary .appName,
-          .slds-context-bar__app-name,
-          .appName[class*="slds-context-bar"],
-          one-app-nav-bar .slds-context-bar__app-name,
-          one-appnav .slds-context-bar__app-name {
+          /* Hide ONLY the App Name text ("Service Console") next to App Launcher - NEVER anchor links! */
+          span.slds-context-bar__app-name,
+          span.appName,
+          .slds-context-bar__primary span.appName,
+          .slds-context-bar__primary span.slds-context-bar__app-name,
+          .appName:not(a),
+          .slds-context-bar__app-name:not(a),
+          one-app-nav-bar .slds-context-bar__app-name:not(a),
+          one-appnav .slds-context-bar__app-name:not(a),
+          span[title="Service Console"],
+          .slds-truncate[title="Service Console"] {
             display: none !important;
           }
-          .slds-context-bar__primary,
-          .slds-context-bar__primary .slds-context-bar__item {
+
+          /* Compact context bar primary container */
+          .slds-context-bar__primary {
             min-width: 0 !important;
             width: auto !important;
-            padding-right: 0.15rem !important;
           }
 
           /* Condense navigation tab ("Cases") into a compact Home icon button */
-          .slds-context-bar__primary .slds-context-bar__object-switcher .slds-context-bar__label-action,
-          .slds-context-bar__primary .slds-context-bar__item:not(:first-child) .slds-context-bar__label-action,
-          .slds-context-bar__object-switcher .slds-context-bar__label-action {
+          .sf-home-tab-link,
+          a.sf-home-tab-link,
+          a[href*="/lightning/o/Case/list"],
+          a[href*="/lightning/o/Case"],
+          .slds-context-bar__object-switcher a,
+          .slds-context-bar__primary .slds-context-bar__item:not(:first-child) a {
             display: inline-flex !important;
             align-items: center !important;
             justify-content: center !important;
-            padding: 0 0.45rem !important;
-            min-width: 30px !important;
+            padding: 0 0.5rem !important;
+            min-width: 34px !important;
             height: 100% !important;
             cursor: pointer !important;
             text-decoration: none !important;
-            font-size: 0 !important;
+            visibility: visible !important;
+            opacity: 1 !important;
           }
-          .slds-context-bar__primary .slds-context-bar__object-switcher .slds-context-bar__label-action .slds-truncate,
-          .slds-context-bar__primary .slds-context-bar__item:not(:first-child) .slds-context-bar__label-action .slds-truncate,
-          .slds-context-bar__object-switcher .slds-context-bar__label-action .slds-truncate {
+
+          /* Keep parent container visible with minimum button width */
+          .slds-context-bar__primary .slds-context-bar__item:has(.sf-home-tab-link),
+          .slds-context-bar__primary .slds-context-bar__item:has(a[href*="/lightning/o/Case"]),
+          .slds-context-bar__object-switcher {
+            min-width: 34px !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+          }
+
+          /* Hide text label inside the Home tab so it stays compact */
+          .sf-home-tab-link .slds-truncate,
+          a[href*="/lightning/o/Case/list"] .slds-truncate,
+          a[href*="/lightning/o/Case"] .slds-truncate,
+          .slds-context-bar__object-switcher a .slds-truncate,
+          .slds-context-bar__primary .slds-context-bar__item:not(:first-child) a .slds-truncate {
             display: none !important;
           }
-          .slds-context-bar__primary .slds-context-bar__object-switcher .slds-context-bar__label-action::before,
-          .slds-context-bar__primary .slds-context-bar__item:not(:first-child) .slds-context-bar__label-action::before,
-          .slds-context-bar__object-switcher .slds-context-bar__label-action::before {
-            content: "" !important;
-            display: inline-block !important;
+
+          /* SVG Home Icon */
+          .sf-home-icon {
             width: 16px !important;
             height: 16px !important;
+            fill: currentColor !important;
+            display: inline-block !important;
             vertical-align: middle !important;
-            background-color: currentColor !important;
-            -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z'/%3E%3C/svg%3E") no-repeat center / contain !important;
-            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z'/%3E%3C/svg%3E") no-repeat center / contain !important;
+            flex-shrink: 0 !important;
+            margin: 0 auto !important;
           }
-          .slds-context-bar__primary .slds-context-bar__object-switcher .slds-context-bar__label-action:hover::before,
-          .slds-context-bar__primary .slds-context-bar__item:not(:first-child) .slds-context-bar__label-action:hover::before,
-          .slds-context-bar__object-switcher .slds-context-bar__label-action:hover::before {
+
+          /* CSS Fallback Home Icon if SVG is pending insertion */
+          .sf-home-tab-link:not(:has(.sf-home-icon))::before,
+          a[href*="/lightning/o/Case/list"]:not(:has(.sf-home-icon))::before,
+          .slds-context-bar__object-switcher a:not(:has(.sf-home-icon))::before {
+            content: "🏠" !important;
+            font-size: 15px !important;
+            line-height: 1 !important;
+            display: inline-block !important;
+          }
+
+          .sf-home-tab-link:hover,
+          a[href*="/lightning/o/Case/list"]:hover,
+          .slds-context-bar__object-switcher a:hover {
             opacity: 0.8 !important;
           }
         `;
       }
+      syncHomeIconNavContext(settings);
     } else if (hideAppNameStyle) {
       hideAppNameStyle.remove();
+      syncHomeIconNavContext(settings);
     }
   }
 
