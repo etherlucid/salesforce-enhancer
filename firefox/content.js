@@ -2247,9 +2247,9 @@
     const elements = new Set();
     try {
       document.querySelectorAll('a[href*="/lightning/o/Case/list"], a[href*="/lightning/o/Case"]').forEach(el => elements.add(el));
-      document.querySelectorAll('.slds-context-bar__object-switcher a, .slds-context-bar__object-switcher button').forEach(el => elements.add(el));
+      document.querySelectorAll('.slds-context-bar__object-switcher a').forEach(el => elements.add(el));
       document.querySelectorAll('.slds-context-bar__primary .slds-context-bar__item:not(:first-child) a').forEach(el => elements.add(el));
-      document.querySelectorAll('.slds-context-bar [title="Cases"], .slds-context-bar [data-id="Case"] a, .slds-context-bar [data-id="home"] a').forEach(el => elements.add(el));
+      document.querySelectorAll('.slds-context-bar [title="Cases"] a, .slds-context-bar [data-id="Case"] a, .slds-context-bar [data-id="home"] a').forEach(el => elements.add(el));
       const firstTab = document.querySelector('.tabBarItems > li:first-child a, one-app-nav-bar-item-root:first-child a');
       if (firstTab && (firstTab.href?.includes('/lightning/o/Case') || firstTab.getAttribute('title') === 'Cases')) {
         elements.add(firstTab);
@@ -2263,6 +2263,13 @@
       const s = rawSettings ? normalizeSettings(rawSettings) : null;
       const shouldHide = s ? ((s.modules?.subtabs !== false) && !!(s.hideAppName || s.subtabs?.hideAppName)) : false;
       const candidates = findHomeCandidateElements();
+      const tabIconColor = getTabIconColor();
+
+      try {
+        if (document.documentElement) {
+          document.documentElement.style.setProperty('--sf-tab-icon-color', tabIconColor);
+        }
+      } catch (_) {}
 
       candidates.forEach((el) => {
         const target = el.tagName === 'A' ? el : (el.querySelector('a') || el);
@@ -2280,7 +2287,9 @@
             parentItem.style.removeProperty('max-width');
             parentItem.style.removeProperty('padding');
             parentItem.style.removeProperty('margin');
+            parentItem.style.removeProperty('border');
             parentItem.style.removeProperty('border-left');
+            parentItem.style.removeProperty('border-right');
             parentItem.querySelectorAll('button.close, button[title*="Close"], .closeButton').forEach(btn => btn.style.removeProperty('display'));
             const iconAction = parentItem.querySelector('.slds-context-bar__icon-action, .slds-context-bar__dropdown-trigger');
             if (iconAction) {
@@ -2305,6 +2314,10 @@
         target.style.setProperty('height', '100%', 'important');
         target.style.setProperty('margin', '0', 'important');
         target.style.setProperty('padding', '0', 'important');
+        target.style.setProperty('border', 'none', 'important');
+        target.style.setProperty('border-left', 'none', 'important');
+        target.style.setProperty('border-right', 'none', 'important');
+        target.style.setProperty('box-shadow', 'none', 'important');
         target.style.setProperty('color', tabIconColor, 'important');
         target.style.setProperty('text-align', 'center', 'important');
         target.style.setProperty('visibility', 'visible', 'important');
@@ -2320,12 +2333,15 @@
           parentItem.style.setProperty('max-width', '54px', 'important');
           parentItem.style.setProperty('padding', '0 7px', 'important');
           parentItem.style.setProperty('margin', '0', 'important');
+          parentItem.style.setProperty('border', 'none', 'important');
           parentItem.style.setProperty('border-left', 'none', 'important');
+          parentItem.style.setProperty('border-right', 'none', 'important');
+          parentItem.style.setProperty('box-shadow', 'none', 'important');
           parentItem.style.setProperty('visibility', 'visible', 'important');
           parentItem.style.setProperty('opacity', '1', 'important');
           parentItem.querySelectorAll('button.close, button[title*="Close"], .closeButton').forEach(btn => btn.style.setProperty('display', 'none', 'important'));
 
-          // Integrate the dropdown arrow seamlessly into the tab
+          // Integrate the dropdown arrow seamlessly into the tab with zero divider line
           const iconAction = parentItem.querySelector('.slds-context-bar__icon-action, .slds-context-bar__dropdown-trigger');
           if (iconAction) {
             iconAction.style.setProperty('display', 'inline-flex', 'important');
@@ -2342,6 +2358,9 @@
             if (arrowBtn) {
               arrowBtn.style.setProperty('display', 'inline-flex', 'important');
               arrowBtn.style.setProperty('border', 'none', 'important');
+              arrowBtn.style.setProperty('border-left', 'none', 'important');
+              arrowBtn.style.setProperty('border-right', 'none', 'important');
+              arrowBtn.style.setProperty('box-shadow', 'none', 'important');
               arrowBtn.style.setProperty('background', 'transparent', 'important');
               arrowBtn.style.setProperty('padding', '0', 'important');
               arrowBtn.style.setProperty('margin', '0', 'important');
@@ -2495,18 +2514,28 @@
       }
       if (el) {
         el.textContent = `
-          /* Hide ONLY the App Name text ("Service Console") next to App Launcher - NEVER anchor links! */
+          /* Hide ONLY the App Name text ("Service Console") next to App Launcher - NEVER anchor links or buttons! */
           span.slds-context-bar__app-name,
           span.appName,
           .slds-context-bar__primary span.appName,
           .slds-context-bar__primary span.slds-context-bar__app-name,
-          .appName:not(a),
-          .slds-context-bar__app-name:not(a),
-          one-app-nav-bar .slds-context-bar__app-name:not(a),
-          one-appnav .slds-context-bar__app-name:not(a),
+          .appName:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
+          .slds-context-bar__app-name:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
+          one-app-nav-bar .slds-context-bar__app-name:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
+          one-appnav .slds-context-bar__app-name:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
           span[title="Service Console"],
           .slds-truncate[title="Service Console"] {
             display: none !important;
+          }
+
+          /* Ensure App Launcher (waffle button) and its container remain completely visible */
+          .appLauncher,
+          .slds-icon-waffle_container,
+          .slds-context-bar__primary .slds-context-bar__item:first-child,
+          .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) {
+            display: inline-flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
           }
 
           /* Compact context bar primary container */
@@ -2531,7 +2560,10 @@
             max-width: 54px !important;
             padding: 0 7px !important;
             margin: 0 !important;
+            border: none !important;
             border-left: none !important;
+            border-right: none !important;
+            box-shadow: none !important;
             box-sizing: border-box !important;
             visibility: visible !important;
             opacity: 1 !important;
@@ -2539,8 +2571,30 @@
             cursor: pointer !important;
           }
 
+          /* Remove dividers and pseudo-elements between Home link and dropdown arrow */
+          .sf-home-tab-item::before,
+          .sf-home-tab-item::after,
+          .sf-home-tab-item *::before,
+          .sf-home-tab-item *::after,
+          .slds-context-bar__object-switcher::before,
+          .slds-context-bar__object-switcher::after,
+          .slds-context-bar__object-switcher *::before,
+          .slds-context-bar__object-switcher *::after,
+          .sf-home-tab-link::before,
+          .sf-home-tab-link::after,
+          .slds-context-bar__object-switcher a::before,
+          .slds-context-bar__object-switcher a::after,
+          .slds-context-bar__object-switcher .slds-context-bar__label-action::before,
+          .slds-context-bar__object-switcher .slds-context-bar__label-action::after,
+          .slds-context-bar__object-switcher .slds-context-bar__icon-action::before,
+          .slds-context-bar__object-switcher .slds-context-bar__icon-action::after {
+            display: none !important;
+            content: none !important;
+            border: none !important;
+            box-shadow: none !important;
+          }
+
           /* Hide close buttons in Home tab (pinned tabs do not have close buttons) */
-          .sf-home-tab-item .slds-context-bar__button-action,
           .sf-home-tab-item button.close,
           .sf-home-tab-item button[title*="Close"],
           .sf-home-tab-item .closeButton {
@@ -2571,15 +2625,6 @@
             min-width: 0 !important;
           }
 
-          .sf-home-tab-item .slds-context-bar__icon-action::before,
-          .sf-home-tab-item .slds-context-bar__icon-action::after,
-          .slds-context-bar__object-switcher .slds-context-bar__icon-action::before,
-          .slds-context-bar__object-switcher .slds-context-bar__icon-action::after {
-            display: none !important;
-            content: none !important;
-            border: none !important;
-          }
-
           .sf-home-tab-item .slds-context-bar__icon-action button,
           .sf-home-tab-item .slds-context-bar__icon-action .slds-button,
           .slds-context-bar__object-switcher .slds-context-bar__icon-action button,
@@ -2589,9 +2634,12 @@
             align-items: center !important;
             justify-content: center !important;
             border: none !important;
+            border-left: none !important;
+            border-right: none !important;
             background: transparent !important;
             background-color: transparent !important;
             box-shadow: none !important;
+            outline: none !important;
             padding: 0 !important;
             margin: 0 !important;
             width: auto !important;
@@ -2624,12 +2672,14 @@
             fill: var(--sf-tab-icon-color, #0176d3) !important;
           }
 
-          /* Home tab link: inline-flex holding the icon */
+          /* Home tab link: inline-flex holding the icon, zero borders */
           .sf-home-tab-link,
           a.sf-home-tab-link,
           a[href*="/lightning/o/Case/list"],
           a[href*="/lightning/o/Case"],
-          .slds-context-bar__object-switcher a {
+          .slds-context-bar__object-switcher a,
+          .slds-context-bar__object-switcher .slds-context-bar__label-action,
+          .sf-home-tab-item .slds-context-bar__label-action {
             display: inline-flex !important;
             align-items: center !important;
             justify-content: center !important;
@@ -2638,6 +2688,10 @@
             height: 100% !important;
             padding: 0 !important;
             margin: 0 !important;
+            border: none !important;
+            border-left: none !important;
+            border-right: none !important;
+            box-shadow: none !important;
             box-sizing: border-box !important;
             color: var(--sf-tab-icon-color, #0176d3) !important;
             text-decoration: none !important;
