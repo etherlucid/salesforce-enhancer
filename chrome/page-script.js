@@ -2547,6 +2547,14 @@
           position: static !important;
         }
 
+        .oneConsoleNav > .appNavItems > .navMenu section[role="dialog"],
+        .oneConsoleNav > .appNavItems > .navMenu .slds-popover,
+        .sf-home-unified-tab > .navMenu section[role="dialog"],
+        .sf-home-unified-tab > .navMenu .slds-popover {
+          left: 0 !important;
+          right: auto !important;
+        }
+
         .oneConsoleNav > .appNavItems > .navMenu > .slds-context-bar__icon-action {
           display: flex !important;
           align-items: center !important;
@@ -2560,7 +2568,7 @@
           background: transparent !important;
         }
 
-        .oneConsoleNav > .appNavItems > .navMenu button {
+        .oneConsoleNav > .appNavItems > .navMenu > .slds-context-bar__icon-action > button {
           display: flex !important;
           align-items: center !important;
           justify-content: center !important;
@@ -2574,7 +2582,7 @@
           cursor: pointer !important;
         }
 
-        .oneConsoleNav > .appNavItems > .navMenu svg {
+        .oneConsoleNav > .appNavItems > .navMenu > .slds-context-bar__icon-action > button svg {
           width: 14px !important;
           height: 14px !important;
         }
@@ -2592,21 +2600,33 @@
           content: none !important;
         }
 
-        .oneConsoleNav > .appNavItems *,
-        .oneConsoleNav > .appNavItems *:hover,
-        .oneConsoleNav > .appNavItems:hover *,
-        .sf-home-unified-tab *,
-        .sf-home-unified-tab *:hover,
-        .sf-home-unified-tab:hover * {
+        .oneConsoleNav > .appNavItems > .selectedListItem,
+        .oneConsoleNav > .appNavItems > .selectedListItem *,
+        .oneConsoleNav > .appNavItems > .navMenu,
+        .oneConsoleNav > .appNavItems > .navMenu > .slds-context-bar__icon-action,
+        .oneConsoleNav > .appNavItems > .navMenu > .slds-context-bar__icon-action > button,
+        .oneConsoleNav > .appNavItems > .navMenu > .slds-context-bar__icon-action > button *,
+        .sf-home-unified-tab > .selectedListItem,
+        .sf-home-unified-tab > .selectedListItem *,
+        .sf-home-unified-tab > .navMenu,
+        .sf-home-unified-tab > .navMenu > .slds-context-bar__icon-action,
+        .sf-home-unified-tab > .navMenu > .slds-context-bar__icon-action > button,
+        .sf-home-unified-tab > .navMenu > .slds-context-bar__icon-action > button * {
           background: transparent !important;
           background-color: transparent !important;
           box-shadow: none !important;
         }
 
-        .oneConsoleNav > .appNavItems *::before,
-        .oneConsoleNav > .appNavItems *::after,
-        .sf-home-unified-tab *::before,
-        .sf-home-unified-tab *::after {
+        .oneConsoleNav > .appNavItems > .selectedListItem::before,
+        .oneConsoleNav > .appNavItems > .selectedListItem::after,
+        .oneConsoleNav > .appNavItems > .selectedListItem *::before,
+        .oneConsoleNav > .appNavItems > .selectedListItem *::after,
+        .oneConsoleNav > .appNavItems > .navMenu::before,
+        .oneConsoleNav > .appNavItems > .navMenu::after,
+        .oneConsoleNav > .appNavItems > .navMenu > .slds-context-bar__icon-action::before,
+        .oneConsoleNav > .appNavItems > .navMenu > .slds-context-bar__icon-action::after,
+        .oneConsoleNav > .appNavItems > .navMenu > .slds-context-bar__icon-action > button::before,
+        .oneConsoleNav > .appNavItems > .navMenu > .slds-context-bar__icon-action > button::after {
           display: none !important;
           content: none !important;
         }
@@ -2649,22 +2669,16 @@
         }
 
         /* Remove dividers and pseudo-elements between Home link and dropdown arrow */
-        .sf-home-tab-item::before,
-        .sf-home-tab-item::after,
-        .sf-home-tab-item *::before,
-        .sf-home-tab-item *::after,
-        .slds-context-bar__object-switcher::before,
-        .slds-context-bar__object-switcher::after,
-        .slds-context-bar__object-switcher *::before,
-        .slds-context-bar__object-switcher *::after,
+        .sf-home-tab-item:not(.selectedListItem)::before,
+        .sf-home-tab-item:not(.selectedListItem)::after,
         .sf-home-tab-link::before,
         .sf-home-tab-link::after,
-        .slds-context-bar__object-switcher a::before,
-        .slds-context-bar__object-switcher a::after,
-        .slds-context-bar__object-switcher .slds-context-bar__label-action::before,
-        .slds-context-bar__object-switcher .slds-context-bar__label-action::after,
-        .slds-context-bar__object-switcher .slds-context-bar__icon-action::before,
-        .slds-context-bar__object-switcher .slds-context-bar__icon-action::after {
+        .slds-context-bar__object-switcher > a::before,
+        .slds-context-bar__object-switcher > a::after,
+        .slds-context-bar__object-switcher > .slds-context-bar__label-action::before,
+        .slds-context-bar__object-switcher > .slds-context-bar__label-action::after,
+        .slds-context-bar__object-switcher > .slds-context-bar__icon-action::before,
+        .slds-context-bar__object-switcher > .slds-context-bar__icon-action::after {
           display: none !important;
           content: none !important;
           border: none !important;
@@ -2750,11 +2764,10 @@
         /* Home tab link: inline-flex holding the icon, zero borders */
         .sf-home-tab-link,
         a.sf-home-tab-link,
-        a[href*="/lightning/o/Case/list"],
-        a[href*="/lightning/o/Case"],
-        .slds-context-bar__object-switcher a,
-        .slds-context-bar__object-switcher .slds-context-bar__label-action,
-        .sf-home-tab-item .slds-context-bar__label-action {
+        .oneConsoleNav > .appNavItems > .selectedListItem > a,
+        .slds-context-bar__object-switcher > a:not(.menuItem):not([role="menuitem"]),
+        .slds-context-bar__object-switcher > .slds-context-bar__label-action,
+        .sf-home-tab-item > .slds-context-bar__label-action {
           display: inline-flex !important;
           align-items: center !important;
           justify-content: center !important;
@@ -2768,7 +2781,7 @@
           border-right: none !important;
           box-shadow: none !important;
           box-sizing: border-box !important;
-          color: var(--sf-tab-icon-color, #0176d3) !important;
+          color: var(--sf-tab-icon-color, #757575) !important;
           text-decoration: none !important;
           cursor: pointer !important;
           visibility: visible !important;
@@ -2777,15 +2790,13 @@
 
         /* Hide all other children of the Home link except the home icon */
         .sf-home-tab-link > *:not(.sf-home-icon),
-        a[href*="/lightning/o/Case/list"] > *:not(.sf-home-icon),
-        a[href*="/lightning/o/Case"] > *:not(.sf-home-icon) {
+        .oneConsoleNav > .appNavItems > .selectedListItem > a > *:not(.sf-home-icon),
+        .slds-context-bar__object-switcher > a:not(.menuItem):not([role="menuitem"]) > *:not(.sf-home-icon) {
           display: none !important;
         }
 
         .sf-home-tab-link::before,
-        .sf-home-tab-link::after,
-        a[href*="/lightning/o/Case/list"]::before,
-        a[href*="/lightning/o/Case/list"]::after {
+        .sf-home-tab-link::after {
           display: none !important;
           content: none !important;
         }
@@ -2802,33 +2813,27 @@
           display: block !important;
           margin: 0 !important;
           flex-shrink: 0 !important;
-          fill: var(--sf-tab-icon-color, #0176d3) !important;
-          color: var(--sf-tab-icon-color, #0176d3) !important;
+          fill: var(--sf-tab-icon-color, #757575) !important;
+          color: var(--sf-tab-icon-color, #757575) !important;
         }
 
         .sf-home-icon path {
-          fill: var(--sf-tab-icon-color, #0176d3) !important;
+          fill: var(--sf-tab-icon-color, #757575) !important;
         }
 
         /* Unified hover state on the fallback tab container */
         .sf-home-tab-item:not(.selectedListItem):hover,
-        .sf-home-tab-item:not(.selectedListItem):has(*:hover),
-        .slds-context-bar__object-switcher:not(.selectedListItem):has(.sf-home-tab-link):hover,
-        .slds-context-bar__object-switcher:not(.selectedListItem):hover {
+        .sf-home-tab-item:not(.selectedListItem):has(> *:hover),
+        .slds-context-bar__object-switcher:not(.selectedListItem):has(> .sf-home-tab-link):hover {
           background-color: var(--sf-pinned-tab-hover-bg, var(--lwc-brandPrimaryTransparent10, rgba(109, 151, 196, 0.1))) !important;
         }
 
-        .sf-home-tab-item *,
-        .sf-home-tab-item:hover *,
-        .sf-home-tab-item .sf-home-tab-link:hover,
-        .sf-home-tab-item .slds-context-bar__label-action:hover,
-        .sf-home-tab-item .slds-context-bar__icon-action:hover,
-        .sf-home-tab-item .slds-context-bar__icon-action button:hover,
-        .sf-home-tab-item .slds-button:hover,
-        .slds-context-bar__object-switcher *,
-        .slds-context-bar__object-switcher:hover *,
-        .slds-context-bar__object-switcher a:hover,
-        .slds-context-bar__object-switcher button:hover {
+        .sf-home-tab-item > a,
+        .sf-home-tab-item > a:hover,
+        .sf-home-tab-item:not(.selectedListItem) > .slds-context-bar__icon-action,
+        .sf-home-tab-item:not(.selectedListItem) > .slds-context-bar__icon-action:hover,
+        .sf-home-tab-item:not(.selectedListItem) > .slds-context-bar__icon-action > button,
+        .sf-home-tab-item:not(.selectedListItem) > .slds-context-bar__icon-action > button:hover {
           background: transparent !important;
           background-color: transparent !important;
           box-shadow: none !important;
@@ -7677,7 +7682,11 @@
         );
         for (const tab of otherTabs) {
           const liIcon = tab.querySelector('lightning-icon, lightning-primitive-icon');
-          const shadowSvg = liIcon && liIcon.shadowRoot ? liIcon.shadowRoot.querySelector('svg') : null;
+          let shadowSvg = liIcon && liIcon.shadowRoot ? liIcon.shadowRoot.querySelector('svg') : null;
+          if (!shadowSvg && liIcon && liIcon.shadowRoot) {
+            const prim = liIcon.shadowRoot.querySelector('lightning-primitive-icon');
+            if (prim && prim.shadowRoot) shadowSvg = prim.shadowRoot.querySelector('svg');
+          }
           const icon = shadowSvg || tab.querySelector('svg, lightning-icon, lightning-primitive-icon, .slds-icon');
           if (icon) {
             const cs = window.getComputedStyle(icon);
@@ -7717,16 +7726,23 @@
       return '#757575';
     }
 
+    function isHomeCandidateInPopupMenu(el) {
+      return !!(el && el.closest && el.closest('.navMenu, section[role="dialog"], .slds-popover, .slds-dropdown, [role="menu"], .slds-listbox, .menuItem'));
+    }
+
     function findHomeCandidateElements() {
       const elements = new Set();
       try {
-        document.querySelectorAll('a[href*="/lightning/o/Case/list"], a[href*="/lightning/o/Case"]').forEach(el => elements.add(el));
-        document.querySelectorAll('.slds-context-bar__object-switcher a').forEach(el => elements.add(el));
-        document.querySelectorAll('.slds-context-bar__primary .slds-context-bar__item:not(:first-child) a').forEach(el => elements.add(el));
-        document.querySelectorAll('.slds-context-bar [title="Cases"] a, .slds-context-bar [data-id="Case"] a, .slds-context-bar [data-id="home"] a').forEach(el => elements.add(el));
+        const addIfValid = (el) => {
+          if (el && !isHomeCandidateInPopupMenu(el)) elements.add(el);
+        };
+        document.querySelectorAll('.oneConsoleNav > .appNavItems > .selectedListItem > a, .slds-context-bar__object-switcher > a').forEach(addIfValid);
+        document.querySelectorAll('a[href*="/lightning/o/Case/list"], a[href*="/lightning/o/Case"]').forEach(addIfValid);
+        document.querySelectorAll('.slds-context-bar__primary .slds-context-bar__item:not(:first-child) a').forEach(addIfValid);
+        document.querySelectorAll('.slds-context-bar [title="Cases"] a, .slds-context-bar [data-id="Case"] a, .slds-context-bar [data-id="home"] a').forEach(addIfValid);
         const firstTab = document.querySelector('.tabBarItems > li:first-child a, one-app-nav-bar-item-root:first-child a');
         if (firstTab && (firstTab.href?.includes('/lightning/o/Case') || firstTab.getAttribute('title') === 'Cases')) {
-          elements.add(firstTab);
+          addIfValid(firstTab);
         }
       } catch (_) {}
       return Array.from(elements);
@@ -7748,6 +7764,7 @@
 
         candidates.forEach((el) => {
           const target = el.tagName === 'A' ? el : (el.querySelector('a') || el);
+          if (isHomeCandidateInPopupMenu(target)) return;
           const appNavItems = target.closest('.oneConsoleNav > .appNavItems');
           const parentItem = target.closest('.slds-context-bar__object-switcher, .slds-context-bar__item, li.tabItem, one-app-nav-bar-item-root');
 
