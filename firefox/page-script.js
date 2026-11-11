@@ -2423,22 +2423,40 @@
         }
 
         /* Compact context bar primary container & app launcher item */
+        .slds-context-bar,
+        one-appnav .slds-context-bar,
+        one-app-nav-bar .slds-context-bar {
+          padding-left: 6px !important;
+        }
+
         .slds-context-bar__primary {
+          display: inline-flex !important;
+          align-items: center !important;
+          height: 100% !important;
           min-width: 0 !important;
           width: auto !important;
-          padding-right: 0 !important;
-          margin-right: 0 !important;
+          padding-left: 0 !important;
+          margin-left: 0 !important;
+          padding-right: 10px !important;
+          margin-right: 4px !important;
+          border-right: 1px solid var(--lwc-colorBorderSeparator, rgba(0, 0, 0, 0.14)) !important;
         }
 
         .slds-context-bar__primary .slds-context-bar__item:first-child {
+          padding-left: 0 !important;
+          margin-left: 0 !important;
           padding-right: 0 !important;
           margin-right: 0 !important;
           min-width: 0 !important;
           width: auto !important;
         }
 
-        .slds-context-bar__primary .slds-context-bar__item:first-child .slds-context-bar__icon-action {
-          padding-right: 4px !important;
+        .slds-context-bar__primary .slds-context-bar__item:first-child .slds-context-bar__icon-action,
+        .slds-context-bar__primary .appLauncher,
+        .slds-context-bar__primary .slds-icon-waffle_container {
+          padding-left: 2px !important;
+          padding-right: 2px !important;
+          margin-left: 0 !important;
           margin-right: 0 !important;
         }
 
@@ -2446,11 +2464,14 @@
         one-console-object-switcher {
           width: auto !important;
           min-width: 0 !important;
+          height: 100% !important;
+          display: inline-flex !important;
+          align-items: center !important;
           padding: 0 !important;
           margin: 0 !important;
         }
 
-        /* Home Tab container: sized to exact pinned console tab width */
+        /* Home Tab container: auto width with pinned-tab-style left/right margins and tab divider */
         .sf-home-tab-item,
         .slds-context-bar__primary .slds-context-bar__item:has(.sf-home-tab-link),
         .slds-context-bar__primary .slds-context-bar__item:has(a[href*="/lightning/o/Case"]),
@@ -2459,17 +2480,18 @@
           display: inline-flex !important;
           align-items: center !important;
           justify-content: center !important;
+          align-self: stretch !important;
           height: 100% !important;
           min-height: 100% !important;
-          width: var(--sf-home-tab-width, 36px) !important;
-          min-width: var(--sf-home-tab-width, 36px) !important;
-          max-width: var(--sf-home-tab-width, 36px) !important;
-          flex: 0 0 var(--sf-home-tab-width, 36px) !important;
-          padding: 0 2px !important;
+          width: auto !important;
+          min-width: 0 !important;
+          max-width: none !important;
+          flex: 0 0 auto !important;
+          padding: 0 8px !important;
           margin: 0 !important;
           border: none !important;
           border-left: none !important;
-          border-right: none !important;
+          border-right: 1px solid var(--lwc-colorBorderSeparator, rgba(0, 0, 0, 0.14)) !important;
           box-shadow: none !important;
           box-sizing: border-box !important;
           visibility: visible !important;
@@ -2525,7 +2547,7 @@
           background: transparent !important;
           background-color: transparent !important;
           padding: 0 !important;
-          margin: 0 0 0 2px !important;
+          margin: 0 0 0 4px !important;
           height: 100% !important;
           min-height: 100% !important;
           width: auto !important;
@@ -2561,12 +2583,12 @@
         .sf-home-tab-item .slds-context-bar__icon-action lightning-primitive-icon,
         .slds-context-bar__object-switcher .slds-context-bar__icon-action svg,
         .sf-home-tab-item button.slds-context-bar__button svg {
-          width: 8px !important;
-          height: 8px !important;
-          min-width: 8px !important;
-          min-height: 8px !important;
-          max-width: 8px !important;
-          max-height: 8px !important;
+          width: 9px !important;
+          height: 9px !important;
+          min-width: 9px !important;
+          min-height: 9px !important;
+          max-width: 9px !important;
+          max-height: 9px !important;
           fill: var(--sf-tab-icon-color, #0176d3) !important;
           color: var(--sf-tab-icon-color, #0176d3) !important;
           display: inline-block !important;
@@ -2625,12 +2647,12 @@
         /* SVG Home Icon */
         .sf-home-icon,
         svg.sf-home-icon {
-          width: 15px !important;
-          height: 15px !important;
-          min-width: 15px !important;
-          min-height: 15px !important;
-          max-width: 15px !important;
-          max-height: 15px !important;
+          width: 18px !important;
+          height: 18px !important;
+          min-width: 18px !important;
+          min-height: 18px !important;
+          max-width: 18px !important;
+          max-height: 18px !important;
           display: block !important;
           margin: 0 !important;
           flex-shrink: 0 !important;
@@ -2642,17 +2664,28 @@
           fill: var(--sf-tab-icon-color, #0176d3) !important;
         }
 
-        /* Unified hover state on the entire tab */
+        /* Unified hover state on the entire tab (both Home icon and dropdown arrow, matching pinned tabs) */
         .sf-home-tab-item:hover,
-        .slds-context-bar__object-switcher:has(.sf-home-tab-link):hover {
-          background-color: rgba(1, 118, 211, 0.08) !important;
+        .sf-home-tab-item:has(*:hover),
+        .slds-context-bar__object-switcher:has(.sf-home-tab-link):hover,
+        .slds-context-bar__object-switcher:hover {
+          background-color: var(--sf-pinned-tab-hover-bg, var(--lwc-colorBackgroundRowHover, rgba(1, 118, 211, 0.08))) !important;
         }
 
-        .sf-home-tab-item:hover .sf-home-tab-link,
-        .sf-home-tab-item:hover .slds-context-bar__icon-action,
-        .sf-home-tab-item:hover .slds-context-bar__icon-action button {
+        .sf-home-tab-item *,
+        .sf-home-tab-item:hover *,
+        .sf-home-tab-item .sf-home-tab-link:hover,
+        .sf-home-tab-item .slds-context-bar__label-action:hover,
+        .sf-home-tab-item .slds-context-bar__icon-action:hover,
+        .sf-home-tab-item .slds-context-bar__icon-action button:hover,
+        .sf-home-tab-item .slds-button:hover,
+        .slds-context-bar__object-switcher *,
+        .slds-context-bar__object-switcher:hover *,
+        .slds-context-bar__object-switcher a:hover,
+        .slds-context-bar__object-switcher button:hover {
           background: transparent !important;
           background-color: transparent !important;
+          box-shadow: none !important;
         }
       `;
       syncHomeIconNavContext();
@@ -2715,6 +2748,7 @@
           --sf-theme-accent-tint: ${accentTint} !important;
           --sf-theme-accent-border: ${accentBorder} !important;
           --sf-theme-accent-contrast: ${accentContrast} !important;
+          --sf-pinned-tab-hover-bg: ${baseTheme.surface} !important;
         }
       `;
     }
@@ -7524,35 +7558,6 @@
       return '#0176d3';
     }
 
-    function getPinnedTabWidth() {
-      try {
-        const pinned = document.querySelector(
-          'ul.tabBarItems > li.tabItem.slds-is-pinned, ' +
-          'ul.tabBarItems > li.tabItem.pinned, ' +
-          'ul.tabBarItems > li.tabItem[data-pinned="true"], ' +
-          '.navexConsoleTabContainer li.tabItem.slds-is-pinned, ' +
-          '.navexConsoleTabContainer li.tabItem.pinned'
-        );
-        if (pinned) {
-          const w = pinned.getBoundingClientRect().width;
-          if (w >= 24 && w <= 56) return Math.max(30, Math.min(46, Math.round(w)));
-        }
-        const tabs = document.querySelectorAll(
-          'ul.tabBarItems > li.tabItem:not(.sf-home-tab-item), ' +
-          '.navexConsoleTabContainer li.tabItem:not(.sf-home-tab-item)'
-        );
-        for (const tab of tabs) {
-          const w = tab.getBoundingClientRect().width;
-          const closeBtn = tab.querySelector('button.close, button[title*="Close"], .closeButton');
-          const closeHidden = !closeBtn || window.getComputedStyle(closeBtn).display === 'none' || closeBtn.offsetWidth === 0;
-          if (w >= 24 && w <= 52 && closeHidden) {
-            return Math.max(30, Math.min(46, Math.round(w)));
-          }
-        }
-      } catch (_) {}
-      return 36;
-    }
-
     function findHomeCandidateElements() {
       const elements = new Set();
       try {
@@ -7574,22 +7579,17 @@
         const shouldHide = (s.modules && s.modules.subtabs !== false) && !!(s.hideAppName || s.subtabs?.hideAppName);
         const candidates = findHomeCandidateElements();
         const tabIconColor = getTabIconColor();
-        const pinnedWidth = getPinnedTabWidth();
 
         try {
           if (document.documentElement) {
             document.documentElement.style.setProperty('--sf-tab-icon-color', tabIconColor);
-            if (shouldHide) {
-              document.documentElement.style.setProperty('--sf-home-tab-width', `${pinnedWidth}px`);
-            } else {
-              document.documentElement.style.removeProperty('--sf-home-tab-width');
-            }
+            document.documentElement.style.removeProperty('--sf-home-tab-width');
           }
         } catch (_) {}
 
         candidates.forEach((el) => {
           const target = el.tagName === 'A' ? el : (el.querySelector('a') || el);
-          const parentItem = target.closest('.slds-context-bar__item, li.tabItem, one-app-nav-bar-item-root');
+          const parentItem = target.closest('.slds-context-bar__object-switcher, .slds-context-bar__item, li.tabItem, one-app-nav-bar-item-root');
 
           if (!shouldHide) {
             target.classList.remove('sf-home-tab-link');
@@ -7602,6 +7602,7 @@
               parentItem.style.removeProperty('min-width');
               parentItem.style.removeProperty('max-width');
               parentItem.style.removeProperty('flex');
+              parentItem.style.removeProperty('align-self');
               parentItem.style.removeProperty('padding');
               parentItem.style.removeProperty('margin');
               parentItem.style.removeProperty('border');
@@ -7613,6 +7614,8 @@
                 target.parentElement.style.removeProperty('margin');
                 target.parentElement.style.removeProperty('min-width');
                 target.parentElement.style.removeProperty('width');
+                target.parentElement.style.removeProperty('height');
+                target.parentElement.style.removeProperty('display');
               }
               parentItem.querySelectorAll('button.close, button[title*="Close"], .closeButton').forEach(btn => btn.style.removeProperty('display'));
               const iconAction = parentItem.querySelector('.slds-context-bar__icon-action, .slds-context-bar__dropdown-trigger');
@@ -7652,19 +7655,24 @@
             parentItem.style.setProperty('display', 'inline-flex', 'important');
             parentItem.style.setProperty('align-items', 'center', 'important');
             parentItem.style.setProperty('justify-content', 'center', 'important');
-            parentItem.style.setProperty('width', `${pinnedWidth}px`, 'important');
-            parentItem.style.setProperty('min-width', `${pinnedWidth}px`, 'important');
-            parentItem.style.setProperty('max-width', `${pinnedWidth}px`, 'important');
-            parentItem.style.setProperty('flex', `0 0 ${pinnedWidth}px`, 'important');
-            parentItem.style.setProperty('padding', '0 2px', 'important');
+            parentItem.style.setProperty('align-self', 'stretch', 'important');
+            parentItem.style.setProperty('height', '100%', 'important');
+            parentItem.style.setProperty('width', 'auto', 'important');
+            parentItem.style.setProperty('min-width', '0', 'important');
+            parentItem.style.setProperty('max-width', 'none', 'important');
+            parentItem.style.setProperty('flex', '0 0 auto', 'important');
+            parentItem.style.setProperty('padding', '0 8px', 'important');
             parentItem.style.setProperty('margin', '0', 'important');
             parentItem.style.setProperty('border', 'none', 'important');
             parentItem.style.setProperty('border-left', 'none', 'important');
-            parentItem.style.setProperty('border-right', 'none', 'important');
+            parentItem.style.setProperty('border-right', '1px solid var(--lwc-colorBorderSeparator, rgba(0, 0, 0, 0.14))', 'important');
             parentItem.style.setProperty('box-shadow', 'none', 'important');
             parentItem.style.setProperty('visibility', 'visible', 'important');
             parentItem.style.setProperty('opacity', '1', 'important');
             if (target.parentElement && target.parentElement !== parentItem) {
+              target.parentElement.style.setProperty('display', 'inline-flex', 'important');
+              target.parentElement.style.setProperty('align-items', 'center', 'important');
+              target.parentElement.style.setProperty('height', '100%', 'important');
               target.parentElement.style.setProperty('padding', '0', 'important');
               target.parentElement.style.setProperty('margin', '0', 'important');
               target.parentElement.style.setProperty('min-width', '0', 'important');
@@ -7684,7 +7692,7 @@
               iconAction.style.setProperty('box-shadow', 'none', 'important');
               iconAction.style.setProperty('background', 'transparent', 'important');
               iconAction.style.setProperty('padding', '0', 'important');
-              iconAction.style.setProperty('margin', '0 0 0 2px', 'important');
+              iconAction.style.setProperty('margin', '0 0 0 4px', 'important');
               const arrowBtn = iconAction.querySelector('button');
               if (arrowBtn) {
                 arrowBtn.style.setProperty('display', 'inline-flex', 'important');
@@ -7701,8 +7709,8 @@
               if (arrowSvg) {
                 arrowSvg.style.setProperty('fill', tabIconColor, 'important');
                 arrowSvg.style.setProperty('color', tabIconColor, 'important');
-                arrowSvg.style.setProperty('width', '8px', 'important');
-                arrowSvg.style.setProperty('height', '8px', 'important');
+                arrowSvg.style.setProperty('width', '9px', 'important');
+                arrowSvg.style.setProperty('height', '9px', 'important');
                 const p = arrowSvg.querySelector('path');
                 if (p) p.setAttribute('fill', tabIconColor);
               }
@@ -7725,11 +7733,11 @@
             const svgNs = 'http://www.w3.org/2000/svg';
             svg = document.createElementNS(svgNs, 'svg');
             svg.setAttribute('class', 'sf-home-icon');
-            svg.setAttribute('viewBox', '0 0 24 24');
-            svg.setAttribute('width', '15');
-            svg.setAttribute('height', '15');
+            svg.setAttribute('viewBox', '1.5 2 21 19');
+            svg.setAttribute('width', '18');
+            svg.setAttribute('height', '18');
             svg.setAttribute('aria-hidden', 'true');
-            svg.setAttribute('style', `width: 15px !important; height: 15px !important; fill: ${tabIconColor} !important; color: ${tabIconColor} !important; display: block !important; margin: 0 !important; flex-shrink: 0 !important;`);
+            svg.setAttribute('style', `width: 18px !important; height: 18px !important; fill: ${tabIconColor} !important; color: ${tabIconColor} !important; display: block !important; margin: 0 !important; flex-shrink: 0 !important;`);
 
             const path = document.createElementNS(svgNs, 'path');
             path.setAttribute('d', 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z');
@@ -7738,10 +7746,11 @@
 
             target.appendChild(svg);
           } else {
-            svg.setAttribute('width', '15');
-            svg.setAttribute('height', '15');
-            svg.style.setProperty('width', '15px', 'important');
-            svg.style.setProperty('height', '15px', 'important');
+            svg.setAttribute('viewBox', '1.5 2 21 19');
+            svg.setAttribute('width', '18');
+            svg.setAttribute('height', '18');
+            svg.style.setProperty('width', '18px', 'important');
+            svg.style.setProperty('height', '18px', 'important');
             svg.style.setProperty('fill', tabIconColor, 'important');
             svg.style.setProperty('color', tabIconColor, 'important');
             svg.style.setProperty('margin', '0', 'important');
