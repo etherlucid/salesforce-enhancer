@@ -2398,9 +2398,11 @@
         (document.head || document.documentElement).appendChild(hideAppNameStyle);
       }
       hideAppNameStyle.textContent = `
+        /* Hide App Name label ("Service Console") next to App Launcher */
+        .slds-context-bar__primary .slds-context-bar__item:first-child .slds-context-bar__label-action,
+        .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) .slds-context-bar__label-action,
         .slds-context-bar__primary .slds-context-bar__app-name,
         .slds-context-bar__primary .appName,
-        .slds-context-bar__primary .slds-context-bar__label-action,
         .slds-context-bar__app-name,
         .appName[class*="slds-context-bar"],
         one-app-nav-bar .slds-context-bar__app-name,
@@ -2411,9 +2413,47 @@
         .slds-context-bar__primary .slds-context-bar__item {
           min-width: 0 !important;
           width: auto !important;
-          padding-right: 0.25rem !important;
+          padding-right: 0.15rem !important;
+        }
+
+        /* Condense navigation tab ("Cases") into a compact Home icon button */
+        .slds-context-bar__primary .slds-context-bar__object-switcher .slds-context-bar__label-action,
+        .slds-context-bar__primary .slds-context-bar__item:not(:first-child) .slds-context-bar__label-action,
+        .slds-context-bar__object-switcher .slds-context-bar__label-action {
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          padding: 0 0.45rem !important;
+          min-width: 30px !important;
+          height: 100% !important;
+          cursor: pointer !important;
+          text-decoration: none !important;
+          font-size: 0 !important;
+        }
+        .slds-context-bar__primary .slds-context-bar__object-switcher .slds-context-bar__label-action .slds-truncate,
+        .slds-context-bar__primary .slds-context-bar__item:not(:first-child) .slds-context-bar__label-action .slds-truncate,
+        .slds-context-bar__object-switcher .slds-context-bar__label-action .slds-truncate {
+          display: none !important;
+        }
+        .slds-context-bar__primary .slds-context-bar__object-switcher .slds-context-bar__label-action::before,
+        .slds-context-bar__primary .slds-context-bar__item:not(:first-child) .slds-context-bar__label-action::before,
+        .slds-context-bar__object-switcher .slds-context-bar__label-action::before {
+          content: "" !important;
+          display: inline-block !important;
+          width: 16px !important;
+          height: 16px !important;
+          vertical-align: middle !important;
+          background-color: currentColor !important;
+          -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z'/%3E%3C/svg%3E") no-repeat center / contain !important;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z'/%3E%3C/svg%3E") no-repeat center / contain !important;
+        }
+        .slds-context-bar__primary .slds-context-bar__object-switcher .slds-context-bar__label-action:hover::before,
+        .slds-context-bar__primary .slds-context-bar__item:not(:first-child) .slds-context-bar__label-action:hover::before,
+        .slds-context-bar__object-switcher .slds-context-bar__label-action:hover::before {
+          opacity: 0.8 !important;
         }
       `;
+      syncHomeIconNavContext();
       try {
         window.dispatchEvent(new Event('resize'));
       } catch (_) {}
@@ -7243,9 +7283,36 @@
     // Request fresh settings from extension storage in case localStorage was not primed
     window.postMessage({ __sfEnhancerAction: 'requestSettings', __sfAppearanceAction: 'requestSettings' }, '*');
 
+    function syncHomeIconNavContext() {
+      try {
+        const s = getEnhancerSettings();
+        if ((s.modules && s.modules.subtabs === false) || (!s.hideAppName && !s.subtabs?.hideAppName)) {
+          return;
+        }
+        const items = document.querySelectorAll(
+          '.slds-context-bar__primary .slds-context-bar__object-switcher, ' +
+          '.slds-context-bar__primary .slds-context-bar__item:not(:first-child), ' +
+          '.slds-context-bar__object-switcher'
+        );
+        items.forEach((item) => {
+          const link = item.querySelector('a.slds-context-bar__label-action, a');
+          if (link) {
+            const currentTitle = link.getAttribute('title');
+            if (!currentTitle || currentTitle === 'Cases') {
+              link.setAttribute('title', 'Cases (Home)');
+            }
+            if (!link.getAttribute('aria-label')) {
+              link.setAttribute('aria-label', 'Cases (Home)');
+            }
+          }
+        });
+      } catch (_) {}
+    }
+
     // Initial page load context sync
     function syncPageContextPeriodically() {
       try {
+        syncHomeIconNavContext();
         const objectName = getCurrentObjectName();
         syncAndReconcileQuickViews(objectName, null, []);
       } catch (_) {}
