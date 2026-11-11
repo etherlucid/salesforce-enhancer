@@ -146,10 +146,13 @@
   }
 
   function normalizeSettings(raw) {
+    const hideAppName = raw ? (raw.hideAppName !== undefined ? !!raw.hideAppName : (raw.subtabs && raw.subtabs.hideAppName !== undefined ? !!raw.subtabs.hideAppName : false)) : false;
     if (!raw || typeof raw !== 'object') {
       return {
         version: '1.2.1',
         modules: { subtabs: true, quickViews: true, theming: false, loadingAnimation: false },
+        subtabs: { hideAppName: false },
+        hideAppName: false,
         theme: { preset: 'classic', customAccent: '#8b5cf6', applyToNavigation: true },
         loadingImage: { url: GIF_PARROT, size: 64, rotate: false }
       };
@@ -163,6 +166,10 @@
         theming: raw.modules ? !!raw.modules.theming : (raw.applyToSalesforce === false ? false : !!(raw.theme && raw.theme !== 'classic')),
         loadingAnimation: raw.modules ? raw.modules.loadingAnimation === true : (raw.loadingImage ? raw.loadingImage.enabled === true : false)
       },
+      subtabs: {
+        hideAppName: hideAppName
+      },
+      hideAppName: hideAppName,
       theme: {
         preset: (raw.theme && typeof raw.theme === 'object' && raw.theme.preset) ? raw.theme.preset : (typeof raw.theme === 'string' ? raw.theme : 'classic'),
         customAccent: (raw.theme && typeof raw.theme === 'object' && raw.theme.customAccent) ? raw.theme.customAccent : (raw.accentColor || '#8b5cf6'),
@@ -2282,6 +2289,40 @@
       }
     } else if (themingStyle) {
       themingStyle.remove();
+    }
+
+    // 3. Hide App Name (Service Console label) to free space for tabs
+    const hideAppNameStyle = document.getElementById('sf-hide-app-name-style');
+    const shouldHideAppName = (settings.modules?.subtabs !== false) && !!(settings.hideAppName || settings.subtabs?.hideAppName);
+    if (shouldHideAppName) {
+      let el = hideAppNameStyle;
+      if (!el) {
+        el = document.createElement('style');
+        el.id = 'sf-hide-app-name-style';
+        const root = document.head || document.documentElement;
+        if (root) root.appendChild(el);
+      }
+      if (el) {
+        el.textContent = `
+          .slds-context-bar__primary .slds-context-bar__app-name,
+          .slds-context-bar__primary .appName,
+          .slds-context-bar__primary .slds-context-bar__label-action,
+          .slds-context-bar__app-name,
+          .appName[class*="slds-context-bar"],
+          one-app-nav-bar .slds-context-bar__app-name,
+          one-appnav .slds-context-bar__app-name {
+            display: none !important;
+          }
+          .slds-context-bar__primary,
+          .slds-context-bar__primary .slds-context-bar__item {
+            min-width: 0 !important;
+            width: auto !important;
+            padding-right: 0.25rem !important;
+          }
+        `;
+      }
+    } else if (hideAppNameStyle) {
+      hideAppNameStyle.remove();
     }
   }
 

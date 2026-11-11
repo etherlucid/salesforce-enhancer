@@ -4,13 +4,17 @@
   const api = typeof browser !== 'undefined' ? browser : chrome;
 
   const DEFAULT_SETTINGS = {
-    version: '1.0.0',
+    version: '1.2.1',
     modules: {
       subtabs: true,
       quickViews: true,
       theming: false,
       loadingAnimation: true
     },
+    subtabs: {
+      hideAppName: false
+    },
+    hideAppName: false,
     theme: {
       preset: 'classic',
       customAccent: '#8b5cf6',
@@ -124,6 +128,8 @@
         isDarkMode: false,
         applyToSalesforce: currentSettings.modules?.theming && currentSettings.theme?.applyToNavigation,
         modules: currentSettings.modules,
+        subtabs: currentSettings.subtabs,
+        hideAppName: currentSettings.hideAppName,
         loadingImage: {
           enabled: true,
           url: currentSettings.loadingImage.url,
@@ -182,6 +188,8 @@
         const loaded = res?.sf_enhancer_settings || res?.sf_appearance_settings;
         if (loaded && typeof loaded === 'object') {
           if (loaded.modules) currentSettings.modules = Object.assign({}, currentSettings.modules, loaded.modules);
+          if (loaded.subtabs) currentSettings.subtabs = Object.assign({}, currentSettings.subtabs, loaded.subtabs);
+          if (loaded.hideAppName !== undefined) currentSettings.hideAppName = loaded.hideAppName;
           if (loaded.theme) currentSettings.theme = Object.assign({}, currentSettings.theme, loaded.theme);
           if (loaded.loadingImage) {
             currentSettings.loadingImage = Object.assign({}, currentSettings.loadingImage, loaded.loadingImage);

@@ -89,6 +89,10 @@
       theming: false,
       loadingAnimation: false
     },
+    subtabs: {
+      hideAppName: false
+    },
+    hideAppName: false,
     theme: {
       preset: 'classic',
       customAccent: '#8b5cf6',
@@ -105,6 +109,8 @@
 
   // DOM Elements
   const chkModSubtabs = document.getElementById('chkModSubtabs');
+  const chkHideAppName = document.getElementById('chkHideAppName');
+  const subtabsHideAppNameRow = document.getElementById('subtabsHideAppNameRow');
   const chkModQuickViews = document.getElementById('chkModQuickViews');
 
   const chkModTheming = document.getElementById('chkModTheming');
@@ -218,6 +224,12 @@
     res.loadingImage.size = (loaded.loadingImage && loaded.loadingImage.size) || 64;
     res.loadingImage.rotate = !!(loaded.loadingImage && loaded.loadingImage.rotate);
 
+    const hideAppName = loaded ? (loaded.hideAppName !== undefined ? !!loaded.hideAppName : (loaded.subtabs && loaded.subtabs.hideAppName !== undefined ? !!loaded.subtabs.hideAppName : false)) : false;
+    res.hideAppName = hideAppName;
+    res.subtabs = {
+      hideAppName: hideAppName
+    };
+
     return res;
   }
 
@@ -253,7 +265,20 @@
 
   function updateUI() {
     // 1. Subtabs module
-    chkModSubtabs.checked = currentSettings.modules.subtabs !== false;
+    const isSubtabsEnabled = currentSettings.modules.subtabs !== false;
+    chkModSubtabs.checked = isSubtabsEnabled;
+    if (chkHideAppName) {
+      chkHideAppName.checked = !!(currentSettings.subtabs?.hideAppName || currentSettings.hideAppName);
+    }
+    if (subtabsHideAppNameRow) {
+      if (isSubtabsEnabled) {
+        subtabsHideAppNameRow.style.opacity = '1';
+        subtabsHideAppNameRow.style.pointerEvents = 'auto';
+      } else {
+        subtabsHideAppNameRow.style.opacity = '0.5';
+        subtabsHideAppNameRow.style.pointerEvents = 'none';
+      }
+    }
 
     // 2. Quick Views module
     chkModQuickViews.checked = currentSettings.modules.quickViews !== false;
@@ -385,6 +410,8 @@
         isDarkMode: !!THEMES[currentSettings.theme.preset]?.isDark,
         applyToSalesforce: currentSettings.modules.theming && currentSettings.theme.applyToNavigation,
         modules: currentSettings.modules,
+        subtabs: currentSettings.subtabs,
+        hideAppName: currentSettings.hideAppName,
         loadingImage: {
           enabled: currentSettings.modules.loadingAnimation,
           url: currentSettings.loadingImage.url,
@@ -430,8 +457,19 @@
 
   chkModSubtabs.addEventListener('change', (e) => {
     currentSettings.modules.subtabs = e.target.checked;
+    updateUI();
     saveAndApply();
   });
+
+  if (chkHideAppName) {
+    chkHideAppName.addEventListener('change', (e) => {
+      const val = e.target.checked;
+      if (!currentSettings.subtabs) currentSettings.subtabs = {};
+      currentSettings.subtabs.hideAppName = val;
+      currentSettings.hideAppName = val;
+      saveAndApply();
+    });
+  }
 
   chkModQuickViews.addEventListener('change', (e) => {
     currentSettings.modules.quickViews = e.target.checked;

@@ -233,6 +233,10 @@
       theming: false,
       loadingAnimation: false
     },
+    subtabs: {
+      hideAppName: false
+    },
+    hideAppName: false,
     theme: {
       preset: 'classic',
       customAccent: '#8b5cf6',
@@ -252,6 +256,8 @@
       return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
     }
 
+    const hideAppName = raw.hideAppName !== undefined ? !!raw.hideAppName : (raw.subtabs && raw.subtabs.hideAppName !== undefined ? !!raw.subtabs.hideAppName : false);
+
     const res = {
       version: '1.2.1',
       modules: {
@@ -260,6 +266,10 @@
         theming: raw.modules ? !!raw.modules.theming : (raw.applyToSalesforce === false ? false : !!(raw.theme && raw.theme !== 'classic')),
         loadingAnimation: raw.modules ? raw.modules.loadingAnimation === true : (raw.loadingImage ? raw.loadingImage.enabled === true : false)
       },
+      subtabs: {
+        hideAppName: hideAppName
+      },
+      hideAppName: hideAppName,
       theme: {
         preset: (raw.theme && typeof raw.theme === 'object' && raw.theme.preset) ? raw.theme.preset : (typeof raw.theme === 'string' ? raw.theme : 'classic'),
         customAccent: (raw.theme && typeof raw.theme === 'object' && raw.theme.customAccent) ? raw.theme.customAccent : (raw.accentColor || '#8b5cf6'),
@@ -2374,9 +2384,45 @@
     let styleEl = document.getElementById('sf-custom-appearance-style');
     const preloadStyle = document.getElementById('sf-preload-theme-style');
     const preloadLoadingStyle = document.getElementById('sf-preload-loading-style');
+    let hideAppNameStyle = document.getElementById('sf-hide-app-name-style');
 
     const themingEnabled = settings.modules?.theming === true;
     const loadingUrl = getEffectiveLoadingUrl(settings);
+    const shouldHideAppName = (settings.modules?.subtabs !== false) && !!(settings.hideAppName || settings.subtabs?.hideAppName);
+
+    // Apply or remove Hide App Name style (independent of theming/loading modules)
+    if (shouldHideAppName) {
+      if (!hideAppNameStyle) {
+        hideAppNameStyle = document.createElement('style');
+        hideAppNameStyle.id = 'sf-hide-app-name-style';
+        (document.head || document.documentElement).appendChild(hideAppNameStyle);
+      }
+      hideAppNameStyle.textContent = `
+        .slds-context-bar__primary .slds-context-bar__app-name,
+        .slds-context-bar__primary .appName,
+        .slds-context-bar__primary .slds-context-bar__label-action,
+        .slds-context-bar__app-name,
+        .appName[class*="slds-context-bar"],
+        one-app-nav-bar .slds-context-bar__app-name,
+        one-appnav .slds-context-bar__app-name {
+          display: none !important;
+        }
+        .slds-context-bar__primary,
+        .slds-context-bar__primary .slds-context-bar__item {
+          min-width: 0 !important;
+          width: auto !important;
+          padding-right: 0.25rem !important;
+        }
+      `;
+      try {
+        window.dispatchEvent(new Event('resize'));
+      } catch (_) {}
+    } else if (hideAppNameStyle) {
+      hideAppNameStyle.remove();
+      try {
+        window.dispatchEvent(new Event('resize'));
+      } catch (_) {}
+    }
 
     // If theming module is disabled, clean up 100% of injected theme CSS and inline styles
     if (!themingEnabled) {
