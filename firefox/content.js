@@ -2218,12 +2218,15 @@
   function getTabIconColor() {
     try {
       const otherTabs = document.querySelectorAll(
+        'ul.pinnedItems > li.tabItem:not(.sf-home-tab-item), ' +
         'ul.tabBarItems > li.tabItem:not(.sf-home-tab-item), ' +
         '.navexConsoleTabContainer li.tabItem:not(.sf-home-tab-item), ' +
         'one-app-nav-bar-item-root:not(.sf-home-tab-item)'
       );
       for (const tab of otherTabs) {
-        const icon = tab.querySelector('svg, lightning-icon, lightning-primitive-icon, .slds-icon');
+        const liIcon = tab.querySelector('lightning-icon, lightning-primitive-icon');
+        const shadowSvg = liIcon && liIcon.shadowRoot ? liIcon.shadowRoot.querySelector('svg') : null;
+        const icon = shadowSvg || tab.querySelector('svg, lightning-icon, lightning-primitive-icon, .slds-icon');
         if (icon) {
           const cs = window.getComputedStyle(icon);
           const col = cs.fill || cs.color;
@@ -2232,6 +2235,16 @@
             return col;
           }
         }
+      }
+      const navMenuSvg = document.querySelector('.oneConsoleNav .navMenu svg');
+      if (navMenuSvg) {
+        const col = window.getComputedStyle(navMenuSvg).fill;
+        if (col && col !== 'none' && col !== 'transparent' && col !== 'rgba(0, 0, 0, 0)' &&
+            col !== 'rgb(0, 0, 0)' && col !== 'rgb(24, 24, 24)') {
+          return col;
+        }
+      }
+      for (const tab of otherTabs) {
         const text = tab.querySelector('.slds-truncate, a');
         if (text) {
           const cs = window.getComputedStyle(text);
@@ -2241,7 +2254,7 @@
         }
       }
     } catch (_) {}
-    return '#0176d3';
+    return '#757575';
   }
 
   function findHomeCandidateElements() {
@@ -2275,13 +2288,27 @@
 
       candidates.forEach((el) => {
         const target = el.tagName === 'A' ? el : (el.querySelector('a') || el);
+        const appNavItems = target.closest('.oneConsoleNav > .appNavItems');
         const parentItem = target.closest('.slds-context-bar__object-switcher, .slds-context-bar__item, li.tabItem, one-app-nav-bar-item-root');
 
         if (!shouldHide) {
           target.classList.remove('sf-home-tab-link');
           if (parentItem) parentItem.classList.remove('sf-home-tab-item');
+          if (appNavItems) {
+            appNavItems.classList.remove('sf-home-unified-tab');
+            ['display', 'align-items', 'position', 'width', 'height', 'padding', 'margin', 'border', 'border-right'].forEach(p => appNavItems.style.removeProperty(p));
+            const navMenu = appNavItems.querySelector('.navMenu');
+            if (navMenu) {
+              ['display', 'align-items', 'height', 'width', 'padding', 'margin', 'border', 'border-right', 'box-shadow'].forEach(p => navMenu.style.removeProperty(p));
+              const nmAction = navMenu.querySelector('.slds-context-bar__icon-action');
+              if (nmAction) {
+                ['display', 'align-items', 'justify-content', 'width', 'height', 'padding', 'margin', 'border', 'box-shadow'].forEach(p => nmAction.style.removeProperty(p));
+              }
+            }
+          }
           const icon = target.querySelector('.sf-home-icon');
           if (icon) icon.remove();
+          ['display', 'align-items', 'justify-content', 'width', 'height', 'margin', 'padding', 'border', 'border-left', 'border-right', 'box-shadow', 'color', 'text-align', 'visibility', 'opacity'].forEach(p => target.style.removeProperty(p));
           Array.from(target.children).forEach(ch => ch.style.removeProperty('display'));
           if (parentItem) {
             parentItem.style.removeProperty('width');
@@ -2289,6 +2316,7 @@
             parentItem.style.removeProperty('max-width');
             parentItem.style.removeProperty('flex');
             parentItem.style.removeProperty('align-self');
+            parentItem.style.removeProperty('height');
             parentItem.style.removeProperty('padding');
             parentItem.style.removeProperty('margin');
             parentItem.style.removeProperty('border');
@@ -2326,7 +2354,7 @@
         target.style.setProperty('width', 'auto', 'important');
         target.style.setProperty('height', '100%', 'important');
         target.style.setProperty('margin', '0', 'important');
-        target.style.setProperty('padding', '0', 'important');
+        target.style.setProperty('padding', '0 8px', 'important');
         target.style.setProperty('border', 'none', 'important');
         target.style.setProperty('border-left', 'none', 'important');
         target.style.setProperty('border-right', 'none', 'important');
@@ -2336,7 +2364,61 @@
         target.style.setProperty('visibility', 'visible', 'important');
         target.style.setProperty('opacity', '1', 'important');
 
-        if (parentItem) {
+        if (appNavItems) {
+          // Salesforce Service Console splits Home link (.selectedListItem) and dropdown (.navMenu) as siblings inside .appNavItems
+          appNavItems.classList.add('sf-home-unified-tab');
+          appNavItems.style.setProperty('display', 'inline-flex', 'important');
+          appNavItems.style.setProperty('align-items', 'stretch', 'important');
+          appNavItems.style.setProperty('position', 'relative', 'important');
+          appNavItems.style.setProperty('width', 'auto', 'important');
+          appNavItems.style.setProperty('height', '100%', 'important');
+          appNavItems.style.setProperty('padding', '0 8px 0 0', 'important');
+          appNavItems.style.setProperty('margin', '0', 'important');
+          appNavItems.style.setProperty('border', 'none', 'important');
+          appNavItems.style.setProperty('border-right', '1px solid rgb(201, 201, 201)', 'important');
+
+          if (parentItem) {
+            parentItem.classList.add('sf-home-tab-item');
+            parentItem.style.setProperty('display', 'inline-flex', 'important');
+            parentItem.style.setProperty('align-items', 'center', 'important');
+            parentItem.style.setProperty('height', '100%', 'important');
+            parentItem.style.setProperty('width', 'auto', 'important');
+            parentItem.style.setProperty('min-width', '0', 'important');
+            parentItem.style.setProperty('max-width', 'none', 'important');
+            parentItem.style.setProperty('flex', '0 0 auto', 'important');
+            parentItem.style.setProperty('padding', '0', 'important');
+            parentItem.style.setProperty('margin', '0', 'important');
+            parentItem.style.setProperty('border', 'none', 'important');
+            parentItem.style.setProperty('border-left', 'none', 'important');
+            parentItem.style.setProperty('border-right', 'none', 'important');
+            parentItem.style.setProperty('box-shadow', 'none', 'important');
+          }
+
+          const navMenu = appNavItems.querySelector('.navMenu');
+          if (navMenu) {
+            navMenu.style.setProperty('display', 'inline-flex', 'important');
+            navMenu.style.setProperty('align-items', 'center', 'important');
+            navMenu.style.setProperty('height', '100%', 'important');
+            navMenu.style.setProperty('width', 'auto', 'important');
+            navMenu.style.setProperty('padding', '0', 'important');
+            navMenu.style.setProperty('margin', '0', 'important');
+            navMenu.style.setProperty('border', 'none', 'important');
+            navMenu.style.setProperty('border-right', 'none', 'important');
+            navMenu.style.setProperty('box-shadow', 'none', 'important');
+            const nmAction = navMenu.querySelector('.slds-context-bar__icon-action');
+            if (nmAction) {
+              nmAction.style.setProperty('display', 'flex', 'important');
+              nmAction.style.setProperty('align-items', 'center', 'important');
+              nmAction.style.setProperty('justify-content', 'center', 'important');
+              nmAction.style.setProperty('width', '24px', 'important');
+              nmAction.style.setProperty('height', '100%', 'important');
+              nmAction.style.setProperty('padding', '0', 'important');
+              nmAction.style.setProperty('margin', '0', 'important');
+              nmAction.style.setProperty('border', 'none', 'important');
+              nmAction.style.setProperty('box-shadow', 'none', 'important');
+            }
+          }
+        } else if (parentItem) {
           parentItem.classList.add('sf-home-tab-item');
           parentItem.style.setProperty('display', 'inline-flex', 'important');
           parentItem.style.setProperty('align-items', 'center', 'important');
@@ -2347,11 +2429,11 @@
           parentItem.style.setProperty('min-width', '0', 'important');
           parentItem.style.setProperty('max-width', 'none', 'important');
           parentItem.style.setProperty('flex', '0 0 auto', 'important');
-          parentItem.style.setProperty('padding', '0 8px', 'important');
+          parentItem.style.setProperty('padding', '0 8px 0 0', 'important');
           parentItem.style.setProperty('margin', '0', 'important');
           parentItem.style.setProperty('border', 'none', 'important');
           parentItem.style.setProperty('border-left', 'none', 'important');
-          parentItem.style.setProperty('border-right', '1px solid var(--lwc-colorBorderSeparator, rgba(0, 0, 0, 0.14))', 'important');
+          parentItem.style.setProperty('border-right', '1px solid rgb(201, 201, 201)', 'important');
           parentItem.style.setProperty('box-shadow', 'none', 'important');
           parentItem.style.setProperty('visibility', 'visible', 'important');
           parentItem.style.setProperty('opacity', '1', 'important');
@@ -2378,7 +2460,7 @@
             iconAction.style.setProperty('box-shadow', 'none', 'important');
             iconAction.style.setProperty('background', 'transparent', 'important');
             iconAction.style.setProperty('padding', '0', 'important');
-            iconAction.style.setProperty('margin', '0 0 0 4px', 'important');
+            iconAction.style.setProperty('margin', '0 0 0 8px', 'important');
             const arrowBtn = iconAction.querySelector('button');
             if (arrowBtn) {
               arrowBtn.style.setProperty('display', 'inline-flex', 'important');
@@ -2395,8 +2477,8 @@
             if (arrowSvg) {
               arrowSvg.style.setProperty('fill', tabIconColor, 'important');
               arrowSvg.style.setProperty('color', tabIconColor, 'important');
-              arrowSvg.style.setProperty('width', '9px', 'important');
-              arrowSvg.style.setProperty('height', '9px', 'important');
+              arrowSvg.style.setProperty('width', '14px', 'important');
+              arrowSvg.style.setProperty('height', '14px', 'important');
               const p = arrowSvg.querySelector('path');
               if (p) p.setAttribute('fill', tabIconColor);
             }
@@ -2561,7 +2643,8 @@
           /* Ensure App Launcher (waffle button) and its container remain completely visible */
           .appLauncher,
           .slds-icon-waffle_container,
-          .slds-context-bar__primary .slds-context-bar__item:first-child,
+          .oneConsoleNav > .slds-context-bar__item:first-child,
+          .slds-context-bar__primary > .slds-context-bar__item:first-child,
           .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) {
             display: inline-flex !important;
             visibility: visible !important;
@@ -2572,38 +2655,188 @@
           .slds-context-bar,
           one-appnav .slds-context-bar,
           one-app-nav-bar .slds-context-bar {
-            padding-left: 6px !important;
+            padding-left: 0 !important;
           }
 
           .slds-context-bar__primary {
             display: inline-flex !important;
-            align-items: center !important;
+            align-items: stretch !important;
             height: 100% !important;
             min-width: 0 !important;
             width: auto !important;
-            padding-left: 0 !important;
-            margin-left: 0 !important;
-            padding-right: 10px !important;
-            margin-right: 4px !important;
-            border-right: 1px solid var(--lwc-colorBorderSeparator, rgba(0, 0, 0, 0.14)) !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border-right: none !important;
           }
 
-          .slds-context-bar__primary .slds-context-bar__item:first-child {
-            padding-left: 0 !important;
-            margin-left: 0 !important;
-            padding-right: 0 !important;
-            margin-right: 0 !important;
+          .oneConsoleNav,
+          .navexConsoleNav {
+            display: inline-flex !important;
+            align-items: stretch !important;
+            height: 100% !important;
+            width: auto !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+
+          /* App Launcher item (ONLY direct child of .oneConsoleNav or containing .appLauncher) */
+          .oneConsoleNav > .slds-context-bar__item:first-child,
+          .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) {
+            display: inline-flex !important;
+            align-items: center !important;
+            flex: 0 0 auto !important;
+            height: 100% !important;
+            padding: 0 10px 0 0 !important;
+            margin: 0 !important;
             min-width: 0 !important;
             width: auto !important;
+            max-width: none !important;
+            border-right: 1px solid rgb(201, 201, 201) !important;
           }
 
-          .slds-context-bar__primary .slds-context-bar__item:first-child .slds-context-bar__icon-action,
-          .slds-context-bar__primary .appLauncher,
+          .oneConsoleNav > .slds-context-bar__item:first-child .appLauncher,
+          .slds-context-bar__primary .appLauncher {
+            padding: 0 2px 0 0 !important;
+            margin: 0 !important;
+            height: 100% !important;
+            display: inline-flex !important;
+            align-items: center !important;
+          }
+
           .slds-context-bar__primary .slds-icon-waffle_container {
-            padding-left: 2px !important;
-            padding-right: 2px !important;
-            margin-left: 0 !important;
-            margin-right: 0 !important;
+            padding: 0 2px !important;
+            margin: 0 !important;
+          }
+
+          /* Service Console unified Home tab wrapper (.oneConsoleNav > .appNavItems) */
+          .oneConsoleNav > .appNavItems,
+          .sf-home-unified-tab {
+            display: inline-flex !important;
+            align-items: stretch !important;
+            position: relative !important;
+            width: auto !important;
+            height: 100% !important;
+            padding: 0 8px 0 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            border-left: none !important;
+            border-right: 1px solid rgb(201, 201, 201) !important;
+            transition: background-color 0.25s cubic-bezier(0.39, 0.575, 0.565, 1) !important;
+            cursor: pointer !important;
+          }
+
+          .oneConsoleNav > .appNavItems > .selectedListItem,
+          .oneConsoleNav > .appNavItems > .sf-home-tab-item {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            height: 100% !important;
+            width: auto !important;
+            min-width: 0 !important;
+            max-width: none !important;
+            flex: 0 0 auto !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            border-left: none !important;
+            border-right: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            position: static !important;
+          }
+
+          .oneConsoleNav > .appNavItems > .selectedListItem > a.sf-home-tab-link,
+          .oneConsoleNav > .appNavItems > .selectedListItem > a {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            height: 100% !important;
+            width: auto !important;
+            min-width: 0 !important;
+            padding: 0 8px !important;
+            margin: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+          }
+
+          .oneConsoleNav > .appNavItems > .navMenu {
+            display: inline-flex !important;
+            align-items: center !important;
+            height: 100% !important;
+            width: auto !important;
+            min-width: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            border-right: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            position: static !important;
+          }
+
+          .oneConsoleNav > .appNavItems > .navMenu > .slds-context-bar__icon-action {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 24px !important;
+            height: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+          }
+
+          .oneConsoleNav > .appNavItems > .navMenu button {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 24px !important;
+            height: 24px !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            cursor: pointer !important;
+          }
+
+          .oneConsoleNav > .appNavItems > .navMenu svg {
+            width: 14px !important;
+            height: 14px !important;
+          }
+
+          .oneConsoleNav > .appNavItems:hover,
+          .sf-home-unified-tab:hover {
+            background-color: var(--sf-pinned-tab-hover-bg, var(--lwc-brandPrimaryTransparent10, rgba(109, 151, 196, 0.1))) !important;
+          }
+
+          .oneConsoleNav > .appNavItems:hover::before,
+          .oneConsoleNav > .appNavItems:hover::after,
+          .sf-home-unified-tab:hover::before,
+          .sf-home-unified-tab:hover::after {
+            display: none !important;
+            content: none !important;
+          }
+
+          .oneConsoleNav > .appNavItems *,
+          .oneConsoleNav > .appNavItems *:hover,
+          .oneConsoleNav > .appNavItems:hover *,
+          .sf-home-unified-tab *,
+          .sf-home-unified-tab *:hover,
+          .sf-home-unified-tab:hover * {
+            background: transparent !important;
+            background-color: transparent !important;
+            box-shadow: none !important;
+          }
+
+          .oneConsoleNav > .appNavItems *::before,
+          .oneConsoleNav > .appNavItems *::after,
+          .sf-home-unified-tab *::before,
+          .sf-home-unified-tab *::after {
+            display: none !important;
+            content: none !important;
           }
 
           .oneConsoleObjectSwitcher,
@@ -2617,12 +2850,9 @@
             margin: 0 !important;
           }
 
-          /* Home Tab container: auto width with pinned-tab-style left/right margins and tab divider */
-          .sf-home-tab-item,
-          .slds-context-bar__primary .slds-context-bar__item:has(.sf-home-tab-link),
-          .slds-context-bar__primary .slds-context-bar__item:has(a[href*="/lightning/o/Case"]),
-          .slds-context-bar__object-switcher:has(.sf-home-tab-link),
-          .slds-context-bar__object-switcher {
+          /* Standard nav Home Tab container fallback (when not inside .oneConsoleNav > .appNavItems) */
+          .sf-home-tab-item:not(.selectedListItem),
+          .slds-context-bar__object-switcher:not(.selectedListItem) {
             display: inline-flex !important;
             align-items: center !important;
             justify-content: center !important;
@@ -2633,11 +2863,11 @@
             min-width: 0 !important;
             max-width: none !important;
             flex: 0 0 auto !important;
-            padding: 0 8px !important;
+            padding: 0 8px 0 0 !important;
             margin: 0 !important;
             border: none !important;
             border-left: none !important;
-            border-right: 1px solid var(--lwc-colorBorderSeparator, rgba(0, 0, 0, 0.14)) !important;
+            border-right: 1px solid rgb(201, 201, 201) !important;
             box-shadow: none !important;
             box-sizing: border-box !important;
             visibility: visible !important;
@@ -2676,13 +2906,12 @@
             display: none !important;
           }
 
-          /* Integrate the dropdown arrow directly into the Home tab without divider or separate section look */
-          .sf-home-tab-item .slds-context-bar__icon-action,
-          .slds-context-bar__object-switcher .slds-context-bar__icon-action,
-          .sf-home-tab-item .slds-context-bar__dropdown-trigger,
-          .slds-context-bar__object-switcher .slds-context-bar__dropdown-trigger,
-          .sf-home-tab-item one-app-nav-bar-menu-button,
-          .slds-context-bar__primary one-app-nav-bar-menu-button {
+          /* Integrate the dropdown arrow directly into the Home tab without divider or separate section look (fallback) */
+          .sf-home-tab-item:not(.selectedListItem) .slds-context-bar__icon-action,
+          .slds-context-bar__object-switcher:not(.selectedListItem) .slds-context-bar__icon-action,
+          .sf-home-tab-item:not(.selectedListItem) .slds-context-bar__dropdown-trigger,
+          .slds-context-bar__object-switcher:not(.selectedListItem) .slds-context-bar__dropdown-trigger,
+          .sf-home-tab-item:not(.selectedListItem) one-app-nav-bar-menu-button {
             display: inline-flex !important;
             align-items: center !important;
             justify-content: center !important;
@@ -2693,18 +2922,18 @@
             background: transparent !important;
             background-color: transparent !important;
             padding: 0 !important;
-            margin: 0 0 0 4px !important;
+            margin: 0 0 0 8px !important;
             height: 100% !important;
             min-height: 100% !important;
-            width: auto !important;
+            width: 24px !important;
             min-width: 0 !important;
           }
 
-          .sf-home-tab-item .slds-context-bar__icon-action button,
-          .sf-home-tab-item .slds-context-bar__icon-action .slds-button,
-          .slds-context-bar__object-switcher .slds-context-bar__icon-action button,
-          .slds-context-bar__object-switcher .slds-context-bar__icon-action .slds-button,
-          .sf-home-tab-item button.slds-context-bar__button {
+          .sf-home-tab-item:not(.selectedListItem) .slds-context-bar__icon-action button,
+          .sf-home-tab-item:not(.selectedListItem) .slds-context-bar__icon-action .slds-button,
+          .slds-context-bar__object-switcher:not(.selectedListItem) .slds-context-bar__icon-action button,
+          .slds-context-bar__object-switcher:not(.selectedListItem) .slds-context-bar__icon-action .slds-button,
+          .sf-home-tab-item:not(.selectedListItem) button.slds-context-bar__button {
             display: inline-flex !important;
             align-items: center !important;
             justify-content: center !important;
@@ -2717,33 +2946,32 @@
             outline: none !important;
             padding: 0 !important;
             margin: 0 !important;
-            width: auto !important;
+            width: 24px !important;
             min-width: 0 !important;
-            height: 100% !important;
+            height: 24px !important;
             color: var(--sf-tab-icon-color, #0176d3) !important;
             cursor: pointer !important;
           }
 
-          /* Dropdown arrow icon styling: matching tab icon color, compact size */
-          .sf-home-tab-item .slds-context-bar__icon-action svg,
-          .sf-home-tab-item .slds-context-bar__icon-action lightning-primitive-icon,
-          .slds-context-bar__object-switcher .slds-context-bar__icon-action svg,
-          .sf-home-tab-item button.slds-context-bar__button svg {
-            width: 9px !important;
-            height: 9px !important;
-            min-width: 9px !important;
-            min-height: 9px !important;
-            max-width: 9px !important;
-            max-height: 9px !important;
+          /* Dropdown arrow icon styling: matching pinned tab chevron size */
+          .sf-home-tab-item:not(.selectedListItem) .slds-context-bar__icon-action svg,
+          .sf-home-tab-item:not(.selectedListItem) .slds-context-bar__icon-action lightning-primitive-icon,
+          .slds-context-bar__object-switcher:not(.selectedListItem) .slds-context-bar__icon-action svg,
+          .sf-home-tab-item:not(.selectedListItem) button.slds-context-bar__button svg {
+            width: 14px !important;
+            height: 14px !important;
+            min-width: 14px !important;
+            min-height: 14px !important;
+            max-width: 14px !important;
+            max-height: 14px !important;
             fill: var(--sf-tab-icon-color, #0176d3) !important;
             color: var(--sf-tab-icon-color, #0176d3) !important;
             display: inline-block !important;
             margin: 0 !important;
-            opacity: 0.8 !important;
           }
 
-          .sf-home-tab-item .slds-context-bar__icon-action svg path,
-          .slds-context-bar__object-switcher .slds-context-bar__icon-action svg path {
+          .sf-home-tab-item:not(.selectedListItem) .slds-context-bar__icon-action svg path,
+          .slds-context-bar__object-switcher:not(.selectedListItem) .slds-context-bar__icon-action svg path {
             fill: var(--sf-tab-icon-color, #0176d3) !important;
           }
 
@@ -2761,7 +2989,7 @@
             width: auto !important;
             min-width: 0 !important;
             height: 100% !important;
-            padding: 0 !important;
+            padding: 0 8px !important;
             margin: 0 !important;
             border: none !important;
             border-left: none !important;
@@ -2810,12 +3038,12 @@
             fill: var(--sf-tab-icon-color, #0176d3) !important;
           }
 
-          /* Unified hover state on the entire tab (both Home icon and dropdown arrow, matching pinned tabs) */
-          .sf-home-tab-item:hover,
-          .sf-home-tab-item:has(*:hover),
-          .slds-context-bar__object-switcher:has(.sf-home-tab-link):hover,
-          .slds-context-bar__object-switcher:hover {
-            background-color: var(--sf-pinned-tab-hover-bg, var(--lwc-colorBackgroundRowHover, rgba(1, 118, 211, 0.08))) !important;
+          /* Unified hover state on the fallback tab container */
+          .sf-home-tab-item:not(.selectedListItem):hover,
+          .sf-home-tab-item:not(.selectedListItem):has(*:hover),
+          .slds-context-bar__object-switcher:not(.selectedListItem):has(.sf-home-tab-link):hover,
+          .slds-context-bar__object-switcher:not(.selectedListItem):hover {
+            background-color: var(--sf-pinned-tab-hover-bg, var(--lwc-brandPrimaryTransparent10, rgba(109, 151, 196, 0.1))) !important;
           }
 
           .sf-home-tab-item *,
