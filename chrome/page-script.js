@@ -2418,52 +2418,130 @@
           width: auto !important;
         }
 
-        /* Home Tab container: fixed 40px width, flex centered, zero padding */
+        /* Home Tab container: sized and styled to match a pinned console tab */
         .sf-home-tab-item,
         .slds-context-bar__primary .slds-context-bar__item:has(.sf-home-tab-link),
         .slds-context-bar__primary .slds-context-bar__item:has(a[href*="/lightning/o/Case"]),
-        .slds-context-bar__object-switcher:has(.sf-home-tab-link) {
+        .slds-context-bar__object-switcher:has(.sf-home-tab-link),
+        .slds-context-bar__object-switcher {
           display: inline-flex !important;
           align-items: center !important;
           justify-content: center !important;
-          width: 40px !important;
-          min-width: 40px !important;
-          max-width: 40px !important;
-          padding: 0 !important;
+          height: 100% !important;
+          min-height: 100% !important;
+          width: auto !important;
+          min-width: 44px !important;
+          max-width: 54px !important;
+          padding: 0 7px !important;
           margin: 0 !important;
+          border-left: none !important;
           box-sizing: border-box !important;
           visibility: visible !important;
           opacity: 1 !important;
+          position: relative !important;
+          cursor: pointer !important;
         }
 
-        /* Hide close buttons, dropdown triggers, and extraneous elements in Home tab */
+        /* Hide close buttons in Home tab (pinned tabs do not have close buttons) */
         .sf-home-tab-item .slds-context-bar__button-action,
         .sf-home-tab-item button.close,
         .sf-home-tab-item button[title*="Close"],
-        .sf-home-tab-item .closeButton,
-        .sf-home-tab-item .slds-context-bar__icon-action,
-        .slds-context-bar__item:has(.sf-home-tab-link) .slds-context-bar__icon-action,
-        .slds-context-bar__item:has(.sf-home-tab-link) .slds-context-bar__button-action {
+        .sf-home-tab-item .closeButton {
           display: none !important;
         }
 
-        /* Home tab link: full width/height, perfectly centered */
+        /* Integrate the dropdown arrow directly into the Home tab without divider or separate section look */
+        .sf-home-tab-item .slds-context-bar__icon-action,
+        .slds-context-bar__object-switcher .slds-context-bar__icon-action,
+        .sf-home-tab-item .slds-context-bar__dropdown-trigger,
+        .slds-context-bar__object-switcher .slds-context-bar__dropdown-trigger,
+        .sf-home-tab-item one-app-nav-bar-menu-button,
+        .slds-context-bar__primary one-app-nav-bar-menu-button {
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          border: none !important;
+          border-left: none !important;
+          border-right: none !important;
+          box-shadow: none !important;
+          background: transparent !important;
+          background-color: transparent !important;
+          padding: 0 !important;
+          margin: 0 0 0 3px !important;
+          height: 100% !important;
+          min-height: 100% !important;
+          width: auto !important;
+          min-width: 0 !important;
+        }
+
+        .sf-home-tab-item .slds-context-bar__icon-action::before,
+        .sf-home-tab-item .slds-context-bar__icon-action::after,
+        .slds-context-bar__object-switcher .slds-context-bar__icon-action::before,
+        .slds-context-bar__object-switcher .slds-context-bar__icon-action::after {
+          display: none !important;
+          content: none !important;
+          border: none !important;
+        }
+
+        .sf-home-tab-item .slds-context-bar__icon-action button,
+        .sf-home-tab-item .slds-context-bar__icon-action .slds-button,
+        .slds-context-bar__object-switcher .slds-context-bar__icon-action button,
+        .slds-context-bar__object-switcher .slds-context-bar__icon-action .slds-button,
+        .sf-home-tab-item button.slds-context-bar__button {
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          border: none !important;
+          background: transparent !important;
+          background-color: transparent !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          width: auto !important;
+          min-width: 0 !important;
+          height: 100% !important;
+          color: var(--sf-tab-icon-color, #0176d3) !important;
+          cursor: pointer !important;
+        }
+
+        /* Dropdown arrow icon styling: matching tab icon color, compact size */
+        .sf-home-tab-item .slds-context-bar__icon-action svg,
+        .sf-home-tab-item .slds-context-bar__icon-action lightning-primitive-icon,
+        .slds-context-bar__object-switcher .slds-context-bar__icon-action svg,
+        .sf-home-tab-item button.slds-context-bar__button svg {
+          width: 9px !important;
+          height: 9px !important;
+          min-width: 9px !important;
+          min-height: 9px !important;
+          max-width: 9px !important;
+          max-height: 9px !important;
+          fill: var(--sf-tab-icon-color, #0176d3) !important;
+          color: var(--sf-tab-icon-color, #0176d3) !important;
+          display: inline-block !important;
+          margin: 0 !important;
+          opacity: 0.8 !important;
+        }
+
+        .sf-home-tab-item .slds-context-bar__icon-action svg path,
+        .slds-context-bar__object-switcher .slds-context-bar__icon-action svg path {
+          fill: var(--sf-tab-icon-color, #0176d3) !important;
+        }
+
+        /* Home tab link: inline-flex holding the icon */
         .sf-home-tab-link,
         a.sf-home-tab-link,
         a[href*="/lightning/o/Case/list"],
         a[href*="/lightning/o/Case"],
         .slds-context-bar__object-switcher a {
-          display: flex !important;
+          display: inline-flex !important;
           align-items: center !important;
           justify-content: center !important;
-          width: 100% !important;
-          min-width: 100% !important;
-          max-width: 100% !important;
+          width: auto !important;
+          min-width: 0 !important;
           height: 100% !important;
           padding: 0 !important;
-          margin: 0 auto !important;
+          margin: 0 !important;
           box-sizing: border-box !important;
-          text-align: center !important;
           color: var(--sf-tab-icon-color, #0176d3) !important;
           text-decoration: none !important;
           cursor: pointer !important;
@@ -2486,7 +2564,7 @@
           content: none !important;
         }
 
-        /* SVG Home Icon: precisely centered with single matching tab icon color */
+        /* SVG Home Icon */
         .sf-home-icon,
         svg.sf-home-icon {
           width: 16px !important;
@@ -2496,7 +2574,7 @@
           max-width: 16px !important;
           max-height: 16px !important;
           display: block !important;
-          margin: 0 auto !important;
+          margin: 0 !important;
           flex-shrink: 0 !important;
           fill: var(--sf-tab-icon-color, #0176d3) !important;
           color: var(--sf-tab-icon-color, #0176d3) !important;
@@ -2506,9 +2584,17 @@
           fill: var(--sf-tab-icon-color, #0176d3) !important;
         }
 
-        /* Hover state */
-        .sf-home-tab-item:hover .sf-home-tab-link {
+        /* Unified hover state on the entire tab */
+        .sf-home-tab-item:hover,
+        .slds-context-bar__object-switcher:has(.sf-home-tab-link):hover {
           background-color: rgba(1, 118, 211, 0.08) !important;
+        }
+
+        .sf-home-tab-item:hover .sf-home-tab-link,
+        .sf-home-tab-item:hover .slds-context-bar__icon-action,
+        .sf-home-tab-item:hover .slds-context-bar__icon-action button {
+          background: transparent !important;
+          background-color: transparent !important;
         }
       `;
       syncHomeIconNavContext();
@@ -7424,18 +7510,30 @@
               parentItem.style.removeProperty('max-width');
               parentItem.style.removeProperty('padding');
               parentItem.style.removeProperty('margin');
-              parentItem.querySelectorAll('.slds-context-bar__button-action, button.close, button[title*="Close"], .closeButton, .slds-context-bar__icon-action').forEach(btn => btn.style.removeProperty('display'));
+              parentItem.style.removeProperty('border-left');
+              parentItem.querySelectorAll('button.close, button[title*="Close"], .closeButton').forEach(btn => btn.style.removeProperty('display'));
+              const iconAction = parentItem.querySelector('.slds-context-bar__icon-action, .slds-context-bar__dropdown-trigger');
+              if (iconAction) {
+                iconAction.style.removeProperty('display');
+                iconAction.style.removeProperty('border');
+                iconAction.style.removeProperty('border-left');
+                iconAction.style.removeProperty('border-right');
+                iconAction.style.removeProperty('box-shadow');
+                iconAction.style.removeProperty('background');
+                iconAction.style.removeProperty('padding');
+                iconAction.style.removeProperty('margin');
+              }
             }
             return;
           }
 
           target.classList.add('sf-home-tab-link');
-          target.style.setProperty('display', 'flex', 'important');
+          target.style.setProperty('display', 'inline-flex', 'important');
           target.style.setProperty('align-items', 'center', 'important');
           target.style.setProperty('justify-content', 'center', 'important');
-          target.style.setProperty('width', '100%', 'important');
+          target.style.setProperty('width', 'auto', 'important');
           target.style.setProperty('height', '100%', 'important');
-          target.style.setProperty('margin', '0 auto', 'important');
+          target.style.setProperty('margin', '0', 'important');
           target.style.setProperty('padding', '0', 'important');
           target.style.setProperty('color', tabIconColor, 'important');
           target.style.setProperty('text-align', 'center', 'important');
@@ -7447,14 +7545,48 @@
             parentItem.style.setProperty('display', 'inline-flex', 'important');
             parentItem.style.setProperty('align-items', 'center', 'important');
             parentItem.style.setProperty('justify-content', 'center', 'important');
-            parentItem.style.setProperty('width', '40px', 'important');
-            parentItem.style.setProperty('min-width', '40px', 'important');
-            parentItem.style.setProperty('max-width', '40px', 'important');
-            parentItem.style.setProperty('padding', '0', 'important');
+            parentItem.style.setProperty('width', 'auto', 'important');
+            parentItem.style.setProperty('min-width', '44px', 'important');
+            parentItem.style.setProperty('max-width', '54px', 'important');
+            parentItem.style.setProperty('padding', '0 7px', 'important');
             parentItem.style.setProperty('margin', '0', 'important');
+            parentItem.style.setProperty('border-left', 'none', 'important');
             parentItem.style.setProperty('visibility', 'visible', 'important');
             parentItem.style.setProperty('opacity', '1', 'important');
-            parentItem.querySelectorAll('.slds-context-bar__button-action, button.close, button[title*="Close"], .closeButton, .slds-context-bar__icon-action, button').forEach(btn => btn.style.setProperty('display', 'none', 'important'));
+            parentItem.querySelectorAll('button.close, button[title*="Close"], .closeButton').forEach(btn => btn.style.setProperty('display', 'none', 'important'));
+
+            // Integrate the dropdown arrow seamlessly into the tab
+            const iconAction = parentItem.querySelector('.slds-context-bar__icon-action, .slds-context-bar__dropdown-trigger');
+            if (iconAction) {
+              iconAction.style.setProperty('display', 'inline-flex', 'important');
+              iconAction.style.setProperty('align-items', 'center', 'important');
+              iconAction.style.setProperty('justify-content', 'center', 'important');
+              iconAction.style.setProperty('border', 'none', 'important');
+              iconAction.style.setProperty('border-left', 'none', 'important');
+              iconAction.style.setProperty('border-right', 'none', 'important');
+              iconAction.style.setProperty('box-shadow', 'none', 'important');
+              iconAction.style.setProperty('background', 'transparent', 'important');
+              iconAction.style.setProperty('padding', '0', 'important');
+              iconAction.style.setProperty('margin', '0 0 0 3px', 'important');
+              const arrowBtn = iconAction.querySelector('button');
+              if (arrowBtn) {
+                arrowBtn.style.setProperty('display', 'inline-flex', 'important');
+                arrowBtn.style.setProperty('border', 'none', 'important');
+                arrowBtn.style.setProperty('background', 'transparent', 'important');
+                arrowBtn.style.setProperty('padding', '0', 'important');
+                arrowBtn.style.setProperty('margin', '0', 'important');
+                arrowBtn.style.setProperty('color', tabIconColor, 'important');
+              }
+              const arrowSvg = iconAction.querySelector('svg');
+              if (arrowSvg) {
+                arrowSvg.style.setProperty('fill', tabIconColor, 'important');
+                arrowSvg.style.setProperty('color', tabIconColor, 'important');
+                arrowSvg.style.setProperty('width', '9px', 'important');
+                arrowSvg.style.setProperty('height', '9px', 'important');
+                const p = arrowSvg.querySelector('path');
+                if (p) p.setAttribute('fill', tabIconColor);
+              }
+            }
           }
 
           if (!target.getAttribute('title') || target.getAttribute('title') === 'Cases') {
@@ -7477,7 +7609,7 @@
             svg.setAttribute('width', '16');
             svg.setAttribute('height', '16');
             svg.setAttribute('aria-hidden', 'true');
-            svg.setAttribute('style', `width: 16px !important; height: 16px !important; fill: ${tabIconColor} !important; color: ${tabIconColor} !important; display: block !important; margin: 0 auto !important; flex-shrink: 0 !important;`);
+            svg.setAttribute('style', `width: 16px !important; height: 16px !important; fill: ${tabIconColor} !important; color: ${tabIconColor} !important; display: block !important; margin: 0 !important; flex-shrink: 0 !important;`);
 
             const path = document.createElementNS(svgNs, 'path');
             path.setAttribute('d', 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z');
@@ -7488,7 +7620,7 @@
           } else {
             svg.style.setProperty('fill', tabIconColor, 'important');
             svg.style.setProperty('color', tabIconColor, 'important');
-            svg.style.setProperty('margin', '0 auto', 'important');
+            svg.style.setProperty('margin', '0', 'important');
             svg.style.setProperty('display', 'block', 'important');
             const path = svg.querySelector('path');
             if (path) path.setAttribute('fill', tabIconColor);
