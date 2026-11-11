@@ -231,7 +231,6 @@
         --sf-theme-accent-tint: ${accentTint} !important;
         --sf-theme-accent-border: ${accentBorder} !important;
         --sf-theme-accent-contrast: ${accentContrast} !important;
-        --sf-pinned-tab-hover-bg: ${baseTheme.surface} !important;
       }
 
       /* Quick Views Item Accent Styling */
@@ -283,7 +282,9 @@
 
         /* Outer Console Workspace Tab Bar - clean base border, no multiple stacked lines */
         .oneWorkspaceNavigationTabs,
-        .oneConsoleTabContainer {
+        .oneConsoleTabContainer,
+        .tabsetHeader.slds-context-bar > .slds-context-bar__primary,
+        .slds-context-bar.slds-context-bar_tabs > .slds-context-bar__primary {
           border-bottom: 1px solid ${baseBorder} !important;
         }
         .oneWorkspaceNavigationTabs .oneConsoleTabContainer,
@@ -421,7 +422,6 @@
           --slds-c-listbox-color-background: ${baseTheme.surface} !important;
           --slds-s-menu-item-color-background-active: ${hoverBg} !important;
           --lwc-colorBackgroundDark: ${hoverBg} !important;
-          --slds-g-color-neutral-base-95: transparent !important;
           --slds-c-listbox-item-color-background-hover: ${hoverBg} !important;
           --slds-c-listbox-item-color-background-focus: ${hoverBg} !important;
           --slds-c-listbox-option-color-background-hover: ${hoverBg} !important;
@@ -455,6 +455,8 @@
           --sf-qv-text: ${baseTheme.text} !important;
           --sf-qv-muted: ${baseTheme.textMuted} !important;
           --sf-qv-hover: ${baseTheme.surfaceHeader} !important;
+          --sf-pinned-tab-hover-bg: ${baseTheme.surface} !important;
+          --sf-nav-divider-color: ${baseTheme.border} !important;
         }
 
         /* Universal Themed Scrollbars (Firefox & WebKit) */
@@ -520,6 +522,15 @@
           color: ${baseTheme.text} !important;
           border-color: ${baseTheme.border} !important;
         }
+        /* Service Console Workspace Tab Header shares surfaceHeader with the tab strip */
+        .tabsetHeader.slds-context-bar,
+        .slds-context-bar.slds-context-bar_tabs,
+        .tabsetHeader.slds-context-bar > .slds-context-bar__primary,
+        .slds-context-bar.slds-context-bar_tabs > .slds-context-bar__primary {
+          background-color: ${baseTheme.surfaceHeader} !important;
+          color: ${baseTheme.text} !important;
+          border-color: ${baseTheme.border} !important;
+        }
         one-app-nav-bar .slds-context-bar__item,
         one-app-nav-bar .slds-context-bar__item a,
         .slds-context-bar__item a {
@@ -531,7 +542,7 @@
         }
         one-app-nav-bar .slds-context-bar__icon-action,
         one-app-nav-bar .slds-context-bar__dropdown-trigger,
-        one-app-nav-bar .slds-button {
+        one-app-nav-bar .slds-button:not(.slds-dropdown *) {
           background: transparent !important;
           background-color: transparent !important;
           border: none !important;
@@ -627,13 +638,12 @@
           border-bottom: none !important;
         }
 
-        /* Transparent backgrounds for all inner elements of tabs (label link, text, title, dropdown trigger, close x button) */
-        .navexConsoleTabContainer ul.tabBarItems > li.tabItem *,
-        .tabBarContainer ul.tabBarItems > li.tabItem *,
-        ul.subtabs > li.tabItem *,
-        .subtabs li.tabItem *,
-        .slds-sub-tabs__item *,
-        .tabItem a,
+        /* Transparent backgrounds for tab chrome elements ONLY (never wipe nested .slds-dropdown / .slds-popover / [role="menu"] panels) */
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem *:not(.slds-dropdown):not(.slds-dropdown *):not(.slds-popover):not(.slds-popover *):not([role="menu"]):not([role="menu"] *):not(.uiMenuList):not(.uiMenuList *),
+        .tabBarContainer ul.tabBarItems > li.tabItem *:not(.slds-dropdown):not(.slds-dropdown *):not(.slds-popover):not(.slds-popover *):not([role="menu"]):not([role="menu"] *):not(.uiMenuList):not(.uiMenuList *),
+        ul.subtabs > li.tabItem *:not(.slds-dropdown):not(.slds-dropdown *):not(.slds-popover):not(.slds-popover *):not([role="menu"]):not([role="menu"] *):not(.uiMenuList):not(.uiMenuList *),
+        .subtabs li.tabItem *:not(.slds-dropdown):not(.slds-dropdown *):not(.slds-popover):not(.slds-popover *):not([role="menu"]):not([role="menu"] *):not(.uiMenuList):not(.uiMenuList *),
+        .slds-sub-tabs__item *:not(.slds-dropdown):not(.slds-dropdown *):not(.slds-popover):not(.slds-popover *):not([role="menu"]):not([role="menu"] *):not(.uiMenuList):not(.uiMenuList *),
         .tabItem a.tabHeader,
         .tabItem .tabHeader,
         .tabItem .slds-context-bar__label-action,
@@ -644,48 +654,47 @@
         .tabItem .close,
         .tabItem .title,
         .tabItem .tabText,
-        .tabItem span,
-        .tabItem button,
-        .tabItem button.slds-button,
-        .tabItem button.slds-button_icon,
+        .tabItem a:not(.slds-dropdown *):not(.slds-popover *):not([role="menuitem"]),
+        .tabItem span:not(.slds-dropdown *):not(.slds-popover *):not([role="menu"] *),
+        .tabItem button:not(.slds-dropdown *):not(.slds-popover *):not([role="menuitem"]),
         .tabItem lightning-button-icon,
         .tabItem lightning-primitive-icon,
-        .tabBarContainer .slds-button,
-        .slds-sub-tabs__item a,
+        .tabBarContainer .slds-button:not(.slds-dropdown *):not(.slds-popover *):not([role="menuitem"]),
+        .slds-sub-tabs__item a:not(.slds-dropdown *):not(.slds-popover *):not([role="menuitem"]),
         .slds-sub-tabs__item .slds-context-bar__label-action,
         .slds-sub-tabs__item .slds-context-bar__icon-action,
         .slds-sub-tabs__item .slds-context-bar__button-action,
-        .slds-sub-tabs__item button,
-        .slds-sub-tabs__item span {
+        .slds-sub-tabs__item button:not(.slds-dropdown *):not(.slds-popover *):not([role="menuitem"]),
+        .slds-sub-tabs__item span:not(.slds-dropdown *):not(.slds-popover *):not([role="menu"] *) {
           background: transparent !important;
           background-color: transparent !important;
           border: none !important;
           box-shadow: none !important;
         }
 
-        /* Ensure hover on tab preserves complete inner transparency */
-        .navexConsoleTabContainer ul.tabBarItems > li.tabItem:hover *,
-        .tabBarContainer ul.tabBarItems > li.tabItem:hover *,
-        ul.subtabs > li.tabItem:hover *,
-        .subtabs li.tabItem:hover *,
-        .slds-sub-tabs__item:hover * {
+        /* Ensure hover on tab preserves inner chrome transparency without clearing dropdown menus */
+        .navexConsoleTabContainer ul.tabBarItems > li.tabItem:hover *:not(.slds-dropdown):not(.slds-dropdown *):not(.slds-popover):not(.slds-popover *):not([role="menu"]):not([role="menu"] *):not(.uiMenuList):not(.uiMenuList *),
+        .tabBarContainer ul.tabBarItems > li.tabItem:hover *:not(.slds-dropdown):not(.slds-dropdown *):not(.slds-popover):not(.slds-popover *):not([role="menu"]):not([role="menu"] *):not(.uiMenuList):not(.uiMenuList *),
+        ul.subtabs > li.tabItem:hover *:not(.slds-dropdown):not(.slds-dropdown *):not(.slds-popover):not(.slds-popover *):not([role="menu"]):not([role="menu"] *):not(.uiMenuList):not(.uiMenuList *),
+        .subtabs li.tabItem:hover *:not(.slds-dropdown):not(.slds-dropdown *):not(.slds-popover):not(.slds-popover *):not([role="menu"]):not([role="menu"] *):not(.uiMenuList):not(.uiMenuList *),
+        .slds-sub-tabs__item:hover *:not(.slds-dropdown):not(.slds-dropdown *):not(.slds-popover):not(.slds-popover *):not([role="menu"]):not([role="menu"] *):not(.uiMenuList):not(.uiMenuList *) {
           background: transparent !important;
           background-color: transparent !important;
         }
 
         /* Text colors inside tabs */
-        .tabItem:not(.slds-is-active):not(.active) a,
-        .tabItem:not(.slds-is-active):not(.active) .slds-truncate,
-        .slds-sub-tabs__item:not(.slds-is-active) a,
-        .slds-sub-tabs__item:not(.slds-is-active) .slds-truncate {
+        .tabItem:not(.slds-is-active):not(.active) a:not(.slds-dropdown *):not([role="menuitem"]),
+        .tabItem:not(.slds-is-active):not(.active) .slds-truncate:not(.slds-dropdown *):not([role="menuitem"] *),
+        .slds-sub-tabs__item:not(.slds-is-active) a:not(.slds-dropdown *):not([role="menuitem"]),
+        .slds-sub-tabs__item:not(.slds-is-active) .slds-truncate:not(.slds-dropdown *):not([role="menuitem"] *) {
           color: ${baseTheme.textMuted} !important;
         }
-        .tabItem.slds-is-active a,
-        .tabItem.slds-is-active .slds-truncate,
-        .tabItem.active a,
-        .tabItem.active .slds-truncate,
-        .slds-sub-tabs__item.slds-is-active a,
-        .slds-sub-tabs__item.slds-is-active .slds-truncate {
+        .tabItem.slds-is-active a:not(.slds-dropdown *):not([role="menuitem"]),
+        .tabItem.slds-is-active .slds-truncate:not(.slds-dropdown *):not([role="menuitem"] *),
+        .tabItem.active a:not(.slds-dropdown *):not([role="menuitem"]),
+        .tabItem.active .slds-truncate:not(.slds-dropdown *):not([role="menuitem"] *),
+        .slds-sub-tabs__item.slds-is-active a:not(.slds-dropdown *):not([role="menuitem"]),
+        .slds-sub-tabs__item.slds-is-active .slds-truncate:not(.slds-dropdown *):not([role="menuitem"] *) {
           color: ${baseTheme.text} !important;
         }
 
@@ -715,11 +724,11 @@
         }
 
         /* Hover on tab action buttons (dropdown arrow and close x button) */
-        .tabItem button:hover,
-        .tabItem button.slds-button_icon:hover,
+        .tabItem button:not(.slds-dropdown *):not([role="menuitem"]):hover,
+        .tabItem button.slds-button_icon:not(.slds-dropdown *):not([role="menuitem"]):hover,
         .tabItem .slds-context-bar__button-action:hover,
         .tabItem .close:hover,
-        .slds-sub-tabs__item button:hover {
+        .slds-sub-tabs__item button:not(.slds-dropdown *):not([role="menuitem"]):hover {
           background-color: ${accentTint} !important;
           color: ${accent} !important;
           border-radius: 4px !important;
@@ -1706,28 +1715,78 @@
           color: ${accent} !important;
         }
 
-        /* Final override to guarantee full tab width background consistency */
-        .navexConsoleTabContainer ul.tabBarItems > li.tabItem *,
-        .tabBarContainer ul.tabBarItems > li.tabItem *,
-        ul.subtabs > li.tabItem *,
-        .subtabs li.tabItem *,
-        .slds-sub-tabs__item * {
-          background: transparent !important;
-          background-color: transparent !important;
+        /* Restore opaque themed surface on dropdown/action menus hosted inside workspace tabs, pinned tabs, subtabs & nav items */
+        li.tabItem .slds-dropdown,
+        li.tabItem .slds-popover,
+        li.tabItem .uiMenuList,
+        li.tabItem [role="menu"],
+        .slds-sub-tabs__item .slds-dropdown,
+        .slds-sub-tabs__item .slds-popover,
+        .slds-sub-tabs__item .uiMenuList,
+        .slds-sub-tabs__item [role="menu"],
+        one-app-nav-bar .slds-context-bar__item .slds-dropdown,
+        .slds-context-bar__item .slds-dropdown {
+          background: ${baseTheme.surface} !important;
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+          border: 1px solid ${baseTheme.border} !important;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2) !important;
         }
-        .navexConsoleTabContainer ul.tabBarItems > li.tabItem:hover *,
-        .tabBarContainer ul.tabBarItems > li.tabItem:hover *,
-        ul.subtabs > li.tabItem:hover *,
-        .subtabs li.tabItem:hover *,
-        .slds-sub-tabs__item:hover * {
+        li.tabItem .slds-dropdown__list,
+        .slds-sub-tabs__item .slds-dropdown__list {
           background: transparent !important;
-          background-color: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
         }
-        .tabItem button:hover,
-        .tabItem button.slds-button_icon:hover,
+        li.tabItem .slds-dropdown__item > a,
+        li.tabItem .slds-dropdown__item > a *,
+        li.tabItem .uiMenuItem > a,
+        li.tabItem .uiMenuItem > a *,
+        li.tabItem [role="menuitem"],
+        li.tabItem [role="menuitem"] *,
+        .slds-sub-tabs__item .slds-dropdown__item > a,
+        .slds-sub-tabs__item .slds-dropdown__item > a *,
+        .slds-sub-tabs__item .uiMenuItem > a,
+        .slds-sub-tabs__item .uiMenuItem > a *,
+        .slds-sub-tabs__item [role="menuitem"],
+        .slds-sub-tabs__item [role="menuitem"] * {
+          background-color: transparent !important;
+          color: ${baseTheme.text} !important;
+          border: none !important;
+          box-shadow: none !important;
+        }
+        li.tabItem .slds-dropdown__item > a:hover,
+        li.tabItem .slds-dropdown__item > a:focus,
+        li.tabItem .slds-dropdown__item:hover > a,
+        li.tabItem .uiMenuItem > a:hover,
+        li.tabItem .uiMenuItem > a:focus,
+        li.tabItem [role="menuitem"]:hover,
+        li.tabItem [role="menuitem"]:focus,
+        .slds-sub-tabs__item .slds-dropdown__item > a:hover,
+        .slds-sub-tabs__item .slds-dropdown__item:hover > a,
+        .slds-sub-tabs__item .uiMenuItem > a:hover,
+        .slds-sub-tabs__item .uiMenuItem > a:focus,
+        .slds-sub-tabs__item [role="menuitem"]:hover,
+        .slds-sub-tabs__item [role="menuitem"]:focus {
+          background: ${baseTheme.surfaceHeader} !important;
+          background-color: ${baseTheme.surfaceHeader} !important;
+          color: ${accent} !important;
+        }
+        li.tabItem .slds-dropdown__item > a:hover *,
+        li.tabItem .slds-dropdown__item:hover > a *,
+        li.tabItem .uiMenuItem > a:hover *,
+        li.tabItem [role="menuitem"]:hover *,
+        .slds-sub-tabs__item .slds-dropdown__item > a:hover *,
+        .slds-sub-tabs__item .uiMenuItem > a:hover *,
+        .slds-sub-tabs__item [role="menuitem"]:hover * {
+          color: ${accent} !important;
+          fill: ${accent} !important;
+        }
+        .tabItem button:not(.slds-dropdown *):not(.slds-popover *):not([role="menuitem"]):hover,
+        .tabItem button.slds-button_icon:not(.slds-dropdown *):not(.slds-popover *):not([role="menuitem"]):hover,
         .tabItem .slds-context-bar__button-action:hover,
         .tabItem .close:hover,
-        .slds-sub-tabs__item button:hover {
+        .slds-sub-tabs__item button:not(.slds-dropdown *):not(.slds-popover *):not([role="menuitem"]):hover {
           background-color: ${accentTint} !important;
           color: ${accent} !important;
           border-radius: 4px !important;
@@ -2215,8 +2274,12 @@
 
   let activeEarlyMascotObs = null;
 
-  function getTabIconColor() {
+  function getTabIconColor(rawSettings) {
     try {
+      const s = rawSettings ? normalizeSettings(rawSettings) : null;
+      if (s && s.modules?.theming === true && s.theme?.preset && s.theme.preset !== 'classic' && THEMES[s.theme.preset]) {
+        return THEMES[s.theme.preset].textMuted || '#757575';
+      }
       const otherTabs = document.querySelectorAll(
         'ul.pinnedItems > li.tabItem:not(.sf-home-tab-item), ' +
         'ul.tabBarItems > li.tabItem:not(.sf-home-tab-item), ' +
@@ -2262,7 +2325,7 @@
   }
 
   function isHomeCandidateInPopupMenu(el) {
-    return !!(el && el.closest && el.closest('.navMenu, section[role="dialog"], .slds-popover, .slds-dropdown, [role="menu"], .slds-listbox, .menuItem'));
+    return !!(el && el.closest && el.closest('.navMenu, section[role="dialog"], .slds-popover, .slds-dropdown, [role="menu"], [role="menuitem"], .slds-listbox, .slds-dropdown__item, .uiMenuItem, .menuItem'));
   }
 
   function findHomeCandidateElements() {
@@ -2288,13 +2351,26 @@
       const s = rawSettings ? normalizeSettings(rawSettings) : null;
       const shouldHide = s ? ((s.modules?.subtabs !== false) && !!(s.hideAppName || s.subtabs?.hideAppName)) : false;
       const candidates = findHomeCandidateElements();
-      const tabIconColor = getTabIconColor();
+      const tabIconColor = getTabIconColor(s);
 
       try {
         if (document.documentElement) {
           document.documentElement.style.setProperty('--sf-tab-icon-color', tabIconColor);
           document.documentElement.style.removeProperty('--sf-home-tab-width');
         }
+      } catch (_) {}
+
+      // Defensive cleanup: never leave Home icon classes or inline overrides inside popup/dropdown menus
+      try {
+        document.querySelectorAll(
+          '.navMenu .sf-home-tab-link, .slds-popover .sf-home-tab-link, section[role="dialog"] .sf-home-tab-link, .slds-dropdown .sf-home-tab-link, [role="menu"] .sf-home-tab-link, .menuItem .sf-home-tab-link, .slds-dropdown__item .sf-home-tab-link, .uiMenuItem .sf-home-tab-link'
+        ).forEach((staleLink) => {
+          staleLink.classList.remove('sf-home-tab-link');
+          const staleIcon = staleLink.querySelector('.sf-home-icon');
+          if (staleIcon) staleIcon.remove();
+          ['display', 'align-items', 'justify-content', 'width', 'height', 'margin', 'padding', 'border', 'border-left', 'border-right', 'box-shadow', 'color', 'text-align', 'visibility', 'opacity'].forEach(p => staleLink.style.removeProperty(p));
+          Array.from(staleLink.children).forEach(ch => ch.style.removeProperty('display'));
+        });
       } catch (_) {}
 
       candidates.forEach((el) => {
@@ -2387,7 +2463,7 @@
           appNavItems.style.setProperty('padding', '0 8px 0 0', 'important');
           appNavItems.style.setProperty('margin', '0', 'important');
           appNavItems.style.setProperty('border', 'none', 'important');
-          appNavItems.style.setProperty('border-right', '1px solid rgb(201, 201, 201)', 'important');
+          appNavItems.style.setProperty('border-right', '1px solid var(--sf-nav-divider-color, rgb(201, 201, 201))', 'important');
 
           if (parentItem) {
             parentItem.classList.add('sf-home-tab-item');
@@ -2445,7 +2521,7 @@
           parentItem.style.setProperty('margin', '0', 'important');
           parentItem.style.setProperty('border', 'none', 'important');
           parentItem.style.setProperty('border-left', 'none', 'important');
-          parentItem.style.setProperty('border-right', '1px solid rgb(201, 201, 201)', 'important');
+          parentItem.style.setProperty('border-right', '1px solid var(--sf-nav-divider-color, rgb(201, 201, 201))', 'important');
           parentItem.style.setProperty('box-shadow', 'none', 'important');
           parentItem.style.setProperty('visibility', 'visible', 'important');
           parentItem.style.setProperty('opacity', '1', 'important');
@@ -2703,7 +2779,7 @@
             min-width: 0 !important;
             width: auto !important;
             max-width: none !important;
-            border-right: 1px solid rgb(201, 201, 201) !important;
+            border-right: 1px solid var(--sf-nav-divider-color, rgb(201, 201, 201)) !important;
           }
 
           .oneConsoleNav > .slds-context-bar__item:first-child .appLauncher,
@@ -2732,7 +2808,7 @@
             margin: 0 !important;
             border: none !important;
             border-left: none !important;
-            border-right: 1px solid rgb(201, 201, 201) !important;
+            border-right: 1px solid var(--sf-nav-divider-color, rgb(201, 201, 201)) !important;
             transition: background-color 0.25s cubic-bezier(0.39, 0.575, 0.565, 1) !important;
             cursor: pointer !important;
           }
@@ -2899,7 +2975,7 @@
             margin: 0 !important;
             border: none !important;
             border-left: none !important;
-            border-right: 1px solid rgb(201, 201, 201) !important;
+            border-right: 1px solid var(--sf-nav-divider-color, rgb(201, 201, 201)) !important;
             box-shadow: none !important;
             box-sizing: border-box !important;
             visibility: visible !important;
