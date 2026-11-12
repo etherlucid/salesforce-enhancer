@@ -149,7 +149,7 @@
     const hideAppName = raw ? (raw.hideAppName !== undefined ? !!raw.hideAppName : (raw.subtabs && raw.subtabs.hideAppName !== undefined ? !!raw.subtabs.hideAppName : false)) : false;
     if (!raw || typeof raw !== 'object') {
       return {
-        version: '1.2.1',
+        version: '1.2.2',
         modules: { subtabs: true, quickViews: true, theming: false, loadingAnimation: false },
         subtabs: { hideAppName: false },
         hideAppName: false,
@@ -159,7 +159,7 @@
     }
 
     const res = {
-      version: '1.2.1',
+      version: '1.2.2',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
@@ -206,6 +206,112 @@
   function sanitizeCssUrl(url) {
     if (!url || typeof url !== 'string') return '';
     return url.replace(/["'\r\n\\]/g, '').trim();
+  }
+
+  /** Returns theme CSS ensuring code blocks and inline code remain high-contrast across light and dark themes. */
+  function generateCodeBlockCSS(baseTheme, accent) {
+    if (!baseTheme) return '';
+    return `
+      /* Code Blocks, Inline Code & Syntax Highlighters */
+      pre,
+      code,
+      kbd,
+      samp,
+      tt,
+      pre.ql-syntax,
+      .ql-syntax,
+      .ql-editor pre,
+      .ql-editor pre.ql-syntax,
+      .ql-editor code,
+      .ql-snow .ql-editor pre.ql-syntax,
+      .cke_editable pre,
+      .cke_editable code,
+      .slds-text-longform pre,
+      .slds-text-longform code,
+      .slds-text-longform kbd,
+      .slds-text-longform samp,
+      .slds-rich-text-editor__output pre,
+      .slds-rich-text-editor__output code,
+      .slds-rich-text-editor__textarea pre,
+      .slds-rich-text-editor__textarea code,
+      .forceOutputRichText pre,
+      .forceOutputRichText code,
+      .uiOutputRichText pre,
+      .uiOutputRichText code,
+      lightning-formatted-rich-text pre,
+      lightning-formatted-rich-text code,
+      [part="formatted-rich-text"] pre,
+      [part="formatted-rich-text"] code,
+      .forceChatterFeedItem pre,
+      .forceChatterFeedItem code,
+      .cuf-feedItem pre,
+      .cuf-feedItem code,
+      [class*="code-block" i],
+      [class*="codeBlock" i],
+      [class*="code_block" i],
+      [class*="codeContent" i],
+      .syntaxhighlighter,
+      .hljs,
+      pre[class*="language-" i],
+      code[class*="language-" i] {
+        background-color: ${baseTheme.surfaceHeader} !important;
+        background: ${baseTheme.surfaceHeader} !important;
+        color: ${baseTheme.text} !important;
+        border: 1px solid ${baseTheme.border} !important;
+        border-color: ${baseTheme.border} !important;
+      }
+
+      /* Nested elements inside code blocks keep transparent backgrounds and readable text */
+      pre *:not(a),
+      pre.ql-syntax *:not(a),
+      .ql-syntax *:not(a),
+      .ql-editor pre *:not(a),
+      .slds-text-longform pre *:not(a),
+      .slds-rich-text-editor__output pre *:not(a),
+      .forceOutputRichText pre *:not(a),
+      .uiOutputRichText pre *:not(a),
+      lightning-formatted-rich-text pre *:not(a),
+      [part="formatted-rich-text"] pre *:not(a),
+      .syntaxhighlighter *:not(a),
+      .hljs *:not(a),
+      [class*="code-block" i] *:not(a):not(button):not(button *),
+      [class*="codeBlock" i] *:not(a):not(button):not(button *),
+      [class*="code_block" i] *:not(a):not(button):not(button *),
+      [class*="codeContent" i] *:not(a),
+      code *:not(a) {
+        background-color: transparent !important;
+        background: transparent !important;
+        color: ${baseTheme.text} !important;
+        border-color: ${baseTheme.border} !important;
+      }
+
+      /* Avoid double borders/boxes on code nested inside pre */
+      pre code,
+      pre kbd,
+      pre samp,
+      pre tt,
+      .ql-editor pre code,
+      .slds-text-longform pre code,
+      .slds-rich-text-editor__output pre code,
+      .forceOutputRichText pre code,
+      .uiOutputRichText pre code,
+      lightning-formatted-rich-text pre code,
+      [part="formatted-rich-text"] pre code {
+        background-color: transparent !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+      }
+
+      pre a,
+      code a,
+      .ql-syntax a,
+      [part="formatted-rich-text"] pre a {
+        background-color: transparent !important;
+        background: transparent !important;
+        color: ${accent} !important;
+      }
+    `;
   }
 
   function generateThemeCSS(settings) {
@@ -351,6 +457,7 @@
           /* Lightning Web Component (LWC) Global Design Tokens */
           --lwc-colorBackground: ${baseTheme.surface} !important;
           --lwc-colorBackgroundAlt: ${baseTheme.surfaceHeader} !important;
+          --lwc-colorBackgroundShade: ${baseTheme.surfaceHeader} !important;
           --lwc-colorBackgroundRowHover: ${baseTheme.surfaceHeader} !important;
           --lwc-colorBackgroundRowSelected: ${baseTheme.surfaceHeader} !important;
           --lwc-colorBackgroundButtonDefault: ${baseTheme.surface} !important;
@@ -2012,6 +2119,10 @@
         color: ${baseTheme.textMuted} !important;
       }
     `;
+
+    if (themeKey !== 'classic' && baseTheme) {
+      css += generateCodeBlockCSS(baseTheme, accent);
+    }
 
     return css;
   }
