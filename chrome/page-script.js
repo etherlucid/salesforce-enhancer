@@ -2781,7 +2781,38 @@
     return css;
   }
 
-  function applyAppearanceSettings(rawSettings) {
+  let pendingAppearanceSettings = null;
+  let pendingAppearanceTimer = null;
+  let activeAppearanceSequence = 0;
+
+  function scheduleAppearanceSettings(newSettings) {
+    pendingAppearanceSettings = newSettings;
+    activeAppearanceSequence++;
+    const seq = activeAppearanceSequence;
+
+    // Fast path: Immediately update light-DOM stylesheet so top-level headers, nav bar and background react with 0 lag
+    applyAppearanceSettings(newSettings, seq, true);
+
+    if (pendingAppearanceTimer) {
+      clearTimeout(pendingAppearanceTimer);
+    }
+
+    pendingAppearanceTimer = setTimeout(() => {
+      pendingAppearanceTimer = null;
+      if (seq !== activeAppearanceSequence) return;
+      const toApply = pendingAppearanceSettings || newSettings;
+      applyAppearanceSettings(toApply, seq, false);
+    }, 30);
+  }
+
+  function applyAppearanceSettings(rawSettings, seqId, lightOnly = false) {
+    if (seqId === undefined) {
+      activeAppearanceSequence++;
+      seqId = activeAppearanceSequence;
+    } else if (seqId !== activeAppearanceSequence) {
+      return;
+    }
+
     const settings = normalizeSettings(rawSettings || getEnhancerSettings());
     let styleEl = document.getElementById('sf-custom-appearance-style');
     const preloadStyle = document.getElementById('sf-preload-theme-style');
@@ -2858,9 +2889,10 @@
         .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) {
           display: inline-flex !important;
           align-items: center !important;
+          justify-content: center !important;
           flex: 0 0 auto !important;
           height: 100% !important;
-          padding: 0 10px 0 0 !important;
+          padding: 0 8px !important;
           margin: 0 !important;
           min-width: 0 !important;
           width: auto !important;
@@ -2870,16 +2902,27 @@
 
         .oneConsoleNav > .slds-context-bar__item:first-child .appLauncher,
         .slds-context-bar__primary .appLauncher {
-          padding: 0 2px 0 0 !important;
-          margin: 0 !important;
+          padding: 0 !important;
+          margin: 0 auto !important;
           height: 100% !important;
           display: inline-flex !important;
           align-items: center !important;
+          justify-content: center !important;
         }
 
-        .slds-context-bar__primary .slds-icon-waffle_container {
-          padding: 0 2px !important;
-          margin: 0 !important;
+        .slds-context-bar__primary .slds-icon-waffle_container,
+        .slds-context-bar__primary button.slds-icon-waffle_container,
+        .appLauncher button.slds-button,
+        .appLauncher .slds-context-bar__button {
+          padding: 0 !important;
+          margin: 0 auto !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+        }
+
+        .slds-icon-waffle {
+          margin: 0 auto !important;
         }
 
         /* Service Console unified Home tab wrapper (.oneConsoleNav > .appNavItems) */
@@ -3414,6 +3457,37 @@
           .slds-sub-tabs__item.slds-is-active::before {
             background-color: ${accent} !important;
             height: 2px !important;
+          }
+
+          /* App Launcher horizontal centering within container */
+          .appLauncher,
+          .slds-context-bar__icon-action {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+          }
+
+          .appLauncher one-app-launcher-header,
+          one-app-launcher-header {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            margin: 0 auto !important;
+          }
+
+          .slds-icon-waffle_container,
+          button.slds-icon-waffle_container,
+          .appLauncher button.slds-button,
+          .appLauncher .slds-context-bar__button {
+            margin: 0 auto !important;
+            padding: 0 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+          }
+
+          .slds-icon-waffle {
+            margin: 0 auto !important;
           }
         `;
       }
@@ -5301,13 +5375,18 @@
     styleEl.textContent = css;
     if (preloadStyle) preloadStyle.remove();
 
+    if (lightOnly) {
+      syncHomeIconNavContext();
+      return;
+    }
+
     if (themingEnabled && baseTheme && baseTheme.isDark) {
-      syncStylesToAllShadowRoots();
-      if (typeof syncStylesToSameOriginIframes === 'function') syncStylesToSameOriginIframes();
-      themeSearchAssistantDOM(baseTheme);
+      syncStylesToAllShadowRoots(seqId);
+      if (typeof syncStylesToSameOriginIframes === 'function') syncStylesToSameOriginIframes(seqId);
+      themeSearchAssistantDOM(baseTheme, null, seqId);
     } else {
-      removeAllShadowThemeStyles();
-      if (typeof removeAllIframeThemeStyles === 'function') removeAllIframeThemeStyles();
+      removeAllShadowThemeStyles(seqId);
+      if (typeof removeAllIframeThemeStyles === 'function') removeAllIframeThemeStyles(seqId);
       cleanupSearchAssistantDOM();
       cleanupThemeInlineStyles();
     }
@@ -5639,6 +5718,19 @@
         color: ${baseTheme.text} !important;
         border-color: ${baseTheme.border} !important;
       }
+
+      /* App Launcher button horizontal centering inside shadow root */
+      .slds-icon-waffle_container,
+      button.slds-icon-waffle_container {
+        margin: 0 auto !important;
+        padding: 0 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+      }
+      .slds-icon-waffle {
+        margin: 0 auto !important;
+      }
       ${generateCodeBlockCSS(baseTheme, accent)}
     `;
   }
@@ -5779,28 +5871,34 @@
     }
   }
 
-  function syncStylesToSameOriginIframes() {
+  function syncStylesToSameOriginIframes(seqId) {
+    if (seqId && seqId !== activeAppearanceSequence) return;
     const frames = collectAllIframes(document, []);
     if (typeof trackedShadowRoots !== 'undefined') {
       for (const sr of trackedShadowRoots) {
+        if (seqId && seqId !== activeAppearanceSequence) return;
         collectAllIframes(sr, frames);
       }
     }
     for (let i = 0; i < frames.length; i++) {
+      if (seqId && seqId !== activeAppearanceSequence) return;
       try {
         syncStylesToIframe(frames[i]);
       } catch (_) {}
     }
   }
 
-  function removeAllIframeThemeStyles() {
+  function removeAllIframeThemeStyles(seqId) {
+    if (seqId && seqId !== activeAppearanceSequence) return;
     const frames = collectAllIframes(document, []);
     if (typeof trackedShadowRoots !== 'undefined') {
       for (const sr of trackedShadowRoots) {
+        if (seqId && seqId !== activeAppearanceSequence) return;
         collectAllIframes(sr, frames);
       }
     }
     for (let i = 0; i < frames.length; i++) {
+      if (seqId && seqId !== activeAppearanceSequence) return;
       try {
         const fDoc = frames[i].contentDocument;
         const style = fDoc && fDoc.getElementById('sf-iframe-theme-style');
@@ -5809,14 +5907,15 @@
     }
   }
 
-  function syncStylesToAllShadowRoots() {
+  function syncStylesToAllShadowRoots(seqId) {
+    if (seqId && seqId !== activeAppearanceSequence) return;
     const settings = getEnhancerSettings();
     const themingEnabled = settings?.modules?.theming === true;
     const themeKey = (settings?.theme && settings.theme.preset) || 'classic';
     const baseTheme = THEMES[themeKey] || THEMES['classic'];
 
     if (!themingEnabled || !baseTheme || !baseTheme.isDark) {
-      removeAllShadowThemeStyles();
+      removeAllShadowThemeStyles(seqId);
       return;
     }
 
@@ -5827,6 +5926,7 @@
     collectAllShadowRoots();
 
     for (const sr of trackedShadowRoots) {
+      if (seqId && seqId !== activeAppearanceSequence) return;
       try {
         if (!sr || sr.host?.isConnected === false) {
           trackedShadowRoots.delete(sr);
@@ -5837,9 +5937,11 @@
     }
   }
 
-  function removeAllShadowThemeStyles() {
+  function removeAllShadowThemeStyles(seqId) {
+    if (seqId && seqId !== activeAppearanceSequence) return;
     if (typeof trackedShadowRoots !== 'undefined') {
       for (const sr of trackedShadowRoots) {
+        if (seqId && seqId !== activeAppearanceSequence) return;
         try {
           if (!sr || sr.host?.isConnected === false) {
             trackedShadowRoots.delete(sr);
@@ -6104,7 +6206,8 @@
     // Pure CSS :hover manages hover states natively and reverts cleanly on unhover.
   }
 
-  function themeSearchAssistantDOM(theme, specificRoot = null) {
+  function themeSearchAssistantDOM(theme, specificRoot = null, seqId = null) {
+    if (seqId && seqId !== activeAppearanceSequence) return;
     if (!theme || !theme.isDark) return;
 
     function applyThemeToEl(el) {
@@ -8436,7 +8539,7 @@
               document.documentElement.dataset.sfAppearance = JSON.stringify(s);
             }
           } catch (_) {}
-          applyAppearanceSettings(s);
+          scheduleAppearanceSettings(s);
           refreshQuickViewsUI();
         }
       } catch (_) {}

@@ -732,6 +732,37 @@
           background-color: ${accent} !important;
           height: 2px !important;
         }
+
+        /* App Launcher horizontal centering within container */
+        .appLauncher,
+        .slds-context-bar__icon-action {
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+        }
+
+        .appLauncher one-app-launcher-header,
+        one-app-launcher-header {
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          margin: 0 auto !important;
+        }
+
+        .slds-icon-waffle_container,
+        button.slds-icon-waffle_container,
+        .appLauncher button.slds-button,
+        .appLauncher .slds-context-bar__button {
+          margin: 0 auto !important;
+          padding: 0 !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+        }
+
+        .slds-icon-waffle {
+          margin: 0 auto !important;
+        }
       `;
     }
 
@@ -3197,9 +3228,10 @@
           .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) {
             display: inline-flex !important;
             align-items: center !important;
+            justify-content: center !important;
             flex: 0 0 auto !important;
             height: 100% !important;
-            padding: 0 10px 0 0 !important;
+            padding: 0 8px !important;
             margin: 0 !important;
             min-width: 0 !important;
             width: auto !important;
@@ -3209,16 +3241,27 @@
 
           .oneConsoleNav > .slds-context-bar__item:first-child .appLauncher,
           .slds-context-bar__primary .appLauncher {
-            padding: 0 2px 0 0 !important;
-            margin: 0 !important;
+            padding: 0 !important;
+            margin: 0 auto !important;
             height: 100% !important;
             display: inline-flex !important;
             align-items: center !important;
+            justify-content: center !important;
           }
 
-          .slds-context-bar__primary .slds-icon-waffle_container {
-            padding: 0 2px !important;
-            margin: 0 !important;
+          .slds-context-bar__primary .slds-icon-waffle_container,
+          .slds-context-bar__primary button.slds-icon-waffle_container,
+          .appLauncher button.slds-button,
+          .appLauncher .slds-context-bar__button {
+            padding: 0 !important;
+            margin: 0 auto !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+          }
+
+          .slds-icon-waffle {
+            margin: 0 auto !important;
           }
 
           /* Service Console unified Home tab wrapper (.oneConsoleNav > .appNavItems) */
@@ -3769,25 +3812,41 @@
 
   loadAndApplyStorageSettings();
 
+  let pendingContentSettings = null;
+  let contentSettingsTimer = null;
+
+  function broadcastSettingsUpdated(s) {
+    pendingContentSettings = s;
+    try {
+      const pageStorage = window.wrappedJSObject?.localStorage || window.localStorage;
+      if (pageStorage) {
+        pageStorage.setItem('sf_enhancer_settings', JSON.stringify(s));
+        pageStorage.setItem('sf_appearance_settings', JSON.stringify(s));
+      }
+    } catch (_) {}
+    try {
+      if (document.documentElement) {
+        document.documentElement.dataset.sfAppearance = JSON.stringify(s);
+      }
+    } catch (_) {}
+    injectPreloadStyles(s);
+
+    if (contentSettingsTimer) {
+      clearTimeout(contentSettingsTimer);
+    }
+    contentSettingsTimer = setTimeout(() => {
+      contentSettingsTimer = null;
+      const toBroadcast = pendingContentSettings || s;
+      window.postMessage({ __sfEnhancerAction: 'settingsUpdated', settings: toBroadcast }, '*');
+    }, 20);
+  }
+
   if (api && api.runtime && api.runtime.onMessage) {
     api.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (!message || !message.action) return;
       if (message.action === 'applyEnhancerSettings' || message.action === 'applyAppearanceSettings') {
         const s = normalizeSettings(message.settings);
-        try {
-          const pageStorage = window.wrappedJSObject?.localStorage || window.localStorage;
-          if (pageStorage) {
-            pageStorage.setItem('sf_enhancer_settings', JSON.stringify(s));
-            pageStorage.setItem('sf_appearance_settings', JSON.stringify(s));
-          }
-        } catch (_) {}
-        try {
-          if (document.documentElement) {
-            document.documentElement.dataset.sfAppearance = JSON.stringify(s);
-          }
-        } catch (_) {}
-        injectPreloadStyles(s);
-        window.postMessage({ __sfEnhancerAction: 'settingsUpdated', settings: s }, '*');
+        broadcastSettingsUpdated(s);
         if (sendResponse) sendResponse({ ok: true });
       }
     });
