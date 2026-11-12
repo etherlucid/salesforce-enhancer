@@ -545,14 +545,35 @@
 
       :is(
         ${containers}
-      ) a:not(.slds-button):not(.slds-pill__action):not(.slds-badge):not([class*="chat-message__text"] a):not(.slds-tabs_default__link):not(.slds-tabs_card__link):not(.slds-tabs_scoped__link) {
+      ) a:not(.slds-button):not(.slds-pill__action):not(.slds-badge):not([class*="chat-message__text"] a):not(.slds-tabs_default__link):not(.slds-tabs_card__link):not(.slds-tabs_scoped__link):not(.slds-path__link):not(.uiTabItem > a) {
         color: ${accent} !important;
       }
 
       :is(
         ${containers}
-      ) a:not(.slds-button):not(.slds-pill__action):not(.slds-badge):not([class*="chat-message__text"] a):not(.slds-tabs_default__link):not(.slds-tabs_card__link):not(.slds-tabs_scoped__link) *:not(svg):not(path) {
+      ) a:not(.slds-button):not(.slds-pill__action):not(.slds-badge):not([class*="chat-message__text"] a):not(.slds-tabs_default__link):not(.slds-tabs_card__link):not(.slds-tabs_scoped__link):not(.slds-path__link):not(.uiTabItem > a) *:not(svg):not(path) {
         color: inherit !important;
+      }
+
+      button.slds-button:not(.slds-button_brand):not(.slds-button--brand):not(.slds-button_neutral):not(.slds-button--neutral):not(.slds-button_destructive):not(.slds-button--destructive):not(.slds-button_text-destructive):not(.slds-button--text-destructive):not(.slds-button_success):not(.slds-button--success):not(.slds-button_outline-brand):not(.slds-button--outline-brand):not(.slds-button_inverse):not(.slds-button--inverse):not(.slds-button_icon):not(.slds-button--icon):not(.slds-button_icon-border):not(.slds-button--icon-border):not(.slds-button_icon-border-filled):not(.slds-button--icon-bare) {
+        color: ${accent} !important;
+      }
+
+      .uiTabset--task .tabs__item.active > a,
+      .uiTabset--task .tabs__item.active > a.tabHeader,
+      .uiTabset--task .tabs__item > a.tabHeader:hover,
+      .uiTabset--task .tabs__item > a.tabHeader:focus {
+        background-color: ${baseTheme.surface} !important;
+        color: ${accent} !important;
+        border-color: ${baseTheme.border} !important;
+      }
+
+      .forceChatterFeedInner .skip-feed-endpoint,
+      .skip-feed-endpoint {
+        background: ${baseTheme.surfaceHeader} !important;
+        background-color: ${baseTheme.surfaceHeader} !important;
+        color: ${baseTheme.textMuted} !important;
+        border-color: ${baseTheme.border} !important;
       }
 
       :is(${containers}) hr {
@@ -767,6 +788,11 @@
           --lwc-colorTextWeak: ${baseTheme.textMuted} !important;
           --lwc-colorTextPlaceholder: ${baseTheme.textMuted} !important;
           --lwc-colorTextLink: ${accent} !important;
+          --lwc-brandAccessible: ${accent} !important;
+          --lwc-brandAccessibleActive: ${accent} !important;
+          --lwc-brandTextLink: ${accent} !important;
+          --slds-s-navigation-color-background-active: ${baseTheme.surface} !important;
+          --slds-s-navigation-color-active: ${accent} !important;
           --lwc-colorTextIconDefault: ${baseTheme.textMuted} !important;
           --lwc-colorTextButtonDefault: ${baseTheme.text} !important;
           --slds-c-output-text-color: ${baseTheme.text} !important;
@@ -2102,7 +2128,7 @@
         .slds-truncate {
           color: ${baseTheme.text} !important;
         }
-        a:not(.slds-button):not(.slds-tabs_default__link):not(.slds-tabs_card__link):not(.slds-tabs_scoped__link):not(.tabItem a) {
+        a:not(.slds-button):not(.slds-tabs_default__link):not(.slds-tabs_card__link):not(.slds-tabs_scoped__link):not(.tabItem a):not(.slds-path__link) {
           color: ${accent} !important;
         }
 
