@@ -314,6 +314,280 @@
     `;
   }
 
+  function generateDarkBodyTextCSS(baseTheme, accent, includeStandaloneIframe = false) {
+    if (!baseTheme || !baseTheme.isDark) return '';
+    const containers = [
+      '.slds-card__body',
+      '.forcePageBlock',
+      '.forcePageBlockSection',
+      '.forcePageBlockItem',
+      'records-lwc-detail-panel',
+      'records-base-record-form',
+      'records-record-layout-base',
+      'records-record-layout-section',
+      'records-record-layout-item',
+      'flexipage-component2',
+      '.test-id__field-value',
+      '.slds-form-element__static',
+      '.forceOutputRichText',
+      '.uiOutputRichText',
+      '.uiOutputText',
+      '.uiOutputTextArea',
+      '.uiOutputEmail',
+      '.uiOutputUrl',
+      'lightning-formatted-rich-text',
+      'lightning-formatted-text',
+      'lightning-formatted-email',
+      'lightning-output-field',
+      '[part="formatted-rich-text"]',
+      '[part="input-rich-text"]',
+      '.slds-rich-text-editor__output',
+      '.slds-text-longform',
+      '.slds-text-body_regular',
+      '.slds-text-body_default',
+      '.ql-editor',
+      '.cke_editable',
+      '.cke_contents',
+      'knowledge-article-body',
+      'knowledge-article-viewer',
+      'runtime_service_knowledge-article-viewer',
+      'support-knowledge-article',
+      '[class*="knowledgeArticle" i]',
+      '[class*="knowledge-article" i]',
+      '[class*="articleBody" i]',
+      '[class*="article-body" i]',
+      '[class*="articleContent" i]',
+      '[class*="article-content" i]',
+      '[class*="richText" i]',
+      '[class*="rich-text" i]',
+      '[data-aura-class*="Knowledge" i]',
+      '[data-aura-class*="RichText" i]',
+      '.slds-feed',
+      '.forceChatterFeed',
+      '.forceChatterFeedItem',
+      '.forceChatterFeedBody',
+      '.forceChatterMessageBody',
+      '.forceChatterMessageSegment',
+      '.cuf-feedItem',
+      '.cuf-feedItemBody',
+      '.slds-post__content',
+      '.slds-comment__content',
+      '.slds-timeline__item',
+      '.slds-timeline__item_expandable',
+      '.slds-activity-timeline',
+      '.forceChatterEmailDetail',
+      '.forceChatterEmailMessage',
+      '.forceEmailBody',
+      '.emailMessageBody',
+      '.emailMessage',
+      '.emailDetail',
+      '.emailBody',
+      '.emailContent',
+      '.cuf-emailBody',
+      '.cuf-emailMessage',
+      'emailui-message-detail',
+      'emailui-email-body',
+      'emailui-rich-text',
+      'emailui-message-item',
+      'support-email-message',
+      'support-email-detail',
+      'runtime_service_email-email-detail',
+      'force-email-body',
+      '[class*="emailMessage" i]',
+      '[class*="email-message" i]',
+      '[class*="emailBody" i]',
+      '[class*="email-body" i]',
+      '[class*="emailDetail" i]',
+      '[class*="email-detail" i]',
+      '[class*="emailContent" i]',
+      '[class*="email-content" i]',
+      '[class*="emailViewer" i]',
+      '[class*="email-viewer" i]',
+      '[class*="emailThread" i]',
+      '[class*="email-thread" i]',
+      '[data-aura-class*="Email" i]',
+      '[data-aura-class*="Chatter" i]',
+      '.slds-modal__content',
+      '.modal-body'
+    ].join(',\n        ');
+
+    const richHtmlBgContainers = [
+      '.forceOutputRichText',
+      '.uiOutputRichText',
+      'lightning-formatted-rich-text',
+      '[part="formatted-rich-text"]',
+      '.slds-rich-text-editor__output',
+      '.slds-text-longform',
+      '.ql-editor',
+      '.cke_editable',
+      '.cke_contents',
+      '.forceChatterEmailDetail',
+      '.forceChatterEmailMessage',
+      '.forceEmailBody',
+      '.emailMessageBody',
+      '.emailBody',
+      '.emailContent',
+      '.cuf-emailBody',
+      '.cuf-emailMessage',
+      'emailui-message-detail',
+      'emailui-email-body',
+      'emailui-rich-text',
+      'emailui-message-item',
+      'support-email-message',
+      'support-email-detail',
+      'runtime_service_email-email-detail',
+      'force-email-body',
+      '.test-id__field-value',
+      '.slds-form-element__static',
+      '[class*="knowledgeArticle" i]',
+      '[class*="knowledge-article" i]',
+      '[class*="articleBody" i]',
+      '[class*="article-body" i]',
+      '[class*="articleContent" i]',
+      '[class*="emailMessage" i]',
+      '[class*="email-message" i]',
+      '[class*="emailBody" i]',
+      '[class*="email-body" i]',
+      '[class*="emailDetail" i]',
+      '[class*="email-detail" i]',
+      '[class*="emailContent" i]',
+      '[class*="email-content" i]',
+      '[class*="emailViewer" i]',
+      '[class*="emailThread" i]',
+      '[data-aura-class*="Email" i]',
+      '[data-aura-class*="Knowledge" i]'
+    ].join(',\n        ');
+
+    const textTags = 'p, span, div, li, ul, ol, dt, dd, dl, td, th, tr, table, tbody, thead, tfoot, caption, blockquote, strong, b, em, i, u, s, small, sub, sup, font, label, h1, h2, h3, h4, h5, h6, article, section';
+    const textExclusions = [
+      ':not(a):not(a *)',
+      ':not(button):not(button *)',
+      ':not(.slds-button):not(.slds-button *)',
+      ':not(.slds-badge):not(.slds-badge *)',
+      ':not(.slds-pill):not(.slds-pill *)',
+      ':not(.slds-theme_success):not(.slds-theme_success *)',
+      ':not(.slds-theme_error):not(.slds-theme_error *)',
+      ':not(.slds-theme_warning):not(.slds-theme_warning *)',
+      ':not(.slds-theme_info):not(.slds-theme_info *)',
+      ':not(.slds-path):not(.slds-path *)',
+      ':not(.slds-path__item):not(.slds-path__item *)',
+      ':not([class*="chat-message__text"]):not([class*="chat-message__text"] *)',
+      ':not([class*="chat-listitem_outbound"] *)',
+      ':not([data-direction="outbound"] *)',
+      ':not([data-message-direction="outbound"] *)',
+      ':not(pre):not(pre *)',
+      ':not(code):not(code *)',
+      ':not(kbd):not(samp):not(tt)',
+      ':not(.ql-syntax):not(.ql-syntax *)',
+      ':not(.slds-form-element__label):not(.slds-form-element__label *)',
+      ':not(.test-id__field-label):not(.test-id__field-label *)',
+      ':not(.slds-text-color_weak)',
+      ':not(.slds-text-body_small)',
+      ':not(.slds-chat-message__meta):not(.slds-chat-message__meta *)',
+      ':not(.slds-chat-event__body):not(.slds-chat-event__body *)',
+      ':not(.data-match)'
+    ].join('');
+
+    const bgExclusions = [
+      ':not(input):not(textarea):not(select)',
+      ':not(mark):not(img):not(svg)',
+      ':not(.slds-dropdown):not(.slds-dropdown *)',
+      ':not(.slds-popover):not(.slds-popover *)',
+      ':not(.slds-listbox):not(.slds-listbox *)',
+      ':not(.slds-combobox):not(.slds-combobox *)',
+      ':not(.slds-table):not(.slds-table *)',
+      ':not(.uiMenuList):not(.uiMenuList *)',
+      ':not([role="menu"]):not([role="menu"] *)',
+      ':not(.slds-avatar):not(.slds-avatar *)',
+      ':not(.slds-icon_container):not(.slds-icon_container *)'
+    ].join('');
+
+    let css = `
+      /* Dark Theme Body Text, Knowledge Articles, Rich Text & Expanded Email View Readability */
+      .forceOutputRichText,
+      .uiOutputRichText,
+      .uiOutputText,
+      .uiOutputTextArea,
+      .uiOutputEmail,
+      .test-id__field-value,
+      .slds-form-element__static,
+      .slds-text-longform,
+      .slds-text-body_regular,
+      .slds-rich-text-editor__output,
+      lightning-formatted-rich-text,
+      lightning-formatted-text,
+      lightning-formatted-email,
+      [part="formatted-rich-text"],
+      .ql-editor,
+      .forceChatterEmailDetail,
+      .forceChatterEmailMessage,
+      .forceEmailBody,
+      .emailMessageBody,
+      .emailBody,
+      .emailContent,
+      .cuf-emailBody,
+      .forceChatterMessageBody {
+        color: ${baseTheme.text} !important;
+      }
+
+      :is(
+        ${containers}
+      ) :is(${textTags})${textExclusions} {
+        color: ${baseTheme.text} !important;
+      }
+
+      :is(
+        ${richHtmlBgContainers}
+      ) :is(${textTags})${textExclusions}${bgExclusions} {
+        background-color: transparent !important;
+        border-color: ${baseTheme.border} !important;
+      }
+
+      :is(
+        ${containers}
+      ) a:not(.slds-button):not(.slds-pill__action):not(.slds-badge):not([class*="chat-message__text"] a):not(.slds-tabs_default__link):not(.slds-tabs_card__link):not(.slds-tabs_scoped__link) {
+        color: ${accent} !important;
+      }
+
+      :is(
+        ${containers}
+      ) a:not(.slds-button):not(.slds-pill__action):not(.slds-badge):not([class*="chat-message__text"] a):not(.slds-tabs_default__link):not(.slds-tabs_card__link):not(.slds-tabs_scoped__link) *:not(svg):not(path) {
+        color: inherit !important;
+      }
+
+      :is(${containers}) hr {
+        border-color: ${baseTheme.border} !important;
+        background-color: ${baseTheme.border} !important;
+      }
+    `;
+
+    if (includeStandaloneIframe) {
+      css += `
+        /* Subframe / Standalone HTML Email Body (ignores nested Console Workspace frames) */
+        html:not(:has(.navexWorkspaceManager)):not(:has(.oneWorkspace)),
+        html:not(:has(.navexWorkspaceManager)):not(:has(.oneWorkspace)) body {
+          background-color: ${baseTheme.surface} !important;
+          color: ${baseTheme.text} !important;
+        }
+        html:not(:has(.navexWorkspaceManager)):not(:has(.oneWorkspace)) body :is(${textTags})${textExclusions} {
+          color: ${baseTheme.text} !important;
+        }
+        html:not(:has(.navexWorkspaceManager)):not(:has(.oneWorkspace)) body :is(${textTags})${textExclusions}${bgExclusions} {
+          background-color: transparent !important;
+          border-color: ${baseTheme.border} !important;
+        }
+        html:not(:has(.navexWorkspaceManager)):not(:has(.oneWorkspace)) body a:not(.slds-button) {
+          color: ${accent} !important;
+        }
+        html:not(:has(.navexWorkspaceManager)):not(:has(.oneWorkspace)) body a:not(.slds-button) *:not(svg):not(path) {
+          color: inherit !important;
+        }
+      `;
+    }
+
+    return css;
+  }
+
   function generateThemeCSS(settings) {
     // If theming module is disabled, return empty string (zero CSS injected)
     if (!settings || !settings.modules || settings.modules.theming !== true) {
@@ -449,10 +723,17 @@
           --slds-g-color-neutral-base-95: ${baseTheme.surface} !important;
           --slds-g-color-neutral-base-90: ${baseTheme.surfaceHeader} !important;
           --slds-g-color-neutral-base-80: ${baseTheme.border} !important;
+          --slds-g-color-neutral-base-60: ${baseTheme.textMuted} !important;
           --slds-g-color-neutral-base-50: ${baseTheme.textMuted} !important;
+          --slds-g-color-neutral-base-40: ${baseTheme.textMuted} !important;
           --slds-g-color-neutral-base-30: ${baseTheme.text} !important;
+          --slds-g-color-neutral-base-25: ${baseTheme.text} !important;
           --slds-g-color-neutral-base-20: ${baseTheme.text} !important;
+          --slds-g-color-neutral-base-15: ${baseTheme.text} !important;
           --slds-g-color-neutral-base-10: ${baseTheme.text} !important;
+          --slds-g-color-on-surface-1: ${baseTheme.text} !important;
+          --slds-g-color-on-surface-2: ${baseTheme.text} !important;
+          --slds-g-color-on-surface-3: ${baseTheme.textMuted} !important;
 
           /* Lightning Web Component (LWC) Global Design Tokens */
           --lwc-colorBackground: ${baseTheme.surface} !important;
@@ -482,11 +763,13 @@
           --lwc-colorBorderButtonDefault: ${baseTheme.border} !important;
 
           --lwc-colorTextDefault: ${baseTheme.text} !important;
+          --lwc-colorTextLabel: ${baseTheme.textMuted} !important;
           --lwc-colorTextWeak: ${baseTheme.textMuted} !important;
           --lwc-colorTextPlaceholder: ${baseTheme.textMuted} !important;
           --lwc-colorTextLink: ${accent} !important;
           --lwc-colorTextIconDefault: ${baseTheme.textMuted} !important;
           --lwc-colorTextButtonDefault: ${baseTheme.text} !important;
+          --slds-c-output-text-color: ${baseTheme.text} !important;
 
           /* SLDS Component Design Tokens */
           --slds-c-card-color-background: ${baseTheme.surface} !important;
@@ -1806,6 +2089,7 @@
 
         /* Text, Labels & Links */
         .slds-form-element__label,
+        .test-id__field-label,
         .slds-text-color_weak,
         .slds-text-body_small {
           color: ${baseTheme.textMuted} !important;
@@ -1899,6 +2183,10 @@
           border-radius: 4px !important;
         }
       `;
+      if (isDark) {
+        const includeSubframeCss = typeof isTopWindow !== 'undefined' ? !isTopWindow : false;
+        css += generateDarkBodyTextCSS(baseTheme, accent, includeSubframeCss);
+      }
     }
 
     css += `
