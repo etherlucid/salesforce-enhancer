@@ -1342,7 +1342,7 @@
   );
 
   /* ==========================================================================
-     TAB DRAG & DROP MODULE (v1.2.1)
+     TAB DRAG & DROP MODULE (v1.2.2)
      Bidirectional workspace / subtab drag-and-drop:
      - Drag a Primary Workspace Tab into another Primary Tab -> converts into a Subtab
      - Drag a Subtab out onto the Primary Tab Bar -> promotes into an independent Workspace Tab
