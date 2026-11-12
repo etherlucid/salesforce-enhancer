@@ -396,60 +396,75 @@
     }
   }
 
-  // Real-time Auto-Save & Broadcast (no "Save & Apply" button required)
-  function saveAndApply() {
-    const api = typeof browser !== 'undefined' ? browser : chrome;
-    if (!api || !api.storage || !api.storage.local) return;
+  // Real-time Auto-Save & Broadcast (debounced to eliminate lag during rapid clicks or drags)
+  let saveDebounceTimer = null;
+  function saveAndApply(immediate = false) {
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+      saveDebounceTimer = null;
+    }
 
-    const payload = {
-      sf_enhancer_settings: currentSettings,
-      // Backward-compatibility mirror for synchronous in-page readers
-      sf_appearance_settings: {
-        theme: currentSettings.theme.preset,
-        accentColor: currentSettings.theme.preset === 'custom' ? currentSettings.theme.customAccent : (THEMES[currentSettings.theme.preset]?.accent || '#0176d3'),
-        isDarkMode: !!THEMES[currentSettings.theme.preset]?.isDark,
-        applyToSalesforce: currentSettings.modules.theming && currentSettings.theme.applyToNavigation,
-        modules: currentSettings.modules,
-        subtabs: currentSettings.subtabs,
-        hideAppName: currentSettings.hideAppName,
-        loadingImage: {
-          enabled: currentSettings.modules.loadingAnimation,
-          url: currentSettings.loadingImage.url,
-          size: currentSettings.loadingImage.size,
-          rotate: currentSettings.loadingImage.rotate
+    const executeSave = () => {
+      saveDebounceTimer = null;
+      const api = typeof browser !== 'undefined' ? browser : chrome;
+      if (!api || !api.storage || !api.storage.local) return;
+
+      const payload = {
+        sf_enhancer_settings: currentSettings,
+        // Backward-compatibility mirror for synchronous in-page readers
+        sf_appearance_settings: {
+          theme: currentSettings.theme.preset,
+          accentColor: currentSettings.theme.preset === 'custom' ? currentSettings.theme.customAccent : (THEMES[currentSettings.theme.preset]?.accent || '#0176d3'),
+          isDarkMode: !!THEMES[currentSettings.theme.preset]?.isDark,
+          applyToSalesforce: currentSettings.modules.theming && currentSettings.theme.applyToNavigation,
+          modules: currentSettings.modules,
+          subtabs: currentSettings.subtabs,
+          hideAppName: currentSettings.hideAppName,
+          loadingImage: {
+            enabled: currentSettings.modules.loadingAnimation,
+            url: currentSettings.loadingImage.url,
+            size: currentSettings.loadingImage.size,
+            rotate: currentSettings.loadingImage.rotate
+          }
         }
-      }
-    };
+      };
 
-    const broadcast = () => {
+      const broadcast = () => {
+        try {
+          if (api.tabs && api.tabs.query) {
+            api.tabs.query({}, (tabs) => {
+              if (tabs && tabs.length) {
+                tabs.forEach((tab) => {
+                  if (tab && tab.id) {
+                    try {
+                      const p = api.tabs.sendMessage(tab.id, {
+                        action: 'applyEnhancerSettings',
+                        settings: currentSettings
+                      });
+                      if (p && typeof p.catch === 'function') p.catch(() => {});
+                    } catch (_) {}
+                  }
+                });
+              }
+            });
+          }
+        } catch (_) {}
+      };
+
       try {
-        if (api.tabs && api.tabs.query) {
-          api.tabs.query({}, (tabs) => {
-            if (tabs && tabs.length) {
-              tabs.forEach((tab) => {
-                if (tab && tab.id) {
-                  try {
-                    const p = api.tabs.sendMessage(tab.id, {
-                      action: 'applyEnhancerSettings',
-                      settings: currentSettings
-                    });
-                    if (p && typeof p.catch === 'function') p.catch(() => {});
-                  } catch (_) {}
-                }
-              });
-            }
-          });
+        const p = api.storage.local.set(payload, broadcast);
+        if (p && typeof p.then === 'function') {
+          p.then(broadcast).catch(broadcast);
         }
-      } catch (_) {}
+      } catch (_) {
+        broadcast();
+      }
     };
 
-    try {
-      const p = api.storage.local.set(payload, broadcast);
-      if (p && typeof p.then === 'function') {
-        p.then(broadcast).catch(broadcast);
-      }
-    } catch (_) {
-      broadcast();
+    if (immediate) {
+      executeSave();
+    } else {
+      saveDebounceTimer = setTimeout(executeSave, 35);
     }
   }
 

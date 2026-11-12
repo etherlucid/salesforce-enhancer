@@ -5332,38 +5332,10 @@
     }
   }
 
-  function syncStylesToShadowRoot(shadowRoot) {
-    if (!shadowRoot) return;
-    const settings = getEnhancerSettings();
-    const themingEnabled = settings?.modules?.theming === true;
-    const themeKey = (settings?.theme && settings.theme.preset) || 'classic';
-    const baseTheme = THEMES[themeKey] || THEMES['classic'];
-
-    if (!themingEnabled || !baseTheme || !baseTheme.isDark) {
-      try {
-        const existing = shadowRoot.querySelectorAll ? shadowRoot.querySelectorAll('style[id*="sf-shadow-theme-style"]') : [];
-        for (let i = 0; i < existing.length; i++) existing[i].remove();
-      } catch (_) {}
-      return;
-    }
-    const accent = (themeKey === 'custom' && settings.theme?.customAccent) ? sanitizeHexColor(settings.theme.customAccent) : baseTheme.accent;
+  function generateShadowThemeCSS(baseTheme, accent) {
     const isDark = !!baseTheme.isDark;
     const hoverBg = hexToRgba(accent, 0.18);
-
-    const existingStyles = shadowRoot.querySelectorAll ? shadowRoot.querySelectorAll('style[id*="sf-shadow-theme-style"]') : [];
-    let style = existingStyles[0] || null;
-    for (let i = 1; i < existingStyles.length; i++) {
-      try { existingStyles[i].remove(); } catch (_) {}
-    }
-    if (!style) {
-      style = document.createElement('style');
-      style.id = 'sf-shadow-theme-style';
-      try {
-        shadowRoot.appendChild(style);
-      } catch (_) {}
-    }
-
-    style.textContent = `
+    return `
       :host {
         --slds-c-card-color-background: ${baseTheme.surface} !important;
         --slds-c-card-header-color-background: ${baseTheme.surface} !important;
@@ -5711,6 +5683,47 @@
     `;
   }
 
+  function syncStylesToShadowRoot(shadowRoot, cachedCss, themeSig) {
+    if (!shadowRoot) return;
+    const settings = getEnhancerSettings();
+    const themingEnabled = settings?.modules?.theming === true;
+    const themeKey = (settings?.theme && settings.theme.preset) || 'classic';
+    const baseTheme = THEMES[themeKey] || THEMES['classic'];
+
+    if (!themingEnabled || !baseTheme || !baseTheme.isDark) {
+      try {
+        const existing = shadowRoot.querySelectorAll ? shadowRoot.querySelectorAll('style[id*="sf-shadow-theme-style"]') : [];
+        for (let i = 0; i < existing.length; i++) existing[i].remove();
+      } catch (_) {}
+      return;
+    }
+    const accent = (themeKey === 'custom' && settings.theme?.customAccent) ? sanitizeHexColor(settings.theme.customAccent) : baseTheme.accent;
+    const sig = themeSig || `${themeKey}|${accent}|dark`;
+
+    let style = shadowRoot.querySelector ? shadowRoot.querySelector('#sf-shadow-theme-style') : null;
+    if (style && style.dataset.sfThemeSig === sig && style.isConnected) {
+      return;
+    }
+
+    const existingStyles = shadowRoot.querySelectorAll ? shadowRoot.querySelectorAll('style[id*="sf-shadow-theme-style"]') : [];
+    style = existingStyles[0] || null;
+    for (let i = 1; i < existingStyles.length; i++) {
+      try { existingStyles[i].remove(); } catch (_) {}
+    }
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'sf-shadow-theme-style';
+      try {
+        shadowRoot.appendChild(style);
+      } catch (_) {}
+    }
+
+    if (style) {
+      style.dataset.sfThemeSig = sig;
+      style.textContent = cachedCss || generateShadowThemeCSS(baseTheme, accent);
+    }
+  }
+
   function syncStylesToIframe(iframe) {
     if (!iframe) return;
     if (!iframe._sfThemeLoadHooked) {
@@ -5767,7 +5780,6 @@
   }
 
   function syncStylesToSameOriginIframes() {
-    collectAllShadowRoots();
     const frames = collectAllIframes(document, []);
     if (typeof trackedShadowRoots !== 'undefined') {
       for (const sr of trackedShadowRoots) {
@@ -5798,33 +5810,41 @@
   }
 
   function syncStylesToAllShadowRoots() {
+    const settings = getEnhancerSettings();
+    const themingEnabled = settings?.modules?.theming === true;
+    const themeKey = (settings?.theme && settings.theme.preset) || 'classic';
+    const baseTheme = THEMES[themeKey] || THEMES['classic'];
+
+    if (!themingEnabled || !baseTheme || !baseTheme.isDark) {
+      removeAllShadowThemeStyles();
+      return;
+    }
+
+    const accent = (themeKey === 'custom' && settings.theme?.customAccent) ? sanitizeHexColor(settings.theme.customAccent) : baseTheme.accent;
+    const sig = `${themeKey}|${accent}|dark`;
+    const cachedCss = generateShadowThemeCSS(baseTheme, accent);
+
     collectAllShadowRoots();
+
     for (const sr of trackedShadowRoots) {
       try {
-        syncStylesToShadowRoot(sr);
+        if (!sr || sr.host?.isConnected === false) {
+          trackedShadowRoots.delete(sr);
+          continue;
+        }
+        syncStylesToShadowRoot(sr, cachedCss, sig);
       } catch (_) {}
     }
   }
 
   function removeAllShadowThemeStyles() {
-    function clean(node) {
-      if (!node) return;
-      if (node.shadowRoot) {
-        try {
-          const styles = node.shadowRoot.querySelectorAll ? node.shadowRoot.querySelectorAll('style[id*="sf-shadow-theme-style"]') : [];
-          for (let i = 0; i < styles.length; i++) styles[i].remove();
-        } catch (_) {}
-        clean(node.shadowRoot);
-      }
-      const ch = node.children || [];
-      for (let i = 0; i < ch.length; i++) clean(ch[i]);
-    }
-    try {
-      clean(document.documentElement);
-    } catch (_) {}
     if (typeof trackedShadowRoots !== 'undefined') {
       for (const sr of trackedShadowRoots) {
         try {
+          if (!sr || sr.host?.isConnected === false) {
+            trackedShadowRoots.delete(sr);
+            continue;
+          }
           const styles = sr.querySelectorAll ? sr.querySelectorAll('style[id*="sf-shadow-theme-style"]') : [];
           for (let i = 0; i < styles.length; i++) styles[i].remove();
         } catch (_) {}
@@ -5894,13 +5914,20 @@
     const qvMuted = isDark ? baseTheme.textMuted : '#706e6b';
     const qvHover = isDark ? (baseTheme.surfaceHeader || hexToRgba(accent, 0.18)) : '#f3f3f3';
 
+    const qvSig = `${isDark ? themeKey : 'light'}|${accent}`;
     let style = root.querySelector ? root.querySelector('#sf-quick-views-shadow-style') : null;
+    if (style && style.dataset.sfQvSig === qvSig && style.isConnected) {
+      return;
+    }
     if (!style) {
       style = document.createElement('style');
       style.id = 'sf-quick-views-shadow-style';
       try {
         root.appendChild(style);
       } catch (_) {}
+    }
+    if (style) {
+      style.dataset.sfQvSig = qvSig;
     }
 
     style.textContent = `
@@ -6485,7 +6512,7 @@
       return null;
     }
 
-    function onQuickViewItemClick(view, event, objectName) {
+    function onQuickViewItemClick(view, event, objectName, popover) {
       const isCmdOrCtrl = event.metaKey || event.ctrlKey;
       const isAlt = event.altKey;
 
@@ -6493,25 +6520,67 @@
         closeDropdown();
       };
 
-      // 1. Locate the native option in the dropdown
+      // 1. Locate the native option in the dropdown and all active shadow roots
       const findNativeOption = () => {
-        const candidates = document.querySelectorAll(
-          '.slds-dropdown [role="option"], .slds-popover [role="option"], .slds-listbox [role="option"], lightning-base-combobox-item, li.slds-listbox__item, li.uiMenuItem, div.slds-listbox__option'
-        );
-        for (const el of candidates) {
-          if (el.closest('.sf-quick-views-wrapper')) continue;
-
-          // Match by 00B ID if available
-          if (view.id && view.id.startsWith('00B')) {
-            const rowId = extractListViewId(el);
-            if (rowId === view.id) return el;
+        const rootsToSearch = new Set();
+        if (popover) {
+          rootsToSearch.add(popover);
+          const pRoot = popover.getRootNode ? popover.getRootNode() : null;
+          if (pRoot) rootsToSearch.add(pRoot);
+          const host = pRoot?.host;
+          if (host?.shadowRoot) rootsToSearch.add(host.shadowRoot);
+        }
+        if (typeof trackedShadowRoots !== 'undefined') {
+          for (const sr of trackedShadowRoots) {
+            if (sr && sr.isConnected !== false) {
+              const hTag = (sr.host?.tagName || '').toLowerCase();
+              if (hTag.includes('combobox') || hTag.includes('picker') || hTag.includes('list')) {
+                rootsToSearch.add(sr);
+              }
+            }
           }
+        }
+        rootsToSearch.add(document);
 
-          // Match by text label
-          const txt = (el.innerText || el.textContent || '').trim().split('\n')[0].trim();
-          if (txt && (txt === view.name || txt.startsWith(view.name))) {
-            return el;
-          }
+        const cleanStr = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+        const targetClean = cleanStr(view.name);
+
+        for (const root of rootsToSearch) {
+          try {
+            const candidates = root.querySelectorAll(
+              'lightning-base-combobox-item, [role="option"], li.slds-listbox__item, div.slds-listbox__option, li.uiMenuItem'
+            );
+            for (let i = 0; i < candidates.length; i++) {
+              const el = candidates[i];
+              if (el.closest && el.closest('.sf-quick-views-wrapper')) continue;
+
+              // 1. Match by authentic Salesforce 00B ID or DeveloperName
+              if (view.id) {
+                const dataVal = el.getAttribute('data-value');
+                if (dataVal && dataVal === view.id) return el;
+
+                const dataItemId = el.getAttribute('data-item-id');
+                if (dataItemId && dataItemId === view.id) return el;
+
+                if (view.id.startsWith('00B')) {
+                  const rowId = extractListViewId(el);
+                  if (rowId === view.id) return el;
+                }
+              }
+
+              // 2. Match by exact or clean label
+              const rawTxt = (el.innerText || el.textContent || '').trim();
+              if (rawTxt) {
+                const line1 = rawTxt.split('\n')[0].replace(/[✕▲▼].*$/, '').trim();
+                if (line1 === view.name || line1.toLowerCase() === view.name.toLowerCase()) {
+                  return el;
+                }
+                if (targetClean && cleanStr(line1) === targetClean) {
+                  return el;
+                }
+              }
+            }
+          } catch (_) {}
         }
         return null;
       };
@@ -6543,7 +6612,7 @@
         // Ensure we only navigate to valid IDs or safe URLs
         let targetUrl = view.url;
         if (!targetUrl || targetUrl.includes('%20') || (view.id && view.id.includes(' '))) {
-          if (view.id && view.id.startsWith('00B')) {
+          if (view.id && (view.id.startsWith('00B') || /^[a-zA-Z0-9_]{3,40}$/.test(view.id))) {
             targetUrl = `/lightning/o/${objectName}/list?filterName=${encodeURIComponent(view.id)}`;
           } else {
             showToast(`Could not determine list view ID for '${view.name}'`);
@@ -6560,8 +6629,10 @@
       }
 
       // Immediately reflect selection in Quick Views UI
-      const allQuickItems = document.querySelectorAll('.sf-quick-item');
-      allQuickItems.forEach((it) => {
+      const quickScope = popover?.getRootNode ? popover.getRootNode() : document;
+      const allQuickItems = quickScope.querySelectorAll ? quickScope.querySelectorAll('.sf-quick-item') : [];
+      for (let i = 0; i < allQuickItems.length; i++) {
+        const it = allQuickItems[i];
         const isMatch = it.dataset.viewName === view.name;
         if (isMatch) {
           it.classList.add('slds-is-selected');
@@ -6574,47 +6645,71 @@
           const ic = it.querySelector('.sf-quick-item-icon');
           if (ic) ic.innerHTML = `<span style="display:inline-block; width:14px; height:14px;"></span>`;
         }
-      });
+      }
 
       // Normal click: 1. Trigger native selection directly in the open dropdown
       if (nativeOption) {
         event.preventDefault();
         event.stopPropagation();
 
-        const clickTarget = nativeOption.matches('[role="option"]')
+        const clickTarget = nativeOption.matches('[role="option"], lightning-base-combobox-item')
           ? nativeOption
-          : nativeOption.querySelector('[role="option"], a, button') || nativeOption;
+          : nativeOption.querySelector('[role="option"], lightning-base-combobox-item, a, button') || nativeOption;
 
         simulateNativeSelection(clickTarget);
         setTimeout(doClose, 250);
         return;
       }
 
-      // Normal click: 2. If not visible in recent items, search the dropdown's search box
-      const searchInput = document.querySelector(
-        'input[placeholder*="Search lists" i], input[placeholder*="Search this list" i], input[placeholder*="Search..." i], input[type="search"].slds-input, input.slds-combobox__input'
-      );
-      if (searchInput && searchInput.offsetParent !== null) {
+      // Normal click: 2. If not visible in rendered items, search the dropdown's combobox input
+      let searchInput = null;
+      const searchRoots = [
+        popover?.getRootNode?.(),
+        popover?.getRootNode?.()?.host?.shadowRoot,
+        popover,
+        document
+      ].filter(Boolean);
+
+      for (const sr of searchRoots) {
+        try {
+          searchInput = sr.querySelector(
+            'input.slds-combobox__input, input[placeholder*="Search lists" i], input[placeholder*="Search this list" i], input[type="search"].slds-input, input.slds-input'
+          );
+          if (searchInput) break;
+        } catch (_) {}
+      }
+
+      if (searchInput) {
         event.preventDefault();
         event.stopPropagation();
 
         searchInput.focus();
-        searchInput.value = view.name;
-        searchInput.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-        searchInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, key: 'Enter' }));
+        try {
+          const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+          if (valueSetter) {
+            valueSetter.call(searchInput, view.name);
+          } else {
+            searchInput.value = view.name;
+          }
+        } catch (_) {
+          searchInput.value = view.name;
+        }
+        searchInput.dispatchEvent(new Event('input', { bubbles: true, cancelable: true, composed: true }));
+        searchInput.dispatchEvent(new Event('change', { bubbles: true, cancelable: true, composed: true }));
+        searchInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, composed: true, key: 'Enter' }));
 
         setTimeout(() => {
           const searchedOption = findNativeOption();
           if (searchedOption) {
-            const clickTarget = searchedOption.matches('[role="option"]')
+            const clickTarget = searchedOption.matches('[role="option"], lightning-base-combobox-item')
               ? searchedOption
-              : searchedOption.querySelector('[role="option"], a, button') || searchedOption;
+              : searchedOption.querySelector('[role="option"], lightning-base-combobox-item, a, button') || searchedOption;
             simulateNativeSelection(clickTarget);
             setTimeout(doClose, 250);
           } else {
             fallbackUrlNavigate();
           }
-        }, 130);
+        }, 180);
         return;
       }
 
@@ -6629,14 +6724,20 @@
           return;
         }
 
-        const targetUrl = `/lightning/o/${objectName}/list?filterName=${encodeURIComponent(filterId)}`;
+        const is00B = typeof filterId === 'string' && /^00B[a-zA-Z0-9]{12,15}$/.test(filterId);
+
         if (window.$A && window.$A.get) {
           const listEvt = window.$A.get('e.force:navigateToList');
           if (listEvt) {
-            listEvt.setParams({ listViewId: filterId, listViewName: null, scope: objectName });
+            listEvt.setParams({
+              listViewId: is00B ? filterId : null,
+              listViewName: !is00B ? filterId : null,
+              scope: objectName
+            });
             listEvt.fire();
             return;
           }
+          const targetUrl = `/lightning/o/${objectName}/list?filterName=${encodeURIComponent(filterId)}`;
           const urlEvt = window.$A.get('e.force:navigateToURL');
           if (urlEvt) {
             urlEvt.setParams({ url: targetUrl });
@@ -6644,6 +6745,8 @@
             return;
           }
         }
+
+        const targetUrl = `/lightning/o/${objectName}/list?filterName=${encodeURIComponent(filterId)}`;
         window.location.assign(targetUrl);
       }
     }
@@ -7512,30 +7615,46 @@
     function getPageListViewTitle(objectName) {
       const normObj = (objectName || '').toLowerCase().trim();
 
-      // 1. Dropdown trigger button title attribute: e.g. "Select a List View: All Open Cases"
-      const btnTriggers = document.querySelectorAll(
-        'button[title*="Select a List View" i], a[title*="Select a List View" i]'
-      );
-      for (const btn of btnTriggers) {
-        const titleAttr = btn.getAttribute('title') || '';
-        const m = titleAttr.match(/Select a List View:\s*(.+)/i);
-        if (m && m[1]) {
-          const name = m[1].trim();
-          if (name && name.toLowerCase() !== normObj && name.toLowerCase() !== `${normObj}s`) {
-            return name;
+      const rootsToSearch = [document];
+      if (typeof trackedShadowRoots !== 'undefined') {
+        for (const sr of trackedShadowRoots) {
+          if (sr && sr.isConnected !== false) {
+            const hTag = (sr.host?.tagName || '').toLowerCase();
+            if (hTag.includes('picker') || hTag.includes('header') || hTag.includes('combobox')) {
+              rootsToSearch.push(sr);
+            }
           }
         }
       }
 
-      // 2. Trigger text inside the header
-      const triggerEls = document.querySelectorAll(
-        '.slds-page-header .triggerLinkText, .forceListViewPicker .triggerLinkText, button.slds-button .triggerLinkText, .slds-page-header__title .triggerLinkText, .slds-page-header__name-title .slds-page-header__title'
-      );
-      for (const el of triggerEls) {
-        const txt = (el.innerText || el.textContent || '').trim();
-        if (txt && txt.toLowerCase() !== normObj && txt.toLowerCase() !== `${normObj}s` && !txt.startsWith('Select a List View')) {
-          return txt;
-        }
+      for (const root of rootsToSearch) {
+        try {
+          // 1. Dropdown trigger button title attribute: e.g. "Select a List View: All Open Cases"
+          const btnTriggers = root.querySelectorAll(
+            'button[title*="Select a List View" i], a[title*="Select a List View" i], button[aria-label*="Select a List View" i], a[aria-label*="Select a List View" i]'
+          );
+          for (const btn of btnTriggers) {
+            const titleAttr = btn.getAttribute('title') || btn.getAttribute('aria-label') || '';
+            const m = titleAttr.match(/Select a List View:\s*(.+)/i);
+            if (m && m[1]) {
+              const name = m[1].trim();
+              if (name && name.toLowerCase() !== normObj && name.toLowerCase() !== `${normObj}s`) {
+                return name;
+              }
+            }
+          }
+
+          // 2. Trigger text inside the header
+          const triggerEls = root.querySelectorAll(
+            '.slds-page-header .triggerLinkText, .forceListViewPicker .triggerLinkText, button.slds-button .triggerLinkText, .slds-page-header__title .triggerLinkText, .slds-page-header__name-title .slds-page-header__title, .listViewPicker .slds-button__label'
+          );
+          for (const el of triggerEls) {
+            const txt = (el.innerText || el.textContent || '').trim();
+            if (txt && txt.toLowerCase() !== normObj && txt.toLowerCase() !== `${normObj}s` && !txt.startsWith('Select a List View')) {
+              return txt;
+            }
+          }
+        } catch (_) {}
       }
 
       // 3. Document title (Salesforce standard format: "<ListViewName> | <ObjectName> | Salesforce")
@@ -7559,7 +7678,7 @@
       // 1. Check if a native option in the dropdown is marked as selected
       if (popover) {
         const nativeSelected = popover.querySelector(
-          '.slds-listbox__item [aria-selected="true"], .slds-listbox__item .slds-is-selected, [role="option"][aria-selected="true"], [role="option"].slds-is-selected'
+          '.slds-listbox__item [aria-selected="true"], .slds-listbox__item [aria-checked="true"], .slds-listbox__item .slds-is-selected, [role="option"][aria-selected="true"], [role="option"][aria-checked="true"], [role="option"].slds-is-selected, lightning-base-combobox-item[aria-checked="true"], lightning-base-combobox-item[aria-selected="true"]'
         );
         if (nativeSelected && !nativeSelected.closest('.sf-quick-views-wrapper')) {
           label = (nativeSelected.innerText || nativeSelected.textContent || '').trim().split('\n')[0].trim();
@@ -7591,6 +7710,9 @@
         const aLabel = activeView.label.toLowerCase().trim();
         if (vName === aLabel) return true;
         if (vName.startsWith(aLabel) || aLabel.startsWith(vName)) return true;
+        const cleanV = vName.replace(/[^a-z0-9]/g, '');
+        const cleanA = aLabel.replace(/[^a-z0-9]/g, '');
+        if (cleanV && cleanA && (cleanV === cleanA || cleanV.startsWith(cleanA) || cleanA.startsWith(cleanV))) return true;
       }
       return false;
     }
@@ -7685,7 +7807,7 @@
         li.appendChild(controls);
 
         li.addEventListener('click', (e) => {
-          onQuickViewItemClick(view, e, objectName);
+          onQuickViewItemClick(view, e, objectName, popover);
         });
 
         ul.appendChild(li);
