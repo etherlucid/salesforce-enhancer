@@ -4,7 +4,7 @@
   const api = typeof browser !== 'undefined' ? browser : chrome;
 
   const DEFAULT_SETTINGS = {
-    version: '1.2.2',
+    version: '1.2.3',
     modules: {
       subtabs: true,
       quickViews: true,

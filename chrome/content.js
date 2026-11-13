@@ -149,7 +149,7 @@
     const hideAppName = raw ? (raw.hideAppName !== undefined ? !!raw.hideAppName : (raw.subtabs && raw.subtabs.hideAppName !== undefined ? !!raw.subtabs.hideAppName : false)) : false;
     if (!raw || typeof raw !== 'object') {
       return {
-        version: '1.2.2',
+        version: '1.2.3',
         modules: { subtabs: true, quickViews: true, linkInterceptor: true, theming: false, loadingAnimation: false },
         subtabs: { hideAppName: false },
         hideAppName: false,
@@ -159,7 +159,7 @@
     }
 
     const res = {
-      version: '1.2.2',
+      version: '1.2.3',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
