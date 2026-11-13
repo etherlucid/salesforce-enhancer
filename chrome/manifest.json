@@ -7,6 +7,9 @@
     "storage",
     "unlimitedStorage"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "host_permissions": [
     "https://*.lightning.force.com/*",
     "https://*.salesforce.com/*",

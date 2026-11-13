@@ -86,6 +86,7 @@
     modules: {
       subtabs: true,
       quickViews: true,
+      linkInterceptor: true,
       theming: false,
       loadingAnimation: false
     },
@@ -112,6 +113,7 @@
   const chkHideAppName = document.getElementById('chkHideAppName');
   const subtabsHideAppNameRow = document.getElementById('subtabsHideAppNameRow');
   const chkModQuickViews = document.getElementById('chkModQuickViews');
+  const chkModLinkInterceptor = document.getElementById('chkModLinkInterceptor');
 
   const chkModTheming = document.getElementById('chkModTheming');
   const themingDesc = document.getElementById('themingDesc');
@@ -185,12 +187,14 @@
     if (loaded.modules && typeof loaded.modules === 'object') {
       res.modules.subtabs = loaded.modules.subtabs !== false;
       res.modules.quickViews = loaded.modules.quickViews !== false;
+      res.modules.linkInterceptor = loaded.modules.linkInterceptor !== false;
       res.modules.theming = !!loaded.modules.theming;
       res.modules.loadingAnimation = loaded.modules.loadingAnimation === true;
     } else {
       // Legacy settings adapter
       res.modules.subtabs = true;
       res.modules.quickViews = true;
+      res.modules.linkInterceptor = true;
       if (loaded.applyToSalesforce === false && !loaded.isDarkMode && (!loaded.theme || loaded.theme === 'classic')) {
         res.modules.theming = false;
       } else if (loaded.theme && loaded.theme !== 'classic') {
@@ -282,6 +286,11 @@
 
     // 2. Quick Views module
     chkModQuickViews.checked = currentSettings.modules.quickViews !== false;
+
+    // 2b. Link Interceptor module
+    if (chkModLinkInterceptor) {
+      chkModLinkInterceptor.checked = currentSettings.modules.linkInterceptor !== false;
+    }
 
     // 3. Theming module
     const isThemingEnabled = !!currentSettings.modules.theming;
@@ -490,6 +499,13 @@
     currentSettings.modules.quickViews = e.target.checked;
     saveAndApply();
   });
+
+  if (chkModLinkInterceptor) {
+    chkModLinkInterceptor.addEventListener('change', (e) => {
+      currentSettings.modules.linkInterceptor = e.target.checked;
+      saveAndApply();
+    });
+  }
 
   chkModTheming.addEventListener('change', (e) => {
     currentSettings.modules.theming = e.target.checked;

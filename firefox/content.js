@@ -150,7 +150,7 @@
     if (!raw || typeof raw !== 'object') {
       return {
         version: '1.2.2',
-        modules: { subtabs: true, quickViews: true, theming: false, loadingAnimation: false },
+        modules: { subtabs: true, quickViews: true, linkInterceptor: true, theming: false, loadingAnimation: false },
         subtabs: { hideAppName: false },
         hideAppName: false,
         theme: { preset: 'classic', customAccent: '#8b5cf6', applyToNavigation: true },
@@ -163,6 +163,7 @@
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
+        linkInterceptor: raw.modules ? raw.modules.linkInterceptor !== false : true,
         theming: raw.modules ? !!raw.modules.theming : (raw.applyToSalesforce === false ? false : !!(raw.theme && raw.theme !== 'classic')),
         loadingAnimation: raw.modules ? raw.modules.loadingAnimation === true : (raw.loadingImage ? raw.loadingImage.enabled === true : false)
       },
@@ -3847,6 +3848,16 @@
       if (message.action === 'applyEnhancerSettings' || message.action === 'applyAppearanceSettings') {
         const s = normalizeSettings(message.settings);
         broadcastSettingsUpdated(s);
+        if (sendResponse) sendResponse({ ok: true });
+      } else if (message.action === 'linkInterceptorOpen' && message.target) {
+        if (!isTopWindow) return;
+        window.postMessage(
+          {
+            __sfEnhancerAction: 'linkInterceptorOpen',
+            target: message.target
+          },
+          '*'
+        );
         if (sendResponse) sendResponse({ ok: true });
       }
     });

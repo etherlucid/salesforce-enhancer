@@ -231,6 +231,7 @@
     modules: {
       subtabs: true,
       quickViews: true,
+      linkInterceptor: true,
       theming: false,
       loadingAnimation: false
     },
@@ -264,6 +265,7 @@
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
+        linkInterceptor: raw.modules ? raw.modules.linkInterceptor !== false : true,
         theming: raw.modules ? !!raw.modules.theming : (raw.applyToSalesforce === false ? false : !!(raw.theme && raw.theme !== 'classic')),
         loadingAnimation: raw.modules ? raw.modules.loadingAnimation === true : (raw.loadingImage ? raw.loadingImage.enabled === true : false)
       },
@@ -8524,6 +8526,14 @@
     window.addEventListener('message', (event) => {
       try {
         if (!event.data) return;
+        if (
+          event.data.__sfEnhancerAction === 'linkInterceptorOpen' &&
+          event.data.target &&
+          (event.source === window || (event.origin && isAllowedSalesforceOrigin(event.origin)))
+        ) {
+          openTargetAsPrimaryTab(event.data.target, { focus: true });
+          return;
+        }
         if (
           (event.data.__sfEnhancerAction === 'settingsUpdated' || event.data.__sfAppearanceAction === 'applySettings') &&
           event.data.settings
