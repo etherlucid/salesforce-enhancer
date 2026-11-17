@@ -180,14 +180,16 @@
       return null;
     }
 
-    // 1. Standard Lightning Experience URLs (/lightning/r/..., /o/..., /n/..., /cmp/..., /page/..., /app/...)
+    // 1. Standard Lightning Experience & Knowledge Article URLs (/lightning/r|o|n|cmp|page|app|articles/..., /articles/...)
     if (
       lowerPath.startsWith('/lightning/r/') ||
       lowerPath.startsWith('/lightning/o/') ||
       lowerPath.startsWith('/lightning/n/') ||
       lowerPath.startsWith('/lightning/cmp/') ||
       lowerPath.startsWith('/lightning/page/') ||
-      lowerPath.startsWith('/lightning/app/')
+      lowerPath.startsWith('/lightning/app/') ||
+      lowerPath.startsWith('/lightning/articles/') ||
+      lowerPath.startsWith('/articles/')
     ) {
       const cleanParams = new URLSearchParams(parsed.search);
       cleanParams.delete('ws');
