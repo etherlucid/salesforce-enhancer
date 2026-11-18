@@ -2,13 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Custom GIF Uploader - Salesforce Enhancer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Salesforce Enhancer</title>
   <style>
     :root {
       --primary: #0176d3;
       --primary-hover: #014486;
+      --primary-contrast: #ffffff;
       --bg: #ffffff;
+      --page-bg: #f8fafc;
+      --sidebar-bg: #ffffff;
       --surface: #f8fafc;
+      --surface-hover: #f1f5f9;
       --text: #0f172a;
       --subtext: #64748b;
       --border: #e2e8f0;
@@ -20,432 +25,1315 @@
       --error-bg: #fef2f2;
       --error-border: #fecaca;
     }
+
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
+
     body {
-      width: 100%;
       min-height: 100vh;
-      background: #f1f5f9;
+      background: var(--page-bg);
       color: var(--text);
-      font-size: 13px;
-      line-height: 1.4;
-      padding: 32px 16px;
+      font-size: 13.5px;
+      line-height: 1.45;
+      display: flex;
     }
-    .page-card {
-      max-width: 660px;
-      margin: 0 auto;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 24px 28px;
-      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+
+    /* App Shell Layout */
+    .app-sidebar {
+      width: 260px;
+      flex-shrink: 0;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 20px 14px;
     }
-    .page-tabs {
+
+    .brand-header {
       display: flex;
-      gap: 6px;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 12px;
-      margin-bottom: 16px;
-    }
-    .page-tab-btn {
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      border: 1px solid var(--border);
-      background: var(--surface);
-      color: var(--subtext);
-      cursor: pointer;
-    }
-    .page-tab-btn.active {
-      background: var(--primary);
-      color: #ffffff;
-      border-color: var(--primary);
-    }
-    .mod-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-bottom: 14px;
-    }
-    .mod-item {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
+      align-items: center;
       gap: 10px;
-      padding: 9px 11px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 6px;
+      padding: 4px 8px 16px 8px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border);
     }
-    .mod-item-left {
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
+
+    .brand-logo {
+      width: 30px;
+      height: 30px;
+      border-radius: 7px;
+      flex-shrink: 0;
+    }
+
+    .brand-meta {
       min-width: 0;
       flex: 1;
     }
-    .mod-item-left input[type="checkbox"] {
-      margin-top: 2px;
-      cursor: pointer;
-      accent-color: var(--primary);
-    }
-    .mod-item-title {
-      font-size: 13px;
+
+    .brand-title {
+      font-size: 14.5px;
       font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    .brand-version {
+      display: inline-block;
+      margin-top: 2px;
+      font-size: 10.5px;
+      font-weight: 600;
+      color: var(--subtext);
+    }
+
+    .nav-group {
+      margin-bottom: 18px;
+    }
+
+    .nav-group-label {
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--subtext);
+      padding: 0 10px;
+      margin-bottom: 6px;
+    }
+
+    .nav-item {
+      width: 100%;
       display: flex;
       align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 10px;
+      margin-bottom: 2px;
+      border: none;
+      border-radius: 7px;
+      background: transparent;
+      color: #334155;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.14s ease, color 0.14s ease;
     }
-    .mod-item-tag {
-      font-size: 10px;
+
+    .nav-item:hover {
+      background: var(--surface-hover);
+      color: var(--text);
+    }
+
+    .nav-item.active {
+      background: rgba(1, 118, 211, 0.1);
+      color: var(--primary);
       font-weight: 600;
-      padding: 1px 6px;
-      border-radius: 4px;
-      background: #ffffff;
-      color: #475569;
-      border: 1px solid var(--border);
     }
-    .mod-item-desc {
-      font-size: 11px;
-      color: var(--subtext);
-      margin-top: 2px;
-    }
-    .mod-item-actions {
+
+    .nav-item-left {
       display: flex;
-      gap: 5px;
-      flex-shrink: 0;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
     }
-    .header {
+
+    .nav-badge {
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: var(--surface-hover);
+      color: #475569;
+    }
+
+    .nav-item.active .nav-badge {
+      background: var(--primary);
+      color: var(--primary-contrast);
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* Main Content Workspace */
+    .app-main {
+      flex: 1;
+      min-width: 0;
+      padding: 32px 44px 48px 44px;
+      max-width: 1180px;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding-bottom: 18px;
+      margin-bottom: 22px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .page-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.015em;
+    }
+
+    .page-subtitle {
+      font-size: 13px;
+      color: var(--subtext);
+      margin-top: 3px;
+    }
+
+    .page-header-actions {
       display: flex;
       align-items: center;
       gap: 10px;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
     }
-    .header-icon {
-      font-size: 26px;
-      line-height: 1;
-    }
-    .header-title {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--text);
-    }
-    .header-subtitle {
-      font-size: 12px;
-      color: var(--subtext);
-      margin-top: 2px;
-    }
-    .dropzone {
-      border: 2px dashed var(--border-dark);
-      border-radius: 8px;
-      background: var(--surface);
-      padding: 22px 16px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      margin-bottom: 12px;
-      user-select: none;
-    }
-    .dropzone:hover, .dropzone.dragover {
-      border-color: var(--primary);
-      background: rgba(1, 118, 211, 0.05);
-    }
-    .dropzone-icon {
-      font-size: 30px;
-      margin-bottom: 6px;
-    }
-    .dropzone-text {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text);
-      margin-bottom: 3px;
-    }
-    .dropzone-subtext {
-      font-size: 11px;
-      color: var(--subtext);
-    }
-    .or-divider {
-      display: flex;
-      align-items: center;
-      text-align: center;
-      margin: 8px 0 12px 0;
-      color: var(--subtext);
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .or-divider::before, .or-divider::after {
-      content: '';
-      flex: 1;
-      border-bottom: 1px solid var(--border);
-    }
-    .or-divider span {
-      padding: 0 10px;
-    }
-    .url-row {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 14px;
-    }
-    .url-input {
-      flex: 1;
-      padding: 7px 10px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-size: 12px;
-      outline: none;
-      transition: border-color 0.15s ease;
-    }
-    .url-input:focus {
-      border-color: var(--primary);
-    }
-    .btn {
-      padding: 7px 14px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      border: 1px solid transparent;
-      transition: all 0.15s ease;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-    }
-    .btn-primary {
-      background: var(--primary);
-      color: #ffffff;
-    }
-    .btn-primary:hover {
-      background: var(--primary-hover);
-    }
-    .btn-neutral {
-      background: #ffffff;
-      color: var(--text);
-      border-color: var(--border);
-    }
-    .btn-neutral:hover {
-      background: #f1f5f9;
-      border-color: var(--border-dark);
-    }
-    .preview-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 14px;
-    }
-    .preview-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 8px;
-    }
-    .preview-title {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--subtext);
-    }
-    .preview-file-info {
-      font-size: 11px;
-      color: var(--subtext);
-      max-width: 220px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .preview-box {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 96px;
-      background: #ffffff;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      position: relative;
-      overflow: hidden;
-    }
-    .preview-box-empty {
-      font-size: 12px;
-      color: var(--subtext);
-      font-style: italic;
-    }
-    .preview-img {
-      max-height: 80px;
-      max-width: 90%;
-      object-fit: contain;
-    }
-    @keyframes spin-preview {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-    .options-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-top: 10px;
-      padding-top: 8px;
-      border-top: 1px solid var(--border);
-      font-size: 12px;
-    }
-    .size-btn-group {
-      display: flex;
-      gap: 4px;
-    }
-    .size-btn {
-      padding: 3px 8px;
-      border: 1px solid var(--border);
-      background: #ffffff;
-      border-radius: 4px;
-      font-size: 11px;
-      cursor: pointer;
-      color: var(--text);
-    }
-    .size-btn.active {
-      background: var(--primary);
-      color: #ffffff;
-      border-color: var(--primary);
-      font-weight: 600;
-    }
-    .rotate-label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      color: var(--text);
-      cursor: pointer;
-    }
-    .status-msg {
-      font-size: 12px;
-      padding: 9px 12px;
-      border-radius: 6px;
-      margin-bottom: 12px;
+
+    .page-section {
       display: none;
-      animation: fadeIn 0.2s ease;
     }
+
+    .page-section.active {
+      display: block;
+    }
+
+    /* Status Notification Banner */
+    .status-msg {
+      font-size: 12.5px;
+      font-weight: 500;
+      padding: 10px 14px;
+      border-radius: 8px;
+      margin-bottom: 18px;
+      display: none;
+    }
+
     .status-msg.success {
       display: block;
       background: var(--success-bg);
       color: #065f46;
       border: 1px solid var(--success-border);
     }
+
     .status-msg.error {
       display: block;
       background: var(--error-bg);
       color: #991b1b;
       border: 1px solid var(--error-border);
     }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(-4px); }
-      to { opacity: 1; transform: translateY(0); }
+
+    /* Buttons */
+    .btn {
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.14s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      white-space: nowrap;
     }
-    .actions {
+
+    .btn-primary {
+      background: var(--primary);
+      color: var(--primary-contrast);
+    }
+
+    .btn-primary:hover {
+      filter: brightness(0.92);
+    }
+
+    .btn-neutral {
+      background: #ffffff;
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .btn-neutral:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-dark);
+    }
+
+    .btn-danger-ghost {
+      background: #ffffff;
+      color: #64748b;
+      border-color: var(--border);
+    }
+
+    .btn-danger-ghost:hover {
+      background: #fef2f2;
+      color: #b91c1c;
+      border-color: #fca5a5;
+    }
+
+    .btn-sm {
+      padding: 5px 10px;
+      font-size: 11.5px;
+    }
+
+    /* Switch */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 38px;
+      height: 21px;
+      flex-shrink: 0;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #cbd5e1;
+      transition: 0.18s;
+      border-radius: 21px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 15px;
+      width: 15px;
+      left: 3px;
+      bottom: 3px;
+      background-color: #ffffff;
+      transition: 0.18s;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+
+    input:checked + .slider {
+      background-color: var(--primary);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(17px);
+    }
+
+    /* Cards & Surface Panels */
+    .panel-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+    }
+
+    .panel-card-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .panel-card-desc {
+      font-size: 12px;
+      color: var(--subtext);
+      margin-bottom: 14px;
+    }
+
+    /* Plugins Toolbar & Grid */
+    .plugins-controls-bar {
       display: flex;
       align-items: center;
-      justify-content: flex-end;
-      gap: 10px;
-      margin-top: auto;
-      padding-top: 14px;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .search-input {
+      width: 320px;
+      max-width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #ffffff;
+      font-size: 13px;
+      color: var(--text);
+      outline: none;
+    }
+
+    .search-input:focus {
+      border-color: var(--primary);
+    }
+
+    .filter-pills {
+      display: flex;
+      gap: 6px;
+      background: #f1f5f9;
+      padding: 3px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+    }
+
+    .filter-pill {
+      padding: 5px 11px;
+      border: none;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--subtext);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .filter-pill.active {
+      background: #ffffff;
+      color: var(--text);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+    }
+
+    .plugins-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 14px;
+    }
+
+    .plugin-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 12px;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .plugin-card:hover {
+      border-color: var(--border-dark);
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+    }
+
+    .plugin-card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .plugin-title-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .plugin-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .tag-pill {
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 1px 7px;
+      border-radius: 5px;
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid var(--border);
+    }
+
+    .plugin-desc {
+      font-size: 12px;
+      color: var(--subtext);
+      margin-top: 6px;
+      line-height: 1.45;
+    }
+
+    .plugin-card-footer {
+      padding-top: 10px;
       border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12px;
+    }
+
+    .sub-check-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      color: #334155;
+      font-weight: 500;
+    }
+
+    .sub-check-label input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    /* Two-column Workspace for Dedicated Pages */
+    .split-layout {
+      display: grid;
+      grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .split-layout-reverse {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+      gap: 20px;
+      align-items: start;
+    }
+
+    @media (max-width: 960px) {
+      body {
+        flex-direction: column;
+      }
+      .app-sidebar {
+        width: 100%;
+        height: auto;
+        position: static;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+      .app-main {
+        padding: 22px 18px;
+      }
+      .split-layout,
+      .split-layout-reverse {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Dropzone */
+    .dropzone {
+      border: 2px dashed var(--border-dark);
+      border-radius: 9px;
+      background: var(--surface);
+      padding: 28px 18px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.16s ease;
+      user-select: none;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--primary);
+      background: rgba(1, 118, 211, 0.05);
+    }
+
+    .dropzone-icon {
+      font-size: 28px;
+      margin-bottom: 6px;
+    }
+
+    .dropzone-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 3px;
+    }
+
+    .dropzone-sub {
+      font-size: 11.5px;
+      color: var(--subtext);
+    }
+
+    /* Custom Plugin Editor & List */
+    .installed-mods-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .mod-row-card {
+      padding: 11px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      transition: border-color 0.14s ease, background 0.14s ease;
+    }
+
+    .mod-row-card.selected {
+      border-color: var(--primary);
+      background: rgba(1, 118, 211, 0.05);
+    }
+
+    .mod-row-main {
+      min-width: 0;
+      flex: 1;
+      cursor: pointer;
+    }
+
+    .mod-row-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .mod-row-desc {
+      font-size: 11.5px;
+      color: var(--subtext);
+      margin-top: 3px;
+    }
+
+    .mod-row-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .editor-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .json-textarea {
+      width: 100%;
+      min-height: 430px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      resize: vertical;
+      outline: none;
+    }
+
+    .json-textarea:focus {
+      border-color: var(--primary);
+    }
+
+    .schema-summary {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 7px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--subtext);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+
+    .schema-summary strong {
+      color: var(--text);
+    }
+
+    /* Loading Animation Studio */
+    .preset-gif-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .gif-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 8px;
+      text-align: center;
+      cursor: pointer;
+      background: #ffffff;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+
+    .gif-card:hover {
+      border-color: var(--border-dark);
+      background: var(--surface);
+    }
+
+    .gif-card.active {
+      border-color: var(--primary);
+      background: rgba(1, 118, 211, 0.08);
+      font-weight: 700;
+    }
+
+    .gif-card-thumb {
+      width: 40px;
+      height: 40px;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto 6px auto;
+    }
+
+    .gif-card-name {
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .url-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .url-input {
+      flex: 1;
+      padding: 8px 11px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 12.5px;
+      outline: none;
+    }
+
+    .url-input:focus {
+      border-color: var(--primary);
+    }
+
+    .stage-preview-box {
+      height: 240px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: repeating-conic-gradient(#f8fafc 0% 25%, #ffffff 0% 50%) 50% / 18px 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      overflow: hidden;
+      padding: 20px;
+    }
+
+    .stage-preview-img {
+      object-fit: contain;
+    }
+
+    .stage-preview-empty {
+      font-size: 12.5px;
+      color: var(--subtext);
+    }
+
+    @keyframes spin-preview {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .size-btn-group {
+      display: flex;
+      gap: 6px;
+    }
+
+    .size-btn {
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      border-radius: 5px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--text);
+    }
+
+    .size-btn.active {
+      background: var(--primary);
+      color: var(--primary-contrast);
+      border-color: var(--primary);
+      font-weight: 600;
+    }
+
+    /* Themes Studio */
+    .theme-preview-banner {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 18px;
+      background: #ffffff;
+    }
+
+    .theme-preview-topbar {
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 3px solid var(--primary);
+      font-size: 12.5px;
+      font-weight: 600;
+    }
+
+    .theme-preview-tabs {
+      display: flex;
+      gap: 8px;
+    }
+
+    .theme-preview-tab {
+      padding: 4px 10px;
+      border-radius: 5px;
+      font-size: 11.5px;
+      border: 1px solid rgba(128, 128, 128, 0.25);
+    }
+
+    .theme-preview-body {
+      padding: 14px 16px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .themes-grid-large {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .theme-chip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      cursor: pointer;
+      background: #ffffff;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.14s ease;
+      user-select: none;
+    }
+
+    .theme-chip:hover {
+      border-color: var(--border-dark);
+      background: var(--surface);
+    }
+
+    .theme-chip.active {
+      border-color: var(--primary);
+      background: rgba(1, 118, 211, 0.08);
+    }
+
+    .theme-chip-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .theme-swatch-pair {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .dot-bg, .dot-accent {
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 0, 0, 0.16);
+    }
+
+    .custom-color-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding: 10px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .custom-color-row input[type="color"] {
+      width: 36px;
+      height: 28px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      cursor: pointer;
+      padding: 0;
+      background: none;
+    }
+
+    .custom-color-row input[type="text"] {
+      width: 130px;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }
   </style>
 </head>
 <body>
-  <div class="page-card">
-    <div class="page-tabs">
-      <button type="button" class="page-tab-btn" id="tabBtnMods">🧩 Custom Plugins</button>
-      <button type="button" class="page-tab-btn" id="tabBtnGif">🎬 Loading Animation</button>
+  <!-- Left Sidebar Navigation -->
+  <aside class="app-sidebar">
+    <div class="brand-header">
+      <img src="icons/icon-48.png" alt="Salesforce Enhancer" class="brand-logo">
+      <div class="brand-meta">
+        <div class="brand-title">Salesforce Enhancer</div>
+        <span class="brand-version">v1.3.0-alpha.3</span>
+      </div>
     </div>
 
-    <div class="header">
-      <span class="header-icon" id="headerIcon">🎬</span>
+    <div class="nav-group">
+      <div class="nav-group-label">Extension</div>
+      <button type="button" class="nav-item active" data-nav-page="plugins" id="navBtnPlugins">
+        <span class="nav-item-left">
+          <span>Plugins</span>
+        </span>
+        <span class="nav-badge" id="pluginsActiveCountPill">3</span>
+      </button>
+      <button type="button" class="nav-item" data-nav-page="themes" id="navBtnThemes">
+        <span class="nav-item-left">
+          <span>Themes</span>
+        </span>
+      </button>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Import &amp; Media</div>
+      <button type="button" class="nav-item" data-nav-page="import-plugin" id="navBtnImportPlugin">
+        <span class="nav-item-left">
+          <span>Custom Plugins</span>
+        </span>
+        <span class="nav-badge" id="customModsCountPill">0</span>
+      </button>
+      <button type="button" class="nav-item" data-nav-page="loading-animation" id="navBtnLoadingAnimation">
+        <span class="nav-item-left">
+          <span>Loading Animation</span>
+        </span>
+      </button>
+    </div>
+
+    <div class="sidebar-footer">
+      <button type="button" class="btn btn-neutral" id="btnReset" style="width:100%;">Reset Defaults</button>
+    </div>
+  </aside>
+
+  <!-- Main Workspace -->
+  <main class="app-main">
+    <div class="page-header">
       <div>
-        <div class="header-title" id="headerTitle">Custom Loading Animation</div>
-        <div class="header-subtitle" id="headerSubtitle">Select an animated GIF or image to display during Salesforce load states.</div>
+        <h1 class="page-title" id="activePageTitle">Plugins</h1>
+        <p class="page-subtitle" id="activePageSubtitle">Enable, configure, and search Salesforce Enhancer plugins.</p>
+      </div>
+      <div class="page-header-actions" id="pageHeaderActions">
+        <button type="button" class="btn btn-primary" id="btnHeaderImportMod">+ Import Plugin</button>
       </div>
     </div>
 
     <div class="status-msg" id="statusMsg"></div>
 
-    <!-- Big Clickable & Draggable Dropzone -->
-    <div class="dropzone" id="dropzone">
-      <div class="dropzone-icon">📁</div>
-      <div class="dropzone-text" id="dropzoneText">Click to choose a file or drag & drop here</div>
-      <div class="dropzone-subtext" id="dropzoneSubtext">Supports .gif, .png, .jpg, .webp, .svg</div>
-    </div>
-    <input type="file" id="uploaderFileInput" accept="image/*" style="display:none;">
-
-    <div id="gifControlsSection">
-      <div class="or-divider">
-        <span>OR ENTER URL</span>
+    <!-- PAGE 1: PLUGINS -->
+    <section class="page-section active" id="pagePlugins">
+      <div class="plugins-controls-bar">
+        <input type="text" class="search-input" id="txtSearchPlugins" placeholder="Search plugins...">
+        <div class="filter-pills">
+          <button type="button" class="filter-pill active" data-filter="all">All</button>
+          <button type="button" class="filter-pill" data-filter="enabled">Enabled</button>
+          <button type="button" class="filter-pill" data-filter="builtin">Built-in</button>
+          <button type="button" class="filter-pill" data-filter="custom">Custom</button>
+        </div>
       </div>
 
-      <div class="url-row">
-        <input type="text" id="uploaderUrlInput" class="url-input" placeholder="https://example.com/animation.gif">
-        <button type="button" class="btn btn-neutral" id="btnLoadUrl">Load URL</button>
+      <div class="plugins-grid" id="pluginsGrid">
+        <!-- Subtabs & Shortcuts -->
+        <div class="plugin-card" data-plugin-kind="builtin" data-plugin-search="subtabs shortcuts tabs workspace service console">
+          <div class="plugin-card-head">
+            <div>
+              <div class="plugin-title-row">
+                <span class="plugin-name">Subtabs &amp; Shortcuts</span>
+                <span class="tag-pill">Built-in</span>
+              </div>
+              <div class="plugin-desc">
+                Alt+Click opens records as subtabs; Cmd/Ctrl+Click opens workspaces. Drag-and-drop tabs to convert between workspaces and subtabs.
+              </div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="chkModSubtabs" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="plugin-card-footer">
+            <label class="sub-check-label">
+              <input type="checkbox" id="chkHideAppName">
+              <span>Hide "Service Console" app label</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Link Interceptor -->
+        <div class="plugin-card" data-plugin-kind="builtin" data-plugin-search="link interceptor external urls tabs routing">
+          <div class="plugin-card-head">
+            <div>
+              <div class="plugin-title-row">
+                <span class="plugin-name">Link Interceptor</span>
+                <span class="tag-pill">Built-in</span>
+              </div>
+              <div class="plugin-desc">
+                Open external Salesforce links inside your active Salesforce Console tab instead of spawning duplicate browser tabs.
+              </div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="chkModLinkInterceptor" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Quick Views -->
+        <div class="plugin-card" data-plugin-kind="builtin" data-plugin-search="quick views pin list switcher">
+          <div class="plugin-card-head">
+            <div>
+              <div class="plugin-title-row">
+                <span class="plugin-name">Quick Views</span>
+                <span class="tag-pill">Built-in</span>
+              </div>
+              <div class="plugin-desc">
+                Pin favorite list views to the top of the List View Switcher dropdown with reordering and A–Z sorting.
+              </div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="chkModQuickViews" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Loading Animation -->
+        <div class="plugin-card" data-plugin-kind="builtin" data-plugin-search="loading animation spinner gif parrot nyan image upload">
+          <div class="plugin-card-head">
+            <div>
+              <div class="plugin-title-row">
+                <span class="plugin-name">Loading Animation</span>
+                <span class="tag-pill">Built-in</span>
+              </div>
+              <div class="plugin-desc">
+                Replace the default Salesforce spinner with an animated GIF or custom image.
+              </div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="chkModLoading">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="plugin-card-footer">
+            <span id="pluginCardGifStatus" style="color:var(--subtext);">Preset: Party Parrot</span>
+            <button type="button" class="btn btn-neutral btn-sm" id="btnOpenGifStudio">Upload / Configure →</button>
+          </div>
+        </div>
       </div>
 
-      <!-- Live Preview Card -->
-      <div class="preview-card">
-        <div class="preview-header">
-          <span class="preview-title">Live Preview</span>
-          <span class="preview-file-info" id="previewFileInfo">No image selected</span>
+      <div id="customPluginsSectionWrap" style="margin-top: 22px; display: none;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px;">
+          <h2 style="font-size: 14px; font-weight: 700;">Custom Plugins</h2>
+          <button type="button" class="btn btn-neutral btn-sm" id="btnGoCustomImporter">Manage &amp; Import →</button>
         </div>
-        <div class="preview-box" id="previewBox">
-          <span class="preview-box-empty" id="previewEmpty">No custom image loaded</span>
-          <img src="" id="previewImg" class="preview-img" style="display:none;" alt="Loading Preview">
+        <div class="plugins-grid" id="overviewCustomModsGrid"></div>
+      </div>
+    </section>
+
+    <!-- PAGE 2: THEMES -->
+    <section class="page-section" id="pageThemes">
+      <div class="panel-card" style="margin-bottom: 18px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px;">
+          <div>
+            <div class="panel-card-title">Developer Themes</div>
+            <div class="panel-card-desc" id="themingDesc" style="margin-bottom:0;">Disabled. Native Salesforce theme active.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="chkModTheming">
+            <span class="slider"></span>
+          </label>
         </div>
 
-        <div class="options-row">
-          <div style="display:flex; align-items:center; gap:6px;">
-            <span style="font-size:11px; color:var(--subtext); font-weight:600;">SIZE:</span>
-            <div class="size-btn-group" id="sizeBtnGroup">
-              <button type="button" class="size-btn" data-size="48">48px</button>
-              <button type="button" class="size-btn active" data-size="64">64px</button>
-              <button type="button" class="size-btn" data-size="96">96px</button>
-              <button type="button" class="size-btn" data-size="128">128px</button>
+        <div class="theme-preview-banner" id="themePreviewBanner">
+          <div class="theme-preview-topbar" id="themePreviewTopbar">
+            <span>Salesforce Lightning Console Preview</span>
+            <div class="theme-preview-tabs">
+              <span class="theme-preview-tab" id="themePreviewActiveTab">Active Record Tab</span>
+              <span class="theme-preview-tab">Related Case</span>
+            </div>
+          </div>
+          <div class="theme-preview-body" id="themePreviewBody">
+            <span id="themePreviewLabel">Theme color preview across headers and console navigation bars.</span>
+            <span id="themePreviewBadge" style="padding:3px 9px; border-radius:999px; font-size:11px; font-weight:700;">Accent</span>
+          </div>
+        </div>
+
+        <div class="themes-grid-large" id="themesGrid">
+          <div class="theme-chip" data-theme="gruvbox-dark">
+            <div class="theme-chip-left">
+              <div class="theme-swatch-pair">
+                <span class="dot-bg" style="background:#282828;"></span>
+                <span class="dot-accent" style="background:#fe8019;"></span>
+              </div>
+              <span>Gruvbox Dark</span>
+            </div>
+          </div>
+          <div class="theme-chip" data-theme="gruvbox-light">
+            <div class="theme-chip-left">
+              <div class="theme-swatch-pair">
+                <span class="dot-bg" style="background:#fbf1c7;"></span>
+                <span class="dot-accent" style="background:#af3a03;"></span>
+              </div>
+              <span>Gruvbox Light</span>
+            </div>
+          </div>
+          <div class="theme-chip" data-theme="solarized-dark">
+            <div class="theme-chip-left">
+              <div class="theme-swatch-pair">
+                <span class="dot-bg" style="background:#002b36;"></span>
+                <span class="dot-accent" style="background:#268bd2;"></span>
+              </div>
+              <span>Solarized Dark</span>
+            </div>
+          </div>
+          <div class="theme-chip" data-theme="solarized-light">
+            <div class="theme-chip-left">
+              <div class="theme-swatch-pair">
+                <span class="dot-bg" style="background:#fdf6e3;"></span>
+                <span class="dot-accent" style="background:#2aa198;"></span>
+              </div>
+              <span>Solarized Light</span>
+            </div>
+          </div>
+          <div class="theme-chip" data-theme="nord">
+            <div class="theme-chip-left">
+              <div class="theme-swatch-pair">
+                <span class="dot-bg" style="background:#2e3440;"></span>
+                <span class="dot-accent" style="background:#88c0d0;"></span>
+              </div>
+              <span>Nord</span>
+            </div>
+          </div>
+          <div class="theme-chip" data-theme="dracula">
+            <div class="theme-chip-left">
+              <div class="theme-swatch-pair">
+                <span class="dot-bg" style="background:#282a36;"></span>
+                <span class="dot-accent" style="background:#bd93f9;"></span>
+              </div>
+              <span>Dracula</span>
+            </div>
+          </div>
+          <div class="theme-chip" data-theme="one-dark">
+            <div class="theme-chip-left">
+              <div class="theme-swatch-pair">
+                <span class="dot-bg" style="background:#21252b;"></span>
+                <span class="dot-accent" style="background:#61afef;"></span>
+              </div>
+              <span>One Dark</span>
+            </div>
+          </div>
+          <div class="theme-chip" data-theme="classic">
+            <div class="theme-chip-left">
+              <div class="theme-swatch-pair">
+                <span class="dot-bg" style="background:#ffffff;"></span>
+                <span class="dot-accent" style="background:#0176d3;"></span>
+              </div>
+              <span>Classic SF</span>
+            </div>
+          </div>
+          <div class="theme-chip" data-theme="custom">
+            <div class="theme-chip-left">
+              <div class="theme-swatch-pair">
+                <span class="dot-bg" style="background:#ffffff;"></span>
+                <span class="dot-accent" id="customChipDot" style="background:#8b5cf6;"></span>
+              </div>
+              <span>Custom</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="custom-color-row" id="customColorRow" style="display:none;">
+          <span style="font-size:12px; font-weight:600; color:var(--subtext);">Custom Accent:</span>
+          <input type="color" id="customColorPicker" value="#8b5cf6">
+          <input type="text" id="customColorHex" value="#8b5cf6" placeholder="#8b5cf6">
+        </div>
+
+        <label class="sub-check-label">
+          <input type="checkbox" id="chkApplyNavigation" checked>
+          <span>Apply accent bar to navigation &amp; workspace tabs</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- PAGE 3: CUSTOM PLUGIN IMPORTER (.mod.json) -->
+    <section class="page-section" id="pageImportPlugin">
+      <div class="split-layout">
+        <!-- Left Column: Upload & Installed Plugins -->
+        <div style="display:flex; flex-direction:column; gap:16px;">
+          <div class="panel-card">
+            <div class="panel-card-title">Upload Plugin File</div>
+            <div class="panel-card-desc">Import a declarative `.mod.json` plugin configuration from disk.</div>
+            <div class="dropzone" id="modDropzone">
+              <div class="dropzone-icon">🧩</div>
+              <div class="dropzone-title">Drop a `.mod.json` file here</div>
+              <div class="dropzone-sub">or click to choose from Finder (.mod.json, .json)</div>
+            </div>
+            <input type="file" id="modFileInput" accept=".json,application/json" style="display:none;">
+          </div>
+
+          <div class="panel-card">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+              <div>
+                <div class="panel-card-title" style="margin-bottom:0;">Installed Custom Plugins</div>
+              </div>
+              <button type="button" class="btn btn-neutral btn-sm" id="btnExportAllMods" style="display:none;">Export All</button>
+            </div>
+            <div class="installed-mods-stack" id="pageInstalledModsList"></div>
+          </div>
+        </div>
+
+        <!-- Right Column: Full JSON Editor -->
+        <div class="panel-card">
+          <div class="editor-toolbar">
+            <div>
+              <div class="panel-card-title" id="editorTitleLabel">Plugin JSON Editor</div>
+              <div class="panel-card-desc" id="editorSubtitleLabel" style="margin-bottom:0;">Select an installed plugin or paste JSON to install/update.</div>
+            </div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button type="button" class="btn btn-neutral btn-sm" id="btnLoadModTemplate">Template</button>
+              <button type="button" class="btn btn-neutral btn-sm" id="btnFormatModJson">Format</button>
+              <button type="button" class="btn btn-neutral btn-sm" id="btnDownloadEditorMod">Download</button>
+              <button type="button" class="btn btn-primary btn-sm" id="btnSaveModJson">Save &amp; Install</button>
             </div>
           </div>
 
-          <label class="rotate-label">
-            <input type="checkbox" id="chkRotate">
-            <span>Spin while loading</span>
-          </label>
+          <textarea id="modJsonTextarea" class="json-textarea" spellcheck="false" placeholder="Paste or edit .mod.json content here..."></textarea>
+
+          <div class="schema-summary" id="modSchemaSummary">
+            <span>Status: <strong>Ready</strong></span>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div id="modControlsSection" style="display:none; flex-direction:column;">
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
-        <span class="preview-title">Installed Custom Plugins</span>
-        <button type="button" class="btn btn-neutral" id="btnExportAllMods" style="padding:4px 8px; font-size:11px; display:none;">Export All</button>
+    <!-- PAGE 4: LOADING ANIMATION STUDIO (GIF / Image Uploader) -->
+    <section class="page-section" id="pageLoadingAnimation">
+      <div class="split-layout-reverse">
+        <!-- Left Column: Presets, File Upload & URL -->
+        <div style="display:flex; flex-direction:column; gap:16px;">
+          <div class="panel-card">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px;">
+              <div>
+                <div class="panel-card-title">Preset Animations</div>
+                <div class="panel-card-desc" style="margin-bottom:0;">Choose a built-in spinner or switch to a custom uploaded image.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="chkModLoadingStudio">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="preset-gif-grid" id="presetGifGrid">
+              <div class="gif-card" data-preset="spinner" data-url="">
+                <div class="gif-card-thumb" style="display:flex; align-items:center; justify-content:center; font-size:22px; line-height:40px;">🔄</div>
+                <div class="gif-card-name">Default</div>
+              </div>
+              <div class="gif-card" data-preset="parrot" data-url="parrot.gif">
+                <img src="parrot.gif" class="gif-card-thumb" alt="Party Parrot">
+                <div class="gif-card-name">Parrot</div>
+              </div>
+              <div class="gif-card" data-preset="nyan" data-url="nyan.gif">
+                <img src="nyan.gif" class="gif-card-thumb" alt="Nyan Cat">
+                <div class="gif-card-name">Nyan Cat</div>
+              </div>
+              <div class="gif-card" data-preset="custom" id="cardCustomGif">
+                <div class="gif-card-thumb" id="customCardIcon" style="display:flex; align-items:center; justify-content:center; font-size:26px; line-height:40px; font-weight:700; color:var(--primary);">+</div>
+                <img src="" id="customCardThumb" class="gif-card-thumb" style="display:none;" alt="Custom Image">
+                <div class="gif-card-name">Custom</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-title">Upload Custom Image / GIF</div>
+            <div class="panel-card-desc">Supports .gif, .png, .jpg, .webp, and .svg files.</div>
+
+            <div class="dropzone" id="gifDropzone">
+              <div class="dropzone-icon">📁</div>
+              <div class="dropzone-title">Drop an image or GIF here</div>
+              <div class="dropzone-sub">or click to choose from Finder</div>
+            </div>
+            <input type="file" id="gifFileInput" accept="image/*" style="display:none;">
+
+            <div style="margin-top: 14px;">
+              <div style="font-size:12px; font-weight:600; color:var(--subtext); margin-bottom:6px;">Or load from direct image URL</div>
+              <div class="url-row">
+                <input type="text" id="uploaderUrlInput" class="url-input" placeholder="https://example.com/animation.gif">
+                <button type="button" class="btn btn-neutral" id="btnLoadUrl">Apply URL</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Live Stage Preview & Display Options -->
+        <div class="panel-card">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+            <div class="panel-card-title" style="margin-bottom:0;">Live Preview</div>
+            <span id="previewFileInfo" style="font-size:11.5px; color:var(--subtext); max-width:190px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Party Parrot</span>
+          </div>
+
+          <div class="stage-preview-box" id="previewBox">
+            <span class="stage-preview-empty" id="previewEmpty">Default Salesforce spinner active</span>
+            <img src="" id="previewImg" class="stage-preview-img" style="display:none;" alt="Loading Preview">
+          </div>
+
+          <div style="margin-top: 16px; display:flex; flex-direction:column; gap:14px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+              <span style="font-size:12.5px; font-weight:600;">Display Size</span>
+              <div class="size-btn-group" id="sizeBtnGroup">
+                <button type="button" class="size-btn" data-size="48">48px</button>
+                <button type="button" class="size-btn active" data-size="64">64px</button>
+                <button type="button" class="size-btn" data-size="96">96px</button>
+                <button type="button" class="size-btn" data-size="128">128px</button>
+              </div>
+            </div>
+
+            <label class="sub-check-label" style="justify-content:space-between;">
+              <span>Spin while loading</span>
+              <input type="checkbox" id="chkRotate">
+            </label>
+          </div>
+        </div>
       </div>
-      <div class="mod-list" id="pageInstalledModsList"></div>
-
-      <div class="or-divider">
-        <span>OR PASTE / EDIT PLUGIN JSON</span>
-      </div>
-      <textarea id="modJsonTextarea" placeholder="Paste .mod.json content here..." style="width:100%; min-height:160px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; resize:vertical; margin-bottom:12px;"></textarea>
-    </div>
-
-    <div class="actions">
-      <button type="button" class="btn btn-neutral" id="btnClose">Close Tab</button>
-      <button type="button" class="btn btn-primary" id="btnSaveApply">Save & Apply</button>
-    </div>
-  </div>
+    </section>
+  </main>
 
   <script src="uploader.js"></script>
 </body>

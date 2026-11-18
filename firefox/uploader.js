@@ -2,16 +2,40 @@
   'use strict';
 
   const api = typeof browser !== 'undefined' ? browser : chrome;
+  const GIF_PARROT = api?.runtime?.getURL ? api.runtime.getURL('parrot.gif') : 'parrot.gif';
+  const GIF_NYAN = api?.runtime?.getURL ? api.runtime.getURL('nyan.gif') : 'nyan.gif';
+  const GIF_CAT = 'https://media.giphy.com/media/unQ3IJU2RG7DO/giphy.gif';
+  const GIF_SPINNER = '';
+
+  const PRESET_GIF_MAP = {
+    parrot: GIF_PARROT,
+    nyan: GIF_NYAN,
+    cat: GIF_CAT,
+    spinner: GIF_SPINNER,
+    default: GIF_SPINNER
+  };
+
+  const THEMES = {
+    'classic': { name: 'Classic SF', isDark: false, accent: '#0176d3', contrast: '#ffffff', bg: '#ffffff', text: '#0f172a' },
+    'gruvbox-dark': { name: 'Gruvbox Dark', isDark: true, accent: '#fe8019', contrast: '#282828', bg: '#282828', text: '#ebdbb2' },
+    'gruvbox-light': { name: 'Gruvbox Light', isDark: false, accent: '#af3a03', contrast: '#fbf1c7', bg: '#fbf1c7', text: '#3c3836' },
+    'solarized-dark': { name: 'Solarized Dark', isDark: true, accent: '#268bd2', contrast: '#ffffff', bg: '#002b36', text: '#93a1a1' },
+    'solarized-light': { name: 'Solarized Light', isDark: false, accent: '#2aa198', contrast: '#ffffff', bg: '#fdf6e3', text: '#586e75' },
+    'nord': { name: 'Nord', isDark: true, accent: '#88c0d0', contrast: '#2e3440', bg: '#2e3440', text: '#eceff4' },
+    'dracula': { name: 'Dracula', isDark: true, accent: '#bd93f9', contrast: '#282a36', bg: '#282a36', text: '#f8f8f2' },
+    'one-dark': { name: 'One Dark', isDark: true, accent: '#61afef', contrast: '#21252b', bg: '#21252b', text: '#abb2bf' },
+    'custom': { name: 'Custom', isDark: false, accent: '#8b5cf6', contrast: '#ffffff', bg: '#ffffff', text: '#0f172a' }
+  };
 
   const DEFAULT_SETTINGS = {
-    version: '1.3.0-alpha.2',
+    version: '1.3.0-alpha.3',
     modules: {
       subtabs: true,
       quickViews: true,
       linkInterceptor: true,
       inspectorMods: false,
       theming: false,
-      loadingAnimation: true
+      loadingAnimation: false
     },
     subtabs: {
       hideAppName: false
@@ -26,42 +50,150 @@
       applyToNavigation: true
     },
     loadingImage: {
-      url: '',
+      url: GIF_PARROT,
       size: 64,
       rotate: false
     }
   };
 
+  const SAMPLE_MOD_TEMPLATE = {
+    schemaVersion: 1,
+    id: 'my-custom-inspector',
+    name: 'Custom Record Inspector',
+    version: '1.0.0',
+    description: 'Displays related child records on hover and highlights panels.',
+    enabled: true,
+    target: {
+      objectApiName: 'CustomObject__c',
+      keyPrefix: 'a00',
+      nameField: 'Name',
+      headerTitle: 'Related Items',
+      icon: {
+        sldsName: 'standard:record',
+        backgroundColor: '#0176d3'
+      }
+    },
+    mounts: {
+      hoverPanel: true,
+      highlightsPanel: true
+    },
+    pipeline: {
+      childRecords: {
+        objectApiName: 'ChildObject__c',
+        relationshipField: 'Parent__c',
+        fields: ['Id', 'Name', 'Status__c']
+      }
+    }
+  };
+
+  const PAGE_META = {
+    plugins: {
+      title: 'Plugins',
+      subtitle: 'Enable, disable, and search built-in and custom Salesforce Enhancer plugins.'
+    },
+    themes: {
+      title: 'Themes',
+      subtitle: 'Customize console accent bars and developer color palettes.'
+    },
+    'import-plugin': {
+      title: 'Custom Plugins',
+      subtitle: 'Upload .mod.json files, manage installed plugins, and edit definitions.'
+    },
+    'loading-animation': {
+      title: 'Loading Animation',
+      subtitle: 'Upload a custom GIF/image or choose a built-in loading indicator.'
+    }
+  };
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const requestedPageParam = urlParams.get('page') || urlParams.get('focus') || urlParams.get('mode') || '';
+  const initialEditModId = urlParams.get('edit') || '';
+
+  function resolveInitialPage(raw) {
+    const val = String(raw || '').trim().toLowerCase();
+    if (val === 'mod' || val === 'import-plugin' || val === 'import') return 'import-plugin';
+    if (val === 'gif' || val === 'loading-animation' || val === 'loading') return 'loading-animation';
+    if (val === 'themes' || val === 'theme') return 'themes';
+    return 'plugins';
+  }
+
+  let activePage = resolveInitialPage(requestedPageParam);
+  let selectedEditModId = initialEditModId;
+  let activePluginFilter = 'all';
   let currentSettings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
   let loadedFileName = '';
-  let isModMode = new URLSearchParams(window.location.search).get('mode') === 'mod';
 
-  // Elements
-  const tabBtnMods = document.getElementById('tabBtnMods');
-  const tabBtnGif = document.getElementById('tabBtnGif');
-  const headerIcon = document.getElementById('headerIcon');
-  const headerTitle = document.getElementById('headerTitle');
-  const headerSubtitle = document.getElementById('headerSubtitle');
-  const dropzone = document.getElementById('dropzone');
-  const dropzoneText = document.getElementById('dropzoneText');
-  const dropzoneSubtext = document.getElementById('dropzoneSubtext');
-  const fileInput = document.getElementById('uploaderFileInput');
-  const gifControlsSection = document.getElementById('gifControlsSection');
-  const modControlsSection = document.getElementById('modControlsSection');
+  // Navigation & Page Shell Elements
+  const navItems = document.querySelectorAll('.nav-item[data-nav-page]');
+  const pageSections = {
+    plugins: document.getElementById('pagePlugins'),
+    themes: document.getElementById('pageThemes'),
+    'import-plugin': document.getElementById('pageImportPlugin'),
+    'loading-animation': document.getElementById('pageLoadingAnimation')
+  };
+  const activePageTitle = document.getElementById('activePageTitle');
+  const activePageSubtitle = document.getElementById('activePageSubtitle');
+  const btnHeaderImportMod = document.getElementById('btnHeaderImportMod');
+  const pluginsActiveCountPill = document.getElementById('pluginsActiveCountPill');
+  const customModsCountPill = document.getElementById('customModsCountPill');
+  const statusMsg = document.getElementById('statusMsg');
+
+  // Plugins Overview Elements
+  const txtSearchPlugins = document.getElementById('txtSearchPlugins');
+  const filterPills = document.querySelectorAll('.filter-pill[data-filter]');
+  const chkModSubtabs = document.getElementById('chkModSubtabs');
+  const chkHideAppName = document.getElementById('chkHideAppName');
+  const chkModLinkInterceptor = document.getElementById('chkModLinkInterceptor');
+  const chkModQuickViews = document.getElementById('chkModQuickViews');
+  const chkModLoading = document.getElementById('chkModLoading');
+  const pluginCardGifStatus = document.getElementById('pluginCardGifStatus');
+  const btnOpenGifStudio = document.getElementById('btnOpenGifStudio');
+  const customPluginsSectionWrap = document.getElementById('customPluginsSectionWrap');
+  const overviewCustomModsGrid = document.getElementById('overviewCustomModsGrid');
+  const btnGoCustomImporter = document.getElementById('btnGoCustomImporter');
+
+  // Themes Elements
+  const chkModTheming = document.getElementById('chkModTheming');
+  const themingDesc = document.getElementById('themingDesc');
+  const themePreviewBanner = document.getElementById('themePreviewBanner');
+  const themePreviewTopbar = document.getElementById('themePreviewTopbar');
+  const themePreviewActiveTab = document.getElementById('themePreviewActiveTab');
+  const themePreviewBody = document.getElementById('themePreviewBody');
+  const themePreviewBadge = document.getElementById('themePreviewBadge');
+  const themeChips = document.querySelectorAll('.theme-chip');
+  const customColorRow = document.getElementById('customColorRow');
+  const customColorPicker = document.getElementById('customColorPicker');
+  const customColorHex = document.getElementById('customColorHex');
+  const customChipDot = document.getElementById('customChipDot');
+  const chkApplyNavigation = document.getElementById('chkApplyNavigation');
+
+  // Custom Plugin Importer Elements
+  const modDropzone = document.getElementById('modDropzone');
+  const modFileInput = document.getElementById('modFileInput');
   const pageInstalledModsList = document.getElementById('pageInstalledModsList');
   const btnExportAllMods = document.getElementById('btnExportAllMods');
+  const editorTitleLabel = document.getElementById('editorTitleLabel');
   const modJsonTextarea = document.getElementById('modJsonTextarea');
+  const modSchemaSummary = document.getElementById('modSchemaSummary');
+  const btnLoadModTemplate = document.getElementById('btnLoadModTemplate');
+  const btnFormatModJson = document.getElementById('btnFormatModJson');
+  const btnDownloadEditorMod = document.getElementById('btnDownloadEditorMod');
+  const btnSaveModJson = document.getElementById('btnSaveModJson');
+
+  // Loading Animation Studio Elements
+  const chkModLoadingStudio = document.getElementById('chkModLoadingStudio');
+  const presetGifCards = document.querySelectorAll('.gif-card');
+  const gifDropzone = document.getElementById('gifDropzone');
+  const gifFileInput = document.getElementById('gifFileInput');
   const urlInput = document.getElementById('uploaderUrlInput');
   const btnLoadUrl = document.getElementById('btnLoadUrl');
-  const previewBox = document.getElementById('previewBox');
   const previewImg = document.getElementById('previewImg');
   const previewEmpty = document.getElementById('previewEmpty');
   const previewFileInfo = document.getElementById('previewFileInfo');
   const sizeBtns = document.querySelectorAll('.size-btn');
   const chkRotate = document.getElementById('chkRotate');
-  const statusMsg = document.getElementById('statusMsg');
-  const btnSaveApply = document.getElementById('btnSaveApply');
-  const btnClose = document.getElementById('btnClose');
+
+  const btnReset = document.getElementById('btnReset');
 
   function escapeHtml(str) {
     return String(str == null ? '' : str)
@@ -71,126 +203,96 @@
       .replace(/"/g, '&quot;');
   }
 
-  function applyPageMode(modMode) {
-    isModMode = !!modMode;
-    if (tabBtnMods) tabBtnMods.classList.toggle('active', isModMode);
-    if (tabBtnGif) tabBtnGif.classList.toggle('active', !isModMode);
-    if (isModMode) {
-      document.title = 'Custom Plugins - Salesforce Enhancer';
-      if (headerIcon) headerIcon.textContent = '🧩';
-      if (headerTitle) headerTitle.textContent = 'Custom Plugins';
-      if (headerSubtitle) headerSubtitle.textContent = 'Import, edit, or manage JSON plugin configurations.';
-      if (dropzoneText) dropzoneText.textContent = 'Click to choose a .mod.json file or drag & drop here';
-      if (dropzoneSubtext) dropzoneSubtext.textContent = 'Supports .mod.json and .json files';
-      if (fileInput) fileInput.setAttribute('accept', '.json,application/json');
-      if (gifControlsSection) gifControlsSection.style.display = 'none';
-      if (modControlsSection) modControlsSection.style.display = 'flex';
-      if (btnSaveApply) btnSaveApply.textContent = 'Save Plugin';
-      renderPageModsList();
-    } else {
-      document.title = 'Custom Loading Animation - Salesforce Enhancer';
-      if (headerIcon) headerIcon.textContent = '🎬';
-      if (headerTitle) headerTitle.textContent = 'Custom Loading Animation';
-      if (headerSubtitle) headerSubtitle.textContent = 'Select an animated GIF or image to display during Salesforce load states.';
-      if (dropzoneText) dropzoneText.textContent = 'Click to choose a GIF / image or drag & drop here';
-      if (dropzoneSubtext) dropzoneSubtext.textContent = 'Supports .gif, .png, .jpg, .webp, .svg';
-      if (fileInput) fileInput.setAttribute('accept', 'image/*');
-      if (gifControlsSection) gifControlsSection.style.display = 'block';
-      if (modControlsSection) modControlsSection.style.display = 'none';
-      if (btnSaveApply) btnSaveApply.textContent = 'Save & Apply';
-      updatePreview();
-    }
-  }
-
-  if (tabBtnMods) {
-    tabBtnMods.addEventListener('click', () => {
-      statusMsg.className = 'status-msg';
-      applyPageMode(true);
-    });
-  }
-  if (tabBtnGif) {
-    tabBtnGif.addEventListener('click', () => {
-      statusMsg.className = 'status-msg';
-      applyPageMode(false);
-    });
-  }
-
   function showStatus(text, isError = false) {
+    if (!statusMsg) return;
+    if (!text) {
+      statusMsg.textContent = '';
+      statusMsg.className = 'status-msg';
+      return;
+    }
     statusMsg.textContent = text;
     statusMsg.className = 'status-msg ' + (isError ? 'error' : 'success');
   }
 
-  function updatePreview() {
-    const url = (currentSettings.loadingImage.url || '').trim();
-    if (url) {
-      previewImg.src = url;
-      previewImg.style.display = 'block';
-      previewEmpty.style.display = 'none';
-
-      const sz = currentSettings.loadingImage.size || 64;
-      previewImg.style.maxHeight = `${Math.min(sz, 84)}px`;
-      previewImg.style.maxWidth = `${Math.min(sz, 84)}px`;
-
-      if (currentSettings.loadingImage.rotate) {
-        previewImg.style.animation = 'spin-preview 1.2s linear infinite';
-      } else {
-        previewImg.style.animation = 'none';
-      }
-
-      if (loadedFileName) {
-        previewFileInfo.textContent = loadedFileName;
-      } else if (url.startsWith('data:')) {
-        previewFileInfo.textContent = 'Custom uploaded image';
-      } else {
-        const parts = url.split('/');
-        previewFileInfo.textContent = parts[parts.length - 1] || 'Image URL';
-      }
-    } else {
-      previewImg.src = '';
-      previewImg.style.display = 'none';
-      previewEmpty.style.display = 'block';
-      previewFileInfo.textContent = 'No image selected';
-    }
-
-    sizeBtns.forEach((btn) => {
-      const sz = parseInt(btn.dataset.size, 10);
-      btn.classList.toggle('active', sz === (currentSettings.loadingImage.size || 64));
-    });
-
-    chkRotate.checked = !!currentSettings.loadingImage.rotate;
+  function getContrastColor(hex) {
+    if (!hex || typeof hex !== 'string') return '#ffffff';
+    let c = hex.replace('#', '').trim();
+    if (c.length === 3) c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
+    if (c.length !== 6) return '#ffffff';
+    const r = parseInt(c.slice(0, 2), 16) / 255;
+    const g = parseInt(c.slice(2, 4), 16) / 255;
+    const b = parseInt(c.slice(4, 6), 16) / 255;
+    const a = [r, g, b].map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+    const lum = 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
+    return lum > 0.45 ? '#0f172a' : '#ffffff';
   }
 
-  function validateModObject(rawMod) {
-    if (!rawMod || typeof rawMod !== 'object' || Array.isArray(rawMod)) {
-      throw new Error('Mod must be a JSON object.');
-    }
-    const id = String(rawMod.id || '').trim();
-    const name = String(rawMod.name || '').trim();
-    if (!id || !name) {
-      throw new Error('Mod JSON requires "id" and "name".');
-    }
-    if (!rawMod.target || typeof rawMod.target !== 'object' || !rawMod.target.keyPrefix || !rawMod.target.objectApiName) {
-      throw new Error('Mod JSON requires "target.objectApiName" and "target.keyPrefix".');
-    }
-    if (!rawMod.pipeline || typeof rawMod.pipeline !== 'object' || !rawMod.pipeline.childRecords) {
-      throw new Error('Mod JSON requires "pipeline.childRecords".');
-    }
-    return Object.assign({}, rawMod, {
-      id,
-      name,
-      version: String(rawMod.version || '1.0.0'),
-      enabled: rawMod.enabled !== false
+  function updateThemeColors(hex) {
+    const contrast = getContrastColor(hex);
+    document.documentElement.style.setProperty('--primary', hex);
+    document.documentElement.style.setProperty('--primary-contrast', contrast);
+  }
+
+  function navigateToPage(pageKey, updateHistory = true) {
+    activePage = pageSections[pageKey] ? pageKey : 'plugins';
+    showStatus('');
+
+    navItems.forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.navPage === activePage);
     });
+    Object.keys(pageSections).forEach((key) => {
+      if (pageSections[key]) {
+        pageSections[key].classList.toggle('active', key === activePage);
+      }
+    });
+
+    const meta = PAGE_META[activePage] || PAGE_META.plugins;
+    if (activePageTitle) activePageTitle.textContent = meta.title;
+    if (activePageSubtitle) activePageSubtitle.textContent = meta.subtitle;
+    document.title = `${meta.title} — Salesforce Enhancer`;
+
+    if (btnHeaderImportMod) {
+      btnHeaderImportMod.style.display = activePage === 'plugins' ? 'inline-flex' : 'none';
+    }
+
+    if (updateHistory && window.history && window.history.replaceState) {
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set('page', activePage);
+      nextUrl.searchParams.delete('focus');
+      nextUrl.searchParams.delete('mode');
+      if (activePage !== 'import-plugin') nextUrl.searchParams.delete('edit');
+      window.history.replaceState(null, '', nextUrl.toString());
+    }
+  }
+
+  navItems.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      navigateToPage(btn.dataset.navPage, true);
+    });
+  });
+
+  if (btnHeaderImportMod) {
+    btnHeaderImportMod.addEventListener('click', () => navigateToPage('import-plugin', true));
+  }
+  if (btnGoCustomImporter) {
+    btnGoCustomImporter.addEventListener('click', () => navigateToPage('import-plugin', true));
+  }
+  if (btnOpenGifStudio) {
+    btnOpenGifStudio.addEventListener('click', () => navigateToPage('loading-animation', true));
   }
 
   function persistCurrentSettings(onComplete) {
+    const activeThemeDef = THEMES[currentSettings.theme?.preset] || THEMES['classic'];
     const payload = {
       sf_enhancer_settings: currentSettings,
       sf_appearance_settings: {
         theme: currentSettings.theme?.preset || 'classic',
-        accentColor: currentSettings.theme?.customAccent || '#8b5cf6',
-        isDarkMode: false,
-        applyToSalesforce: currentSettings.modules?.theming && currentSettings.theme?.applyToNavigation,
+        accentColor:
+          currentSettings.theme?.preset === 'custom'
+            ? currentSettings.theme?.customAccent || '#8b5cf6'
+            : activeThemeDef.accent,
+        isDarkMode: !!activeThemeDef.isDark,
+        applyToSalesforce: !!(currentSettings.modules?.theming && currentSettings.theme?.applyToNavigation),
         modules: currentSettings.modules,
         subtabs: currentSettings.subtabs,
         hideAppName: currentSettings.hideAppName,
@@ -237,102 +339,394 @@
     }
   }
 
-  function renderPageModsList() {
-    if (!pageInstalledModsList) return;
+  function applyPluginsFilter() {
+    const q = (txtSearchPlugins ? txtSearchPlugins.value : '').trim().toLowerCase();
+    const cards = document.querySelectorAll('#pagePlugins .plugin-card');
+    let visibleCustomCount = 0;
+
+    cards.forEach((card) => {
+      const kind = card.dataset.pluginKind || 'builtin';
+      const checkbox = card.querySelector('input[type="checkbox"]');
+      const isEnabled = checkbox ? checkbox.checked : true;
+
+      let matchesFilter = true;
+      if (activePluginFilter === 'enabled') matchesFilter = isEnabled;
+      else if (activePluginFilter === 'builtin') matchesFilter = kind === 'builtin';
+      else if (activePluginFilter === 'custom') matchesFilter = kind === 'custom';
+
+      const hay = `${card.dataset.pluginSearch || ''} ${card.textContent || ''}`.toLowerCase();
+      const matchesQuery = !q || hay.includes(q);
+
+      const show = matchesFilter && matchesQuery;
+      card.style.display = show ? '' : 'none';
+      if (kind === 'custom' && show) visibleCustomCount += 1;
+    });
+
+    if (customPluginsSectionWrap) {
+      const hasMods = Array.isArray(currentSettings.inspectorMods?.mods) && currentSettings.inspectorMods.mods.length > 0;
+      customPluginsSectionWrap.style.display = hasMods && visibleCustomCount > 0 ? 'block' : 'none';
+    }
+  }
+
+  if (txtSearchPlugins) {
+    txtSearchPlugins.addEventListener('input', applyPluginsFilter);
+  }
+  filterPills.forEach((pill) => {
+    pill.addEventListener('click', () => {
+      activePluginFilter = pill.dataset.filter || 'all';
+      filterPills.forEach((p) => p.classList.toggle('active', p === pill));
+      applyPluginsFilter();
+    });
+  });
+
+  function updateThemePreviewBanner(themeDef, accent) {
+    if (!themePreviewBanner || !themePreviewTopbar || !themePreviewBody) return;
+    const isEnabled = !!currentSettings.modules.theming;
+    const bg = isEnabled ? themeDef.bg : '#ffffff';
+    const text = isEnabled ? themeDef.text : '#0f172a';
+    const contrast = getContrastColor(accent);
+
+    themePreviewTopbar.style.background = bg;
+    themePreviewTopbar.style.color = text;
+    themePreviewTopbar.style.borderBottomColor = accent;
+    if (themePreviewActiveTab) {
+      themePreviewActiveTab.style.background = accent;
+      themePreviewActiveTab.style.color = contrast;
+      themePreviewActiveTab.style.borderColor = accent;
+    }
+    themePreviewBody.style.background = themeDef.isDark && isEnabled ? 'rgba(15, 23, 42, 0.92)' : '#f8fafc';
+    themePreviewBody.style.color = themeDef.isDark && isEnabled ? '#e2e8f0' : '#475569';
+    if (themePreviewBadge) {
+      themePreviewBadge.style.background = accent;
+      themePreviewBadge.style.color = contrast;
+      themePreviewBadge.textContent = isEnabled ? themeDef.name : 'Native Salesforce';
+    }
+  }
+
+  function updateLoadingPreview() {
+    const url = (currentSettings.loadingImage.url || '').trim();
+    const isPresetParrot = url === GIF_PARROT || url === 'parrot.gif' || url.includes('parrot.gif');
+    const isPresetNyan = url === GIF_NYAN || url === 'nyan.gif' || url.includes('nyan.gif') || url.includes('PYh.gif');
+    const isDefault = !url || url === GIF_SPINNER;
+    const isCustom = !isPresetParrot && !isPresetNyan && !isDefault;
+
+    presetGifCards.forEach((card) => {
+      const presetKey = card.dataset.preset;
+      if (presetKey === 'spinner') card.classList.toggle('active', isDefault);
+      else if (presetKey === 'parrot') card.classList.toggle('active', isPresetParrot);
+      else if (presetKey === 'nyan') card.classList.toggle('active', isPresetNyan);
+      else if (presetKey === 'custom') {
+        card.classList.toggle('active', isCustom);
+        const thumb = card.querySelector('#customCardThumb');
+        const icon = card.querySelector('#customCardIcon');
+        if (thumb && icon) {
+          if (isCustom && url) {
+            thumb.src = url;
+            thumb.style.display = 'block';
+            icon.style.display = 'none';
+          } else {
+            thumb.src = '';
+            thumb.style.display = 'none';
+            icon.style.display = 'flex';
+          }
+        }
+      }
+    });
+
+    let label = 'Default spinner';
+    if (loadedFileName) label = loadedFileName;
+    else if (isPresetParrot) label = 'Party Parrot';
+    else if (isPresetNyan) label = 'Nyan Cat';
+    else if (url && url.startsWith('data:')) label = 'Custom uploaded image';
+    else if (url) {
+      const parts = url.split('/');
+      label = parts[parts.length - 1] || 'Custom image URL';
+    }
+
+    if (pluginCardGifStatus) {
+      pluginCardGifStatus.textContent = currentSettings.modules.loadingAnimation
+        ? `Active: ${label}`
+        : `Selected: ${label}`;
+    }
+
+    if (url) {
+      previewImg.src = url;
+      previewImg.style.display = 'block';
+      previewEmpty.style.display = 'none';
+      const sz = currentSettings.loadingImage.size || 64;
+      previewImg.style.width = `${sz}px`;
+      previewImg.style.height = `${sz}px`;
+      previewImg.style.animation = currentSettings.loadingImage.rotate ? 'spin-preview 1.2s linear infinite' : 'none';
+    } else {
+      previewImg.src = '';
+      previewImg.style.display = 'none';
+      previewEmpty.style.display = 'block';
+    }
+
+    if (previewFileInfo) previewFileInfo.textContent = label;
+    sizeBtns.forEach((btn) => {
+      const sz = parseInt(btn.dataset.size, 10);
+      btn.classList.toggle('active', sz === (currentSettings.loadingImage.size || 64));
+    });
+    if (chkRotate) chkRotate.checked = !!currentSettings.loadingImage.rotate;
+    if (chkModLoadingStudio) chkModLoadingStudio.checked = currentSettings.modules.loadingAnimation === true;
+  }
+
+  function validateModObject(rawMod) {
+    if (!rawMod || typeof rawMod !== 'object' || Array.isArray(rawMod)) {
+      throw new Error('Plugin must be a JSON object.');
+    }
+    const id = String(rawMod.id || '').trim();
+    const name = String(rawMod.name || '').trim();
+    if (!id || !name) {
+      throw new Error('Plugin JSON requires "id" and "name".');
+    }
+    if (!rawMod.target || typeof rawMod.target !== 'object' || !rawMod.target.keyPrefix || !rawMod.target.objectApiName) {
+      throw new Error('Plugin JSON requires "target.objectApiName" and "target.keyPrefix".');
+    }
+    if (!rawMod.pipeline || typeof rawMod.pipeline !== 'object' || !rawMod.pipeline.childRecords) {
+      throw new Error('Plugin JSON requires "pipeline.childRecords".');
+    }
+    return Object.assign({}, rawMod, {
+      id,
+      name,
+      version: String(rawMod.version || '1.0.0'),
+      enabled: rawMod.enabled !== false
+    });
+  }
+
+  function updateEditorSchemaSummary() {
+    if (!modSchemaSummary || !modJsonTextarea) return;
+    const raw = modJsonTextarea.value.trim();
+    if (!raw) {
+      modSchemaSummary.innerHTML = '<span>Status: <strong>Empty</strong></span>';
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      const item = Array.isArray(parsed) ? parsed[0] : (parsed && Array.isArray(parsed.mods) ? parsed.mods[0] : parsed);
+      const valid = validateModObject(item);
+      const mounts = Object.keys(valid.mounts || {}).filter((k) => valid.mounts[k] === true || valid.mounts[k]?.enabled === true);
+      modSchemaSummary.innerHTML = `
+        <span>Schema: <strong style="color:#065f46;">Valid</strong></span>
+        <span>ID: <strong>${escapeHtml(valid.id)}</strong></span>
+        <span>Target: <strong>${escapeHtml(valid.target.objectApiName)} (${escapeHtml(valid.target.keyPrefix)})</strong></span>
+        <span>Mounts: <strong>${escapeHtml(mounts.join(', ') || 'none')}</strong></span>
+      `;
+    } catch (err) {
+      modSchemaSummary.innerHTML = `<span style="color:#991b1b;">Validation error: <strong>${escapeHtml(err.message || err)}</strong></span>`;
+    }
+  }
+
+  function loadModIntoEditor(mod) {
+    if (!mod || !modJsonTextarea) return;
+    selectedEditModId = mod.id;
+    modJsonTextarea.value = JSON.stringify(mod, null, 2);
+    if (editorTitleLabel) editorTitleLabel.textContent = `Editing: ${mod.name}`;
+    updateEditorSchemaSummary();
+    renderModsViews();
+  }
+
+  function renderModsViews() {
     const mods = (currentSettings.inspectorMods && Array.isArray(currentSettings.inspectorMods.mods))
       ? currentSettings.inspectorMods.mods
       : [];
 
-    if (btnExportAllMods) {
-      btnExportAllMods.style.display = mods.length > 0 ? 'inline-flex' : 'none';
-    }
+    currentSettings.modules.inspectorMods = mods.some((m) => m && m.enabled !== false);
+    if (customModsCountPill) customModsCountPill.textContent = String(mods.length);
+    if (btnExportAllMods) btnExportAllMods.style.display = mods.length > 0 ? 'inline-flex' : 'none';
 
-    if (!mods.length) {
-      pageInstalledModsList.innerHTML =
-        '<div style="padding:12px; border:1px dashed var(--border-dark); border-radius:6px; text-align:center; font-size:12px; color:var(--subtext);">No mods installed.</div>';
-      return;
-    }
-
-    pageInstalledModsList.innerHTML = mods
-      .map((mod) => {
-        const targetObj = (mod.target && mod.target.objectApiName) || 'Record';
-        const keyPrefix = (mod.target && mod.target.keyPrefix) || '';
-        return `
-          <div class="mod-item" data-mod-id="${escapeHtml(mod.id)}">
-            <div class="mod-item-left">
-              <input type="checkbox" class="page-mod-toggle" data-mod-id="${escapeHtml(mod.id)}" ${
-          mod.enabled !== false ? 'checked' : ''
-        }>
-              <div>
-                <div class="mod-item-title">
-                  <span>${escapeHtml(mod.name)}</span>
-                  <span class="mod-item-tag">${escapeHtml(targetObj)}${keyPrefix ? ` (${escapeHtml(keyPrefix)})` : ''}</span>
-                  ${mod.version ? `<span class="mod-item-tag">v${escapeHtml(mod.version)}</span>` : ''}
+    // 1. Overview Custom Plugins Grid (Plugins Page)
+    if (overviewCustomModsGrid) {
+      overviewCustomModsGrid.innerHTML = mods
+        .map((mod) => {
+          const targetObj = (mod.target && mod.target.objectApiName) || 'Record';
+          const keyPrefix = (mod.target && mod.target.keyPrefix) || '';
+          const isEnabled = mod.enabled !== false;
+          return `
+            <div class="plugin-card" data-plugin-kind="custom" data-plugin-search="${escapeHtml(
+              `${mod.name} ${targetObj} ${keyPrefix} ${mod.description || ''}`
+            )}">
+              <div class="plugin-card-head">
+                <div>
+                  <div class="plugin-title-row">
+                    <span class="plugin-name">${escapeHtml(mod.name)}</span>
+                    <span class="tag-pill">${escapeHtml(targetObj)}${keyPrefix ? ` (${escapeHtml(keyPrefix)})` : ''}</span>
+                    ${mod.version ? `<span class="tag-pill">v${escapeHtml(mod.version)}</span>` : ''}
+                  </div>
+                  ${mod.description ? `<div class="plugin-desc">${escapeHtml(mod.description)}</div>` : ''}
                 </div>
-                ${mod.description ? `<div class="mod-item-desc">${escapeHtml(mod.description)}</div>` : ''}
+                <label class="switch">
+                  <input type="checkbox" class="overview-mod-toggle" data-mod-id="${escapeHtml(mod.id)}" ${isEnabled ? 'checked' : ''}>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="plugin-card-footer">
+                <button type="button" class="btn btn-neutral btn-sm overview-mod-edit" data-mod-id="${escapeHtml(mod.id)}">Edit JSON →</button>
+                <button type="button" class="btn btn-danger-ghost btn-sm overview-mod-remove" data-mod-id="${escapeHtml(mod.id)}">Remove</button>
               </div>
             </div>
-            <div class="mod-item-actions">
-              <button type="button" class="btn btn-neutral page-mod-edit" data-mod-id="${escapeHtml(
-                mod.id
-              )}" style="padding:3px 8px; font-size:11px;">Edit JSON</button>
-              <button type="button" class="btn btn-neutral page-mod-remove" data-mod-id="${escapeHtml(
-                mod.id
-              )}" style="padding:3px 8px; font-size:11px;">Remove</button>
-            </div>
-          </div>
-        `;
-      })
-      .join('');
+          `;
+        })
+        .join('');
 
-    pageInstalledModsList.querySelectorAll('.page-mod-toggle').forEach((chk) => {
-      chk.addEventListener('change', (e) => {
-        const modId = chk.dataset.modId;
-        const target = currentSettings.inspectorMods?.mods?.find((m) => m.id === modId);
-        if (target) {
-          target.enabled = e.target.checked;
-          persistCurrentSettings();
-        }
+      overviewCustomModsGrid.querySelectorAll('.overview-mod-toggle').forEach((chk) => {
+        chk.addEventListener('change', (e) => {
+          const target = currentSettings.inspectorMods?.mods?.find((m) => m.id === chk.dataset.modId);
+          if (target) {
+            target.enabled = e.target.checked;
+            updateUI();
+            persistCurrentSettings();
+          }
+        });
       });
-    });
+      overviewCustomModsGrid.querySelectorAll('.overview-mod-edit').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const target = currentSettings.inspectorMods?.mods?.find((m) => m.id === btn.dataset.modId);
+          if (target) loadModIntoEditor(target);
+          navigateToPage('import-plugin', true);
+        });
+      });
+      overviewCustomModsGrid.querySelectorAll('.overview-mod-remove').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const modId = btn.dataset.modId;
+          currentSettings.inspectorMods.mods = currentSettings.inspectorMods.mods.filter((m) => m.id !== modId);
+          if (selectedEditModId === modId) selectedEditModId = '';
+          updateUI();
+          persistCurrentSettings(() => showStatus('Plugin removed.'));
+        });
+      });
+    }
 
-    pageInstalledModsList.querySelectorAll('.page-mod-edit').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const modId = btn.dataset.modId;
-        const target = currentSettings.inspectorMods?.mods?.find((m) => m.id === modId);
-        if (target && modJsonTextarea) {
-          modJsonTextarea.value = JSON.stringify(target, null, 2);
-          modJsonTextarea.focus();
-        }
-      });
-    });
+    // 2. Installed Plugins List (Custom Plugin Importer Page)
+    if (pageInstalledModsList) {
+      if (!mods.length) {
+        pageInstalledModsList.innerHTML =
+          '<div style="padding:14px; border:1px dashed var(--border-dark); border-radius:7px; text-align:center; font-size:12px; color:var(--subtext);">No custom plugins installed yet.</div>';
+      } else {
+        pageInstalledModsList.innerHTML = mods
+          .map((mod) => {
+            const targetObj = (mod.target && mod.target.objectApiName) || 'Record';
+            const keyPrefix = (mod.target && mod.target.keyPrefix) || '';
+            const isSelected = selectedEditModId === mod.id;
+            return `
+              <div class="mod-row-card ${isSelected ? 'selected' : ''}" data-mod-id="${escapeHtml(mod.id)}">
+                <div class="mod-row-main" data-mod-id="${escapeHtml(mod.id)}">
+                  <div class="mod-row-title">
+                    <span>${escapeHtml(mod.name)}</span>
+                    <span class="tag-pill">${escapeHtml(targetObj)}${keyPrefix ? ` (${escapeHtml(keyPrefix)})` : ''}</span>
+                  </div>
+                  ${mod.description ? `<div class="mod-row-desc">${escapeHtml(mod.description)}</div>` : ''}
+                </div>
+                <div class="mod-row-actions">
+                  <button type="button" class="btn btn-danger-ghost btn-sm page-mod-remove" data-mod-id="${escapeHtml(mod.id)}" title="Remove">✕</button>
+                  <label class="switch">
+                    <input type="checkbox" class="page-mod-toggle" data-mod-id="${escapeHtml(mod.id)}" ${mod.enabled !== false ? 'checked' : ''}>
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </div>
+            `;
+          })
+          .join('');
 
-    pageInstalledModsList.querySelectorAll('.page-mod-remove').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const modId = btn.dataset.modId;
-        if (!currentSettings.inspectorMods || !Array.isArray(currentSettings.inspectorMods.mods)) return;
-        currentSettings.inspectorMods.mods = currentSettings.inspectorMods.mods.filter((m) => m.id !== modId);
-        renderPageModsList();
-        persistCurrentSettings(() => showStatus('Mod removed.'));
-      });
-    });
+        pageInstalledModsList.querySelectorAll('.mod-row-main').forEach((row) => {
+          row.addEventListener('click', () => {
+            const target = currentSettings.inspectorMods?.mods?.find((m) => m.id === row.dataset.modId);
+            if (target) loadModIntoEditor(target);
+          });
+        });
+        pageInstalledModsList.querySelectorAll('.page-mod-toggle').forEach((chk) => {
+          chk.addEventListener('change', (e) => {
+            const target = currentSettings.inspectorMods?.mods?.find((m) => m.id === chk.dataset.modId);
+            if (target) {
+              target.enabled = e.target.checked;
+              updateUI();
+              persistCurrentSettings();
+            }
+          });
+        });
+        pageInstalledModsList.querySelectorAll('.page-mod-remove').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const modId = btn.dataset.modId;
+            currentSettings.inspectorMods.mods = currentSettings.inspectorMods.mods.filter((m) => m.id !== modId);
+            if (selectedEditModId === modId) selectedEditModId = '';
+            updateUI();
+            persistCurrentSettings(() => showStatus('Plugin removed.'));
+          });
+        });
+      }
+    }
+
+    applyPluginsFilter();
   }
 
-  if (btnExportAllMods) {
-    btnExportAllMods.addEventListener('click', () => {
-      const mods = currentSettings.inspectorMods?.mods || [];
-      if (!mods.length) return;
-      const payload = mods.length === 1 ? mods[0] : { mods };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = mods.length === 1 ? `${mods[0].id}.mod.json` : 'salesforce-enhancer-mods.json';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+  function updateUI() {
+    if (chkModSubtabs) chkModSubtabs.checked = currentSettings.modules.subtabs !== false;
+    if (chkHideAppName) {
+      chkHideAppName.checked = !!(currentSettings.subtabs?.hideAppName || currentSettings.hideAppName);
+    }
+    if (chkModLinkInterceptor) {
+      chkModLinkInterceptor.checked = currentSettings.modules.linkInterceptor !== false;
+    }
+    if (chkModQuickViews) {
+      chkModQuickViews.checked = currentSettings.modules.quickViews !== false;
+    }
+    if (chkModLoading) {
+      chkModLoading.checked = currentSettings.modules.loadingAnimation === true;
+    }
+
+    // Active Plugins Badge
+    if (pluginsActiveCountPill) {
+      const mods = (currentSettings.inspectorMods && Array.isArray(currentSettings.inspectorMods.mods))
+        ? currentSettings.inspectorMods.mods
+        : [];
+      const activeCustomCount = mods.filter((m) => m && m.enabled !== false).length;
+      const activeBuiltInCount =
+        (currentSettings.modules.subtabs !== false ? 1 : 0) +
+        (currentSettings.modules.linkInterceptor !== false ? 1 : 0) +
+        (currentSettings.modules.quickViews !== false ? 1 : 0) +
+        (currentSettings.modules.loadingAnimation === true ? 1 : 0);
+      pluginsActiveCountPill.textContent = String(activeBuiltInCount + activeCustomCount);
+    }
+
+    // Themes
+    const isThemingEnabled = !!currentSettings.modules.theming;
+    if (chkModTheming) chkModTheming.checked = isThemingEnabled;
+    const activeThemeDef = THEMES[currentSettings.theme.preset] || THEMES['classic'];
+    const resolvedAccent = currentSettings.theme.preset === 'custom'
+      ? currentSettings.theme.customAccent
+      : activeThemeDef.accent;
+
+    if (isThemingEnabled) {
+      if (themingDesc) themingDesc.textContent = `Active Theme: ${activeThemeDef.name}`;
+      updateThemeColors(resolvedAccent);
+    } else {
+      if (themingDesc) themingDesc.textContent = 'Disabled. Native Salesforce theme active.';
+      updateThemeColors('#0176d3');
+    }
+    updateThemePreviewBanner(activeThemeDef, resolvedAccent);
+
+    themeChips.forEach((chip) => {
+      chip.classList.toggle('active', chip.dataset.theme === currentSettings.theme.preset);
     });
+
+    if (customColorRow) {
+      if (currentSettings.theme.preset === 'custom') {
+        customColorRow.style.display = 'flex';
+        if (customColorPicker) customColorPicker.value = currentSettings.theme.customAccent;
+        if (customColorHex) customColorHex.value = currentSettings.theme.customAccent;
+        if (customChipDot) customChipDot.style.background = currentSettings.theme.customAccent;
+      } else {
+        customColorRow.style.display = 'none';
+      }
+    }
+    if (chkApplyNavigation) {
+      chkApplyNavigation.checked = currentSettings.theme.applyToNavigation !== false;
+    }
+
+    renderModsViews();
+    updateLoadingPreview();
   }
 
   function installAndSaveModsFromRawText(rawText) {
@@ -351,7 +745,7 @@
         : parsed && Array.isArray(parsed.mods)
         ? parsed.mods
         : [parsed];
-      if (!incoming.length) throw new Error('No mod definitions found in JSON.');
+      if (!incoming.length) throw new Error('No plugin definitions found in JSON.');
       validated = incoming.map(validateModObject);
     } catch (err) {
       showStatus(err.message || String(err), true);
@@ -378,17 +772,19 @@
       }
       for (const mod of validated) {
         const idx = currentSettings.inspectorMods.mods.findIndex((m) => m.id === mod.id);
-        if (idx >= 0) {
-          currentSettings.inspectorMods.mods[idx] = mod;
-        } else {
-          currentSettings.inspectorMods.mods.push(mod);
-        }
+        if (idx >= 0) currentSettings.inspectorMods.mods[idx] = mod;
+        else currentSettings.inspectorMods.mods.push(mod);
       }
+      selectedEditModId = validated[0].id;
       currentSettings.modules.inspectorMods = true;
 
-      renderPageModsList();
+      if (editorTitleLabel && validated.length === 1) {
+        editorTitleLabel.textContent = `Editing: ${validated[0].name}`;
+      }
+      updateEditorSchemaSummary();
+      updateUI();
       persistCurrentSettings(() => {
-        showStatus(`Installed ${validated.map((m) => `"${m.name}"`).join(', ')}.`);
+        showStatus(`Saved ${validated.map((m) => `"${m.name}"`).join(', ')}.`);
       });
     };
 
@@ -400,122 +796,392 @@
         commitWithLatest(r || {});
       };
       const p = api.storage.local.get(['sf_enhancer_settings', 'sf_appearance_settings'], runOnce);
-      if (p && typeof p.then === 'function') {
-        p.then(runOnce).catch(() => runOnce({}));
-      }
+      if (p && typeof p.then === 'function') p.then(runOnce).catch(() => runOnce({}));
     } catch (_) {
       commitWithLatest({});
     }
   }
 
-  function handleFile(file) {
+  function handleModFile(file) {
     if (!file) return;
-    if (isModMode || file.name.toLowerCase().endsWith('.json')) {
-      if (!isModMode) applyPageMode(true);
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = String(e.target.result || '');
-        if (modJsonTextarea) modJsonTextarea.value = text;
-        installAndSaveModsFromRawText(text);
-      };
-      reader.onerror = () => {
-        showStatus('Failed to read JSON file.', true);
-      };
-      reader.readAsText(file);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = String(e.target.result || '');
+      if (modJsonTextarea) modJsonTextarea.value = text;
+      updateEditorSchemaSummary();
+      installAndSaveModsFromRawText(text);
+    };
+    reader.onerror = () => showStatus('Failed to read JSON file.', true);
+    reader.readAsText(file);
+  }
+
+  function handleGifFile(file) {
+    if (!file) return;
+    if (file.name.toLowerCase().endsWith('.json')) {
+      navigateToPage('import-plugin', true);
+      handleModFile(file);
       return;
     }
-
     if (!file.type.startsWith('image/')) {
       showStatus('Please select a valid image or GIF file.', true);
       return;
     }
 
     loadedFileName = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-    showStatus(`Reading ${file.name}...`);
-
     const reader = new FileReader();
     reader.onload = (e) => {
       currentSettings.loadingImage.url = e.target.result;
       currentSettings.modules.loadingAnimation = true;
-      updatePreview();
-      showStatus(`Loaded "${file.name}".`);
-      saveSettings(false);
+      updateUI();
+      persistCurrentSettings(() => showStatus(`Saved "${file.name}".`));
     };
-    reader.onerror = () => {
-      showStatus('Failed to read selected file.', true);
-    };
+    reader.onerror = () => showStatus('Failed to read selected file.', true);
     reader.readAsDataURL(file);
   }
 
-  function saveSettings(closeAfter = true) {
-    if (!api || !api.storage || !api.storage.local) return;
+  function triggerDownloadJson(filename, obj) {
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
-    currentSettings.modules.loadingAnimation = true;
+  // Built-in Plugin Listeners
+  if (chkModSubtabs) {
+    chkModSubtabs.addEventListener('change', (e) => {
+      currentSettings.modules.subtabs = e.target.checked;
+      updateUI();
+      persistCurrentSettings();
+    });
+  }
+  if (chkHideAppName) {
+    chkHideAppName.addEventListener('change', (e) => {
+      const val = e.target.checked;
+      if (!currentSettings.subtabs) currentSettings.subtabs = {};
+      currentSettings.subtabs.hideAppName = val;
+      currentSettings.hideAppName = val;
+      persistCurrentSettings();
+    });
+  }
+  if (chkModLinkInterceptor) {
+    chkModLinkInterceptor.addEventListener('change', (e) => {
+      currentSettings.modules.linkInterceptor = e.target.checked;
+      updateUI();
+      persistCurrentSettings();
+    });
+  }
+  if (chkModQuickViews) {
+    chkModQuickViews.addEventListener('change', (e) => {
+      currentSettings.modules.quickViews = e.target.checked;
+      updateUI();
+      persistCurrentSettings();
+    });
+  }
+  if (chkModLoading) {
+    chkModLoading.addEventListener('change', (e) => {
+      currentSettings.modules.loadingAnimation = e.target.checked;
+      updateUI();
+      persistCurrentSettings();
+    });
+  }
+  if (chkModLoadingStudio) {
+    chkModLoadingStudio.addEventListener('change', (e) => {
+      currentSettings.modules.loadingAnimation = e.target.checked;
+      updateUI();
+      persistCurrentSettings();
+    });
+  }
 
-    const payload = {
-      sf_enhancer_settings: currentSettings,
-      sf_appearance_settings: {
-        theme: currentSettings.theme?.preset || 'classic',
-        accentColor: currentSettings.theme?.customAccent || '#8b5cf6',
-        isDarkMode: false,
-        applyToSalesforce: currentSettings.modules?.theming && currentSettings.theme?.applyToNavigation,
-        modules: currentSettings.modules,
-        subtabs: currentSettings.subtabs,
-        hideAppName: currentSettings.hideAppName,
-        inspectorMods: currentSettings.inspectorMods,
-        loadingImage: {
-          enabled: true,
-          url: currentSettings.loadingImage.url,
-          size: currentSettings.loadingImage.size || 64,
-          rotate: !!currentSettings.loadingImage.rotate
-        }
-      }
-    };
-
-    const broadcast = () => {
+  // Custom Plugin Editor Toolbar Listeners
+  if (modJsonTextarea) {
+    modJsonTextarea.addEventListener('input', updateEditorSchemaSummary);
+  }
+  if (btnLoadModTemplate && modJsonTextarea) {
+    btnLoadModTemplate.addEventListener('click', () => {
+      selectedEditModId = '';
+      if (editorTitleLabel) editorTitleLabel.textContent = 'Plugin JSON Editor';
+      modJsonTextarea.value = JSON.stringify(SAMPLE_MOD_TEMPLATE, null, 2);
+      updateEditorSchemaSummary();
+      renderModsViews();
+    });
+  }
+  if (btnFormatModJson && modJsonTextarea) {
+    btnFormatModJson.addEventListener('click', () => {
       try {
-        if (api.tabs && api.tabs.query) {
-          api.tabs.query({}, (tabs) => {
-            if (tabs && tabs.length) {
-              tabs.forEach((tab) => {
-                if (tab && tab.id) {
-                  try {
-                    const p = api.tabs.sendMessage(tab.id, {
-                      action: 'applyEnhancerSettings',
-                      settings: currentSettings
-                    });
-                    if (p && typeof p.catch === 'function') p.catch(() => {});
-                  } catch (_) {}
-                }
-              });
-            }
-          });
-        }
-      } catch (_) {}
-    };
-
-    const onDone = () => {
-      broadcast();
-      showStatus('✅ Saved! Custom animation applied to Salesforce tabs.');
-      if (closeAfter) {
-        setTimeout(() => {
-          window.close();
-        }, 900);
+        const parsed = JSON.parse(modJsonTextarea.value);
+        modJsonTextarea.value = JSON.stringify(parsed, null, 2);
+        updateEditorSchemaSummary();
+      } catch (err) {
+        showStatus(`Cannot format invalid JSON: ${err.message || err}`, true);
       }
-    };
-
-    try {
-      const p = api.storage.local.set(payload, onDone);
-      if (p && typeof p.then === 'function') {
-        p.then(onDone).catch(() => onDone());
+    });
+  }
+  if (btnDownloadEditorMod && modJsonTextarea) {
+    btnDownloadEditorMod.addEventListener('click', () => {
+      try {
+        const parsed = JSON.parse(modJsonTextarea.value || '{}');
+        const name = (parsed.id || 'plugin').replace(/[^a-zA-Z0-9_-]/g, '-');
+        triggerDownloadJson(`${name}.mod.json`, parsed);
+      } catch (err) {
+        showStatus(`Cannot download invalid JSON: ${err.message || err}`, true);
       }
-    } catch (_) {
-      onDone();
+    });
+  }
+  if (btnExportAllMods) {
+    btnExportAllMods.addEventListener('click', () => {
+      const mods = currentSettings.inspectorMods?.mods || [];
+      if (!mods.length) return;
+      const payload = mods.length === 1 ? mods[0] : { mods };
+      const filename = mods.length === 1 ? `${mods[0].id}.mod.json` : 'salesforce-enhancer-mods.json';
+      triggerDownloadJson(filename, payload);
+    });
+  }
+  if (btnSaveModJson) {
+    btnSaveModJson.addEventListener('click', () => {
+      const raw = modJsonTextarea ? modJsonTextarea.value.trim() : '';
+      if (!raw) {
+        showStatus('Choose a .mod.json file or paste Plugin JSON first.', true);
+        return;
+      }
+      installAndSaveModsFromRawText(raw);
+    });
+  }
+
+  // Mod Dropzone
+  if (modDropzone && modFileInput) {
+    modDropzone.addEventListener('click', () => modFileInput.click());
+    modFileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) handleModFile(file);
+      modFileInput.value = '';
+    });
+    modDropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      modDropzone.classList.add('dragover');
+    });
+    modDropzone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      modDropzone.classList.remove('dragover');
+    });
+    modDropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      modDropzone.classList.remove('dragover');
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length > 0) handleModFile(files[0]);
+    });
+  }
+
+  // Loading Animation Studio Listeners
+  presetGifCards.forEach((card) => {
+    card.addEventListener('click', () => {
+      const presetKey = card.dataset.preset;
+      if (presetKey === 'custom') {
+        if (gifFileInput) gifFileInput.click();
+        return;
+      }
+      const targetUrl = card.dataset.url !== undefined ? card.dataset.url : (PRESET_GIF_MAP[presetKey] || '');
+      currentSettings.loadingImage.url = targetUrl;
+      currentSettings.modules.loadingAnimation = true;
+      loadedFileName = '';
+      updateUI();
+      persistCurrentSettings(() => showStatus(`Selected ${card.querySelector('.gif-card-name')?.textContent || 'preset'}.`));
+    });
+  });
+
+  if (gifDropzone && gifFileInput) {
+    gifDropzone.addEventListener('click', () => gifFileInput.click());
+    gifFileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) handleGifFile(file);
+      gifFileInput.value = '';
+    });
+    gifDropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      gifDropzone.classList.add('dragover');
+    });
+    gifDropzone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      gifDropzone.classList.remove('dragover');
+    });
+    gifDropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      gifDropzone.classList.remove('dragover');
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length > 0) handleGifFile(files[0]);
+    });
+  }
+
+  if (btnLoadUrl && urlInput) {
+    btnLoadUrl.addEventListener('click', () => {
+      const val = (urlInput.value || '').trim();
+      if (!val) {
+        showStatus('Please enter an image or GIF URL.', true);
+        return;
+      }
+      currentSettings.loadingImage.url = val;
+      currentSettings.modules.loadingAnimation = true;
+      loadedFileName = '';
+      updateUI();
+      persistCurrentSettings(() => showStatus('Image URL saved.'));
+    });
+    urlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') btnLoadUrl.click();
+    });
+  }
+
+  sizeBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      currentSettings.loadingImage.size = parseInt(btn.dataset.size, 10);
+      updateUI();
+      persistCurrentSettings();
+    });
+  });
+
+  if (chkRotate) {
+    chkRotate.addEventListener('change', (e) => {
+      currentSettings.loadingImage.rotate = e.target.checked;
+      updateUI();
+      persistCurrentSettings();
+    });
+  }
+
+  // Global window drop & paste routed cleanly to the appropriate upload handler
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const f = files[0];
+      if (f.name.toLowerCase().endsWith('.json')) {
+        navigateToPage('import-plugin', true);
+        handleModFile(f);
+      } else {
+        navigateToPage('loading-animation', true);
+        handleGifFile(f);
+      }
     }
+  });
+
+  window.addEventListener('paste', (e) => {
+    if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) return;
+    const clipboard = e.clipboardData;
+    if (!clipboard) return;
+    if (clipboard.files && clipboard.files.length > 0) {
+      const f = clipboard.files[0];
+      if (f.name.toLowerCase().endsWith('.json')) {
+        navigateToPage('import-plugin', true);
+        handleModFile(f);
+      } else {
+        navigateToPage('loading-animation', true);
+        handleGifFile(f);
+      }
+      return;
+    }
+    const text = clipboard.getData('text');
+    if (text && (text.startsWith('http://') || text.startsWith('https://') || text.startsWith('data:image/'))) {
+      if (urlInput) urlInput.value = text.trim();
+      currentSettings.loadingImage.url = text.trim();
+      currentSettings.modules.loadingAnimation = true;
+      loadedFileName = '';
+      updateUI();
+      persistCurrentSettings(() => showStatus('Image URL applied.'));
+    }
+  });
+
+  // Theme Listeners
+  if (chkModTheming) {
+    chkModTheming.addEventListener('change', (e) => {
+      currentSettings.modules.theming = e.target.checked;
+      updateUI();
+      persistCurrentSettings();
+    });
+  }
+
+  themeChips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const preset = chip.dataset.theme;
+      if (!preset) return;
+      currentSettings.theme.preset = preset;
+      currentSettings.modules.theming = true;
+      updateUI();
+      persistCurrentSettings();
+    });
+  });
+
+  if (customColorPicker) {
+    customColorPicker.addEventListener('input', (e) => {
+      currentSettings.theme.customAccent = e.target.value;
+      if (customColorHex) customColorHex.value = e.target.value;
+      if (customChipDot) customChipDot.style.background = e.target.value;
+      updateThemeColors(e.target.value);
+      updateThemePreviewBanner(THEMES['custom'], e.target.value);
+      persistCurrentSettings();
+    });
+  }
+
+  if (customColorHex) {
+    customColorHex.addEventListener('change', (e) => {
+      let val = e.target.value.trim();
+      if (!val.startsWith('#')) val = '#' + val;
+      if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+        currentSettings.theme.customAccent = val;
+        if (customColorPicker) customColorPicker.value = val;
+        if (customChipDot) customChipDot.style.background = val;
+        updateThemeColors(val);
+        updateThemePreviewBanner(THEMES['custom'], val);
+        persistCurrentSettings();
+      }
+    });
+  }
+
+  if (chkApplyNavigation) {
+    chkApplyNavigation.addEventListener('change', (e) => {
+      currentSettings.theme.applyToNavigation = e.target.checked;
+      persistCurrentSettings();
+    });
+  }
+
+  if (btnReset) {
+    btnReset.addEventListener('click', () => {
+      if (confirm('Reset all Salesforce Enhancer settings to defaults?')) {
+        currentSettings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+        selectedEditModId = '';
+        if (modJsonTextarea) modJsonTextarea.value = '';
+        if (urlInput) urlInput.value = '';
+        updateEditorSchemaSummary();
+        updateUI();
+        persistCurrentSettings(() => showStatus('Reset to default settings.'));
+      }
+    });
+  }
+
+  if (api && api.storage && api.storage.onChanged) {
+    api.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.sf_enhancer_settings?.newValue) {
+        currentSettings = Object.assign({}, DEFAULT_SETTINGS, changes.sf_enhancer_settings.newValue);
+        updateUI();
+      }
+    });
   }
 
   function loadInitialSettings() {
-    if (!api || !api.storage || !api.storage.local) return;
+    navigateToPage(activePage, false);
+
+    if (!api || !api.storage || !api.storage.local) {
+      updateUI();
+      return;
+    }
     try {
       api.storage.local.get(['sf_enhancer_settings', 'sf_appearance_settings'], (res) => {
         const loaded = res?.sf_enhancer_settings || res?.sf_appearance_settings;
@@ -526,133 +1192,44 @@
           if (loaded.inspectorMods && Array.isArray(loaded.inspectorMods.mods)) {
             currentSettings.inspectorMods = { mods: loaded.inspectorMods.mods };
           }
-          if (loaded.theme) currentSettings.theme = Object.assign({}, currentSettings.theme, loaded.theme);
+          if (loaded.theme && typeof loaded.theme === 'object') {
+            currentSettings.theme = Object.assign({}, currentSettings.theme, loaded.theme);
+          }
           if (loaded.loadingImage) {
             currentSettings.loadingImage = Object.assign({}, currentSettings.loadingImage, loaded.loadingImage);
           } else if (loaded.loadingUrl) {
             currentSettings.loadingImage.url = loaded.loadingUrl;
           }
         }
-        if (currentSettings.loadingImage.url && !currentSettings.loadingImage.url.startsWith('data:')) {
+        if (
+          urlInput &&
+          currentSettings.loadingImage.url &&
+          !currentSettings.loadingImage.url.startsWith('data:') &&
+          currentSettings.loadingImage.url !== GIF_PARROT &&
+          currentSettings.loadingImage.url !== GIF_NYAN
+        ) {
           urlInput.value = currentSettings.loadingImage.url;
         }
-        applyPageMode(isModMode);
+        if (initialEditModId && modJsonTextarea) {
+          const target = currentSettings.inspectorMods?.mods?.find((m) => m.id === initialEditModId);
+          if (target) {
+            loadModIntoEditor(target);
+          }
+        } else if (
+          activePage === 'import-plugin' &&
+          modJsonTextarea &&
+          !modJsonTextarea.value.trim() &&
+          currentSettings.inspectorMods?.mods?.length
+        ) {
+          loadModIntoEditor(currentSettings.inspectorMods.mods[0]);
+        }
+        updateEditorSchemaSummary();
+        updateUI();
       });
     } catch (_) {
-      applyPageMode(isModMode);
+      updateUI();
     }
   }
-
-  // Event Listeners
-  dropzone.addEventListener('click', () => {
-    fileInput.click();
-  });
-
-  fileInput.addEventListener('change', (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (file) handleFile(file);
-  });
-
-  dropzone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dropzone.classList.add('dragover');
-  });
-
-  dropzone.addEventListener('dragleave', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dropzone.classList.remove('dragover');
-  });
-
-  dropzone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dropzone.classList.remove('dragover');
-    const files = e.dataTransfer && e.dataTransfer.files;
-    if (files && files.length > 0) {
-      handleFile(files[0]);
-    }
-  });
-
-  // Global window drop listener as well
-  window.addEventListener('dragover', (e) => e.preventDefault());
-  window.addEventListener('drop', (e) => {
-    e.preventDefault();
-    const files = e.dataTransfer && e.dataTransfer.files;
-    if (files && files.length > 0) {
-      handleFile(files[0]);
-    }
-  });
-
-  // Global paste listener
-  window.addEventListener('paste', (e) => {
-    const clipboard = e.clipboardData;
-    if (!clipboard) return;
-
-    if (clipboard.files && clipboard.files.length > 0) {
-      handleFile(clipboard.files[0]);
-      return;
-    }
-
-    const text = clipboard.getData('text');
-    if (text && (text.startsWith('http://') || text.startsWith('https://') || text.startsWith('data:image/'))) {
-      urlInput.value = text.trim();
-      currentSettings.loadingImage.url = text.trim();
-      currentSettings.modules.loadingAnimation = true;
-      loadedFileName = '';
-      updatePreview();
-      showStatus('Pasted image URL loaded.');
-    }
-  });
-
-  btnLoadUrl.addEventListener('click', () => {
-    const val = (urlInput.value || '').trim();
-    if (!val) {
-      showStatus('Please enter an image or GIF URL.', true);
-      return;
-    }
-    currentSettings.loadingImage.url = val;
-    currentSettings.modules.loadingAnimation = true;
-    loadedFileName = '';
-    updatePreview();
-    showStatus('Image URL loaded. Click "Save & Apply" to apply.');
-  });
-
-  urlInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      btnLoadUrl.click();
-    }
-  });
-
-  sizeBtns.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      currentSettings.loadingImage.size = parseInt(btn.dataset.size, 10);
-      updatePreview();
-    });
-  });
-
-  chkRotate.addEventListener('change', (e) => {
-    currentSettings.loadingImage.rotate = e.target.checked;
-    updatePreview();
-  });
-
-  btnSaveApply.addEventListener('click', () => {
-    if (isModMode) {
-      const raw = modJsonTextarea ? modJsonTextarea.value.trim() : '';
-      if (!raw) {
-        showStatus('Choose a .mod.json file or paste Mod JSON first.', true);
-        return;
-      }
-      installAndSaveModsFromRawText(raw);
-      return;
-    }
-    saveSettings(false);
-  });
-
-  btnClose.addEventListener('click', () => {
-    window.close();
-  });
 
   loadInitialSettings();
 })();

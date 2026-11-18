@@ -82,7 +82,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    version: '1.3.0-alpha.2',
+    version: '1.3.0-alpha.3',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -706,7 +706,8 @@
 
     installedModsList.querySelectorAll('.mod-item-edit').forEach((btn) => {
       btn.addEventListener('click', () => {
-        openExtensionTab('mode=mod');
+        const modId = btn.dataset.modId || '';
+        openExtensionTab(`page=import-plugin${modId ? `&edit=${encodeURIComponent(modId)}` : ''}`);
       });
     });
 
@@ -773,7 +774,7 @@
     btnImportModFile.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      openExtensionTab('mode=mod');
+      openExtensionTab('page=import-plugin');
     });
   }
 
@@ -830,7 +831,7 @@
   });
 
   function openUploader() {
-    openExtensionTab('mode=gif');
+    openExtensionTab('page=loading-animation');
   }
 
   function handleFile(file) {
@@ -981,7 +982,8 @@
   const btnOpenExtensionPage = document.getElementById('btnOpenExtensionPage');
   if (btnOpenExtensionPage) {
     btnOpenExtensionPage.addEventListener('click', () => {
-      openExtensionTab('mode=mod');
+      const onThemes = navTabThemes && navTabThemes.classList.contains('active');
+      openExtensionTab(onThemes ? 'page=themes' : 'page=plugins');
     });
   }
 
