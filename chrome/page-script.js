@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salesforce Enhancer
 // @namespace    https://etherlucid.local/
-// @version      1.3.1
+// @version      1.3.2
 // @description  Salesforce productivity: subtabs & tab drag-and-drop, Quick Views list bookmarking, declarative Inspector Mods, developer themes, and custom animations.
 // @match        https://*.lightning.force.com/*
 // @match        https://*.salesforce.com/*
@@ -226,8 +226,44 @@
     }
   };
 
+  const DEFAULT_KEYBINDS = {
+    enabled: true,
+    prevWorkspace: 'Ctrl+Shift+BracketLeft',
+    nextWorkspace: 'Ctrl+Shift+BracketRight',
+    prevSubtab: 'Ctrl+Alt+BracketLeft',
+    nextSubtab: 'Ctrl+Alt+BracketRight',
+    reorderTabLeft: 'Ctrl+Alt+Comma',
+    reorderTabRight: 'Ctrl+Alt+Period',
+    promoteSubtab: 'Ctrl+Shift+Backslash',
+    moveTabPrevWorkspace: 'Ctrl+Shift+Comma',
+    moveTabNextWorkspace: 'Ctrl+Shift+Period',
+    closeCurrentTab: 'Ctrl+Shift+Backspace'
+  };
+
+  function normalizeKeybinds(rawKeybinds) {
+    const res = Object.assign({}, DEFAULT_KEYBINDS);
+    if (!rawKeybinds || typeof rawKeybinds !== 'object') return res;
+    if (rawKeybinds.enabled !== undefined) res.enabled = rawKeybinds.enabled !== false;
+    // Migrate unmodified initial v1.3.2 Alt defaults to conflict-free Ctrl+Shift / Ctrl+Alt defaults
+    if (
+      rawKeybinds.prevWorkspace === 'Alt+BracketLeft' &&
+      rawKeybinds.nextWorkspace === 'Alt+BracketRight' &&
+      rawKeybinds.promoteSubtab === 'Alt+ArrowUp' &&
+      rawKeybinds.closeCurrentTab === 'Alt+Shift+KeyW'
+    ) {
+      return res;
+    }
+    for (const k of Object.keys(DEFAULT_KEYBINDS)) {
+      if (k === 'enabled') continue;
+      if (typeof rawKeybinds[k] === 'string') {
+        res[k] = rawKeybinds[k].trim();
+      }
+    }
+    return res;
+  }
+
   const DEFAULT_SETTINGS = {
-    version: '1.3.1',
+    version: '1.3.2',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -237,7 +273,8 @@
       loadingAnimation: false
     },
     subtabs: {
-      hideAppName: false
+      hideAppName: false,
+      keybinds: Object.assign({}, DEFAULT_KEYBINDS)
     },
     hideAppName: false,
     inspectorMods: {
@@ -263,9 +300,10 @@
     }
 
     const hideAppName = raw.hideAppName !== undefined ? !!raw.hideAppName : (raw.subtabs && raw.subtabs.hideAppName !== undefined ? !!raw.subtabs.hideAppName : false);
+    const keybinds = normalizeKeybinds(raw.subtabs && raw.subtabs.keybinds);
 
     const res = {
-      version: '1.3.1',
+      version: '1.3.2',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
@@ -275,7 +313,8 @@
         loadingAnimation: raw.modules ? raw.modules.loadingAnimation === true : (raw.loadingImage ? raw.loadingImage.enabled === true : false)
       },
       subtabs: {
-        hideAppName: hideAppName
+        hideAppName: hideAppName,
+        keybinds: keybinds
       },
       hideAppName: hideAppName,
       inspectorMods: {
@@ -408,7 +447,11 @@
       try {
         if (!event.origin || !isAllowedSalesforceOrigin(event.origin)) return;
         if (event.data && (event.data.__sfEnhancer === true || event.data.__sfSubtabOpener === true)) {
-          const { action, target, options } = event.data;
+          const { action, target, options, command } = event.data;
+          if (action === 'tabKeybind' && command) {
+            executeTabKeybindCommand(command);
+            return;
+          }
           if (!target) return;
           if (action === 'openPrimaryTab') {
             openTargetAsPrimaryTab(target, options || {});
@@ -1352,6 +1395,364 @@
     },
     true
   );
+
+  /* ==========================================================================
+     TAB & SUBTAB KEYBOARD SHORTCUTS (v1.3.2)
+     ========================================================================== */
+
+  const IGNORED_MODIFIER_CODES = new Set([
+    'ShiftLeft', 'ShiftRight',
+    'ControlLeft', 'ControlRight',
+    'AltLeft', 'AltRight',
+    'MetaLeft', 'MetaRight',
+    'CapsLock'
+  ]);
+
+  function isEditableKeyboardEvent(event) {
+    const path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target];
+    for (const node of path) {
+      if (!node || node.nodeType !== 1) continue;
+      const tag = node.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      if (node.isContentEditable || node.getAttribute?.('contenteditable') === 'true') return true;
+      const role = node.getAttribute?.('role');
+      if (role === 'textbox' || role === 'combobox' || role === 'searchbox') return true;
+    }
+    return false;
+  }
+
+  function normalizeKeyComboFromEvent(event) {
+    if (!event || !event.code || IGNORED_MODIFIER_CODES.has(event.code)) return '';
+    const parts = [];
+    if (event.ctrlKey) parts.push('Ctrl');
+    if (event.altKey) parts.push('Alt');
+    if (event.shiftKey) parts.push('Shift');
+    if (event.metaKey) parts.push('Meta');
+    parts.push(event.code);
+    return parts.join('+');
+  }
+
+  let isKeybindCommandRunning = false;
+  let isSyntheticTabReorder = false;
+
+  function getTabBarItemsInDom(isSubtab) {
+    const selector = isSubtab
+      ? '.navexConsoleTabContainer[aria-label="Active Workspace Subtabs"] li.tabItem, .navexConsoleSubtabContainer li.tabItem, ul.slds-sub-tabs li.slds-sub-tabs__item, li.slds-sub-tabs__item'
+      : '.navexConsoleTabContainer[aria-label="Workspaces"] li.tabItem, .navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]) li.tabItem';
+    const seen = new Set();
+    const out = [];
+    try {
+      const nodes = document.querySelectorAll(selector);
+      for (const li of nodes) {
+        if (!li || seen.has(li)) continue;
+        if (!isSubtab && isSubtabElement(li)) continue;
+        const rect = li.getBoundingClientRect ? li.getBoundingClientRect() : null;
+        if (rect && rect.width <= 0 && rect.height <= 0) continue;
+        const tid = getTabIdFromElement(li);
+        if (!tid) continue;
+        seen.add(li);
+        out.push({ li, tabId: tid });
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  function sortTabsByVisualDomOrder(tabs, isSubtab) {
+    if (!Array.isArray(tabs) || tabs.length <= 1) return tabs;
+    const domItems = getTabBarItemsInDom(isSubtab);
+    if (!domItems.length) return tabs;
+    const orderMap = new Map();
+    domItems.forEach((item, idx) => {
+      if (!orderMap.has(item.tabId)) orderMap.set(item.tabId, idx);
+    });
+    return tabs
+      .map((t, origIdx) => ({
+        t,
+        origIdx,
+        domIdx: t && t.tabId && orderMap.has(t.tabId) ? orderMap.get(t.tabId) : 100000 + origIdx
+      }))
+      .sort((a, b) => a.domIdx - b.domIdx || a.origIdx - b.origIdx)
+      .map((x) => x.t);
+  }
+
+  async function cycleWorkspaceTab(ws, delta) {
+    const [rawAllTabs, focused] = await Promise.all([
+      ws.getAllTabInfo().catch(() => []),
+      ws.getFocusedTabInfo().catch(() => null)
+    ]);
+    const allTabs = sortTabsByVisualDomOrder(rawAllTabs, false);
+    if (!Array.isArray(allTabs) || allTabs.length === 0) return;
+    if (allTabs.length === 1) {
+      showToast('Only one workspace tab open');
+      return;
+    }
+    const activeWsId = focused ? (focused.isSubtab && focused.parentTabId ? focused.parentTabId : focused.tabId) : null;
+    let idx = activeWsId ? allTabs.findIndex((t) => t.tabId === activeWsId) : 0;
+    if (idx < 0) idx = 0;
+    const nextTab = allTabs[(idx + delta + allTabs.length) % allTabs.length];
+    if (nextTab && nextTab.tabId) {
+      await activateWorkspaceAndSubtab(ws, nextTab.tabId, null);
+    }
+  }
+
+  async function cycleSubtabInWorkspace(ws, delta) {
+    const focused = await ws.getFocusedTabInfo().catch(() => null);
+    if (!focused || !focused.tabId) return;
+    const parentId = focused.isSubtab && focused.parentTabId ? focused.parentTabId : focused.tabId;
+    const parentInfo = await ws.getTabInfo({ tabId: parentId }).catch(() => null);
+    if (!parentInfo) return;
+    const rawSubList = Array.isArray(parentInfo.subtabs) ? parentInfo.subtabs : [];
+    const subList = sortTabsByVisualDomOrder(rawSubList, true);
+    const cycle = [parentInfo, ...subList];
+    if (cycle.length <= 1) {
+      showToast('No subtabs in active workspace');
+      return;
+    }
+    let idx = cycle.findIndex((t) => t && t.tabId === focused.tabId);
+    if (idx < 0) idx = 0;
+    const target = cycle[(idx + delta + cycle.length) % cycle.length];
+    if (!target || !target.tabId) return;
+    if (target.tabId === parentId) {
+      await activateWorkspaceAndSubtab(ws, parentId, null);
+    } else {
+      await activateWorkspaceAndSubtab(ws, parentId, target.tabId);
+    }
+  }
+
+  async function reorderFocusedTab(ws, delta) {
+    const [allTabs, focused] = await Promise.all([
+      ws.getAllTabInfo().catch(() => []),
+      ws.getFocusedTabInfo().catch(() => null)
+    ]);
+    if (!focused || !focused.tabId) return;
+
+    const isSubtab = !!focused.isSubtab;
+    const pinnedIds = new Set();
+    if (Array.isArray(allTabs)) {
+      for (const t of allTabs) {
+        if (t && t.pinned && t.tabId) pinnedIds.add(t.tabId);
+        if (t && Array.isArray(t.subtabs)) {
+          for (const st of t.subtabs) {
+            if (st && st.pinned && st.tabId) pinnedIds.add(st.tabId);
+          }
+        }
+      }
+    }
+
+    const domItems = getTabBarItemsInDom(isSubtab);
+    const sourceEntry = domItems.find((item) => item.tabId === focused.tabId);
+    if (!sourceEntry || !sourceEntry.li || !sourceEntry.li.parentNode) {
+      showToast('Could not locate active tab in tab bar');
+      return;
+    }
+
+    const sourceLi = sourceEntry.li;
+    const isNodePinned = (el, tid) =>
+      !!(
+        (tid && pinnedIds.has(tid)) ||
+        (el && el.classList && (el.classList.contains('pinned') || el.classList.contains('isPinned')))
+      );
+    const isSourcePinned = isNodePinned(sourceLi, focused.tabId);
+    const parentUl = sourceLi.parentNode;
+    const siblings = Array.from(parentUl.children).filter((child) => {
+      if (!child || child.nodeType !== 1) return false;
+      const tid = getTabIdFromElement(child);
+      if (!tid) return false;
+      return isNodePinned(child, tid) === isSourcePinned;
+    });
+
+    const curIdx = siblings.indexOf(sourceLi);
+    if (curIdx < 0) return;
+    const targetIdx = curIdx + delta;
+    if (targetIdx < 0 || targetIdx >= siblings.length) {
+      showToast(
+        delta < 0
+          ? (isSubtab ? 'Subtab is already leftmost' : 'Tab is already leftmost')
+          : (isSubtab ? 'Subtab is already rightmost' : 'Tab is already rightmost')
+      );
+      return;
+    }
+
+    const targetLi = siblings[targetIdx];
+    const beforeDomIndex = Array.from(parentUl.children).indexOf(sourceLi);
+
+    // 1. Try native Salesforce Console reorder via synthetic HTML5 DragEvent on neighbor's outer edge
+    isSyntheticTabReorder = true;
+    try {
+      const srcRect = sourceLi.getBoundingClientRect();
+      const dstRect = targetLi.getBoundingClientRect();
+      const srcX = srcRect.left + srcRect.width / 2;
+      const srcY = srcRect.top + srcRect.height / 2;
+      const dstX = delta < 0 ? dstRect.left + 4 : dstRect.right - 4;
+      const dstY = dstRect.top + dstRect.height / 2;
+      const dt = typeof DataTransfer !== 'undefined' ? new DataTransfer() : undefined;
+      const makeDrag = (type, x, y) =>
+        new DragEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clientX: x,
+          clientY: y,
+          dataTransfer: dt
+        });
+      sourceLi.dispatchEvent(makeDrag('dragstart', srcX, srcY));
+      targetLi.dispatchEvent(makeDrag('dragenter', dstX, dstY));
+      targetLi.dispatchEvent(makeDrag('dragover', dstX, dstY));
+      targetLi.dispatchEvent(makeDrag('drop', dstX, dstY));
+      sourceLi.dispatchEvent(makeDrag('dragend', dstX, dstY));
+    } catch (_) {
+    } finally {
+      isSyntheticTabReorder = false;
+    }
+
+    await new Promise((r) => setTimeout(r, 35));
+    const afterDomIndex = Array.from(parentUl.children).indexOf(sourceLi);
+
+    // 2. Fallback: swap sibling <li> nodes directly in the tab bar if native handler ignored synthetic DragEvent
+    if (afterDomIndex === beforeDomIndex && sourceLi.parentNode === parentUl && targetLi.parentNode === parentUl) {
+      try {
+        if (delta < 0) {
+          parentUl.insertBefore(sourceLi, targetLi);
+        } else {
+          parentUl.insertBefore(sourceLi, targetLi.nextSibling);
+        }
+      } catch (domErr) {
+        console.warn('[Salesforce Enhancer] Could not reorder tab element:', domErr);
+        showToast('Could not reorder tab');
+        return;
+      }
+    }
+
+    showToast(
+      delta < 0
+        ? (isSubtab ? '← Moved subtab left' : '← Moved tab left')
+        : (isSubtab ? '→ Moved subtab right' : '→ Moved tab right')
+    );
+  }
+
+  async function moveFocusedTabToNeighborWorkspace(ws, delta) {
+    const [rawAllTabs, focused] = await Promise.all([
+      ws.getAllTabInfo().catch(() => []),
+      ws.getFocusedTabInfo().catch(() => null)
+    ]);
+    const allTabs = sortTabsByVisualDomOrder(rawAllTabs, false);
+    if (!focused || !focused.tabId || !Array.isArray(allTabs) || allTabs.length < 2) {
+      showToast('Need at least 2 workspace tabs to move');
+      return;
+    }
+    const activeWsId = focused.isSubtab && focused.parentTabId ? focused.parentTabId : focused.tabId;
+    const wsIdx = allTabs.findIndex((t) => t.tabId === activeWsId);
+    if (wsIdx < 0) return;
+    const neighborWs = allTabs[(wsIdx + delta + allTabs.length) % allTabs.length];
+    if (!neighborWs || !neighborWs.tabId || neighborWs.tabId === activeWsId) return;
+
+    if (focused.isSubtab) {
+      await moveSubtabToWorkspace(focused.tabId, neighborWs.tabId);
+    } else {
+      await movePrimaryTabToSubtab(activeWsId, neighborWs.tabId);
+    }
+  }
+
+  async function executeTabKeybindCommand(command) {
+    if (!isTopWindow || !command || isKeybindCommandRunning) return;
+    isKeybindCommandRunning = true;
+    try {
+      const ws = await getWorkspaceAPI();
+      if (!ws) return;
+
+      if (command === 'prevWorkspace') {
+        await cycleWorkspaceTab(ws, -1);
+      } else if (command === 'nextWorkspace') {
+        await cycleWorkspaceTab(ws, 1);
+      } else if (command === 'prevSubtab') {
+        await cycleSubtabInWorkspace(ws, -1);
+      } else if (command === 'nextSubtab') {
+        await cycleSubtabInWorkspace(ws, 1);
+      } else if (command === 'reorderTabLeft') {
+        await reorderFocusedTab(ws, -1);
+      } else if (command === 'reorderTabRight') {
+        await reorderFocusedTab(ws, 1);
+      } else if (command === 'promoteSubtab') {
+        const focused = await ws.getFocusedTabInfo().catch(() => null);
+        if (!focused || !focused.isSubtab) {
+          showToast('Active tab is already a workspace tab');
+          return;
+        }
+        await promoteSubtabToPrimary(focused.tabId);
+      } else if (command === 'moveTabPrevWorkspace') {
+        await moveFocusedTabToNeighborWorkspace(ws, -1);
+      } else if (command === 'moveTabNextWorkspace') {
+        await moveFocusedTabToNeighborWorkspace(ws, 1);
+      } else if (command === 'closeCurrentTab') {
+        const focused = await ws.getFocusedTabInfo().catch(() => null);
+        if (focused && focused.tabId && ws.closeTab) {
+          await ws.closeTab({ tabId: focused.tabId }).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.warn('[Salesforce Enhancer] Keybind action failed:', err);
+    } finally {
+      isKeybindCommandRunning = false;
+    }
+  }
+
+  const MOVE_KEYBIND_COMMANDS = new Set([
+    'reorderTabLeft',
+    'reorderTabRight',
+    'promoteSubtab',
+    'moveTabPrevWorkspace',
+    'moveTabNextWorkspace',
+    'closeCurrentTab'
+  ]);
+
+  function initTabKeybinds() {
+    window.addEventListener(
+      'keydown',
+      (event) => {
+        if (document.getElementById('sf-enhancer-merge-modal')) return;
+        const _modSettings = getEnhancerSettings();
+        if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
+        const keybinds = _modSettings.subtabs && _modSettings.subtabs.keybinds;
+        if (!keybinds || keybinds.enabled === false) return;
+        if (isEditableKeyboardEvent(event)) return;
+
+        const combo = normalizeKeyComboFromEvent(event);
+        if (!combo) return;
+
+        let matchedCommand = '';
+        for (const cmd of Object.keys(DEFAULT_KEYBINDS)) {
+          if (cmd === 'enabled') continue;
+          if (keybinds[cmd] && keybinds[cmd] === combo) {
+            matchedCommand = cmd;
+            break;
+          }
+        }
+        if (!matchedCommand) return;
+        if (event.repeat && MOVE_KEYBIND_COMMANDS.has(matchedCommand)) {
+          event.preventDefault();
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+
+        if (isTopWindow) {
+          executeTabKeybindCommand(matchedCommand);
+        } else {
+          try {
+            window.top.postMessage(
+              { __sfEnhancer: true, action: 'tabKeybind', command: matchedCommand },
+              '*'
+            );
+          } catch (_) {}
+        }
+      },
+      true
+    );
+  }
+
+  initTabKeybinds();
 
   /* ==========================================================================
      TAB DRAG & DROP MODULE (v1.2.4)
@@ -2309,6 +2710,7 @@
     document.addEventListener(
       'dragstart',
       (e) => {
+        if (isSyntheticTabReorder) return;
         const _modSettings = getEnhancerSettings();
         if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
 
@@ -10240,11 +10642,30 @@
         })
         .join('');
 
+      const pageRecMatch = (location.pathname || '').match(/\/lightning\/r\/(?:[^/]+\/)?([a-zA-Z0-9]{15,18})(?:\/|$|\?)/i);
+      const pageRecId = pageRecMatch ? pageRecMatch[1] : null;
+      const isDifferentRecordPage = !!(pageRecId && extractModRecordIdByPrefix(pageRecId, mod.target.keyPrefix) !== targetId);
+
       const labelStyle =
         'font-size:0.75rem; line-height:1.25; color:var(--lwc-colorTextLabel, #444444); font-weight:400;';
+      const targetUrl = `/lightning/r/${mod.target.objectApiName}/${targetId}/view`;
+      const targetLabel = (data && data.targetName) || targetId;
+      const headerTitle = mod.target.headerTitle || mod.target.objectApiName;
       return `
         <div style="font-family:var(--lwc-fontFamily, inherit); color:var(--lwc-colorTextDefault, #181818);">
           <div style="display:flex; flex-wrap:wrap; align-items:flex-start; gap:0.75rem 1.5rem;">
+            ${
+              isDifferentRecordPage
+                ? `<div style="display:flex; flex-direction:column; gap:2px;">
+                     <span style="${labelStyle}">${escapeModHtml(headerTitle)}</span>
+                     <a class="sfe-mod-record-link" data-record-id="${escapeModHtml(targetId)}" href="${escapeModHtml(
+                    targetUrl
+                  )}" style="font-size:0.8125rem; font-weight:700; color:var(--lwc-colorTextLink, #0176d3); text-decoration:none;">${escapeModHtml(
+                    targetLabel
+                  )}</a>
+                   </div>`
+                : ''
+            }
             <div style="display:flex; flex-direction:column; gap:2px;">
               <span style="${labelStyle}">Support Coverage</span>
               <div><span style="${sldsBadgeStyle(covColors)}">${escapeModHtml(covIcon)} ${escapeModHtml(covLabel)}</span></div>
@@ -10455,6 +10876,14 @@
       });
     }
 
+    function extractAnyRecordIdFromText(str) {
+      if (!str || typeof str !== 'string') return null;
+      const m = str.match(/(?:^|\/|\b|outputLookupLink-)([a-zA-Z0-9]{15}|[a-zA-Z0-9]{18})(?:\b|\/|$|\?)/);
+      if (!m) return null;
+      const candidate = m[1];
+      return /^[a-zA-Z0-9]{3}0[a-zA-Z0-9]{11,14}$/.test(candidate) ? candidate : null;
+    }
+
     function extractModRecordIdByPrefix(str, prefix) {
       if (!str || !prefix) return null;
       const re = new RegExp(`(?:^|/|\\b|outputLookupLink-)(${prefix}[a-zA-Z0-9]{12,15})(?:\\b|/|$|\\?)`, 'i');
@@ -10463,23 +10892,46 @@
     }
 
     function readContextRecordIdByPrefix(el, prefix) {
+      const pLower = String(prefix || '').toLowerCase();
       let cur = el;
       for (let i = 0; cur && i < 12; i++) {
         try {
-          if (cur.recordId && extractModRecordIdByPrefix(cur.recordId, prefix)) {
-            return extractModRecordIdByPrefix(cur.recordId, prefix);
+          if (typeof cur.recordId === 'string') {
+            const matched = extractModRecordIdByPrefix(cur.recordId, prefix);
+            if (matched) return matched;
+            const anyId = extractAnyRecordIdFromText(cur.recordId);
+            if (anyId && !anyId.toLowerCase().startsWith(pLower)) return null;
           }
           const attr = cur.getAttribute && (cur.getAttribute('data-record-id') || cur.getAttribute('record-id'));
-          if (attr && extractModRecordIdByPrefix(attr, prefix)) {
-            return extractModRecordIdByPrefix(attr, prefix);
+          if (attr) {
+            const matched = extractModRecordIdByPrefix(attr, prefix);
+            if (matched) return matched;
+            const anyId = extractAnyRecordIdFromText(attr);
+            if (anyId && !anyId.toLowerCase().startsWith(pLower)) return null;
           }
         } catch (_) {}
         const rn = cur.getRootNode ? cur.getRootNode() : null;
         cur = cur.parentElement || (rn && rn.host) || null;
       }
-      const fromUrl = extractModRecordIdByPrefix(location.pathname || '', prefix);
-      if (fromUrl) return fromUrl;
+
+      const path = location.pathname || '';
+      const urlMatched = extractModRecordIdByPrefix(path, prefix);
+      if (urlMatched) return urlMatched;
+      const urlRecordMatch = path.match(/\/lightning\/r\/(?:[^/]+\/)?([a-zA-Z0-9]{15,18})(?:\/|$|\?)/i);
+      if (urlRecordMatch && !urlRecordMatch[1].toLowerCase().startsWith(pLower)) {
+        return null;
+      }
+
       try {
+        const subtabLinks = document.querySelectorAll(
+          'li.slds-sub-tabs__item.slds-is-active a[href*="/lightning/r/"], li.slds-sub-tabs__item a[aria-selected="true"][href*="/lightning/r/"]'
+        );
+        for (const a of subtabLinks) {
+          const href = a.getAttribute('href') || '';
+          const m = extractModRecordIdByPrefix(href, prefix);
+          if (m) return m;
+          if (/\/lightning\/r\//i.test(href)) return null;
+        }
         const activeTabLinks = document.querySelectorAll(
           `li.active a[href*="${prefix}"], li.slds-is-active a[href*="${prefix}"], a[aria-selected="true"][href*="${prefix}"]`
         );
@@ -10648,16 +11100,22 @@
         for (const host of highlights) {
           const rect = host.getBoundingClientRect();
           if (!rect || rect.width <= 0 || rect.height <= 0 || rect.top < 0 || rect.top > 280) continue;
-          const tid = readContextRecordIdByPrefix(host, prefix);
-          if (!tid) continue;
 
           const sr =
             host.shadowRoot ||
             host._sfShadowRoot ||
             (host.querySelector('.highlights.slds-page-header') ? host : null);
-          if (!sr) continue;
-          const container = sr.querySelector('.highlights.slds-page-header');
-          if (!container) continue;
+          const container = sr ? sr.querySelector('.highlights.slds-page-header') : null;
+          const existingBar = container ? findModMountedChild(mod.id, host, container, 'sfe-mod-highlights-bar') : null;
+
+          const tid = readContextRecordIdByPrefix(host, prefix);
+          if (!tid) {
+            if (existingBar) existingBar.remove();
+            clearModMountedElement(mod.id, host);
+            continue;
+          }
+
+          if (!sr || !container) continue;
 
           const cached = getCachedModTarget(mod.id, tid);
           const err = modErrorMap.get(`${mod.id}:${tid}`);
@@ -10681,7 +11139,7 @@
           }
           if (container.style.height !== 'auto') container.style.height = 'auto';
 
-          let bar = findModMountedChild(mod.id, host, container, 'sfe-mod-highlights-bar');
+          let bar = existingBar;
           if (!bar) {
             bar = document.createElement('div');
             bar.className = 'sfe-mod-highlights-bar';
@@ -10708,11 +11166,16 @@
         for (const rightCol of rightCols) {
           const rect = rightCol.getBoundingClientRect();
           if (!rect || rect.width <= 0 || rect.height <= 0) continue;
-          const parentId = readContextRecordIdByPrefix(rightCol, pPrefix);
-          if (!parentId) continue;
-
           const existingCard = findModMountedChild(mod.id, rightCol, rightCol, 'sfe-mod-rightpane-card');
           const mountAttr = `data-sfe-mounted-${mod.id}`;
+          const parentId = readContextRecordIdByPrefix(rightCol, pPrefix);
+          if (!parentId) {
+            if (existingCard) existingCard.remove();
+            clearModMountedElement(mod.id, rightCol);
+            rightCol.removeAttribute(mountAttr);
+            continue;
+          }
+
           if (!existingCard && rightCol.getAttribute(mountAttr) === parentId) {
             continue;
           }
@@ -10930,5 +11393,5 @@
     setInterval(refreshInspectorMods, 850);
     setTimeout(refreshInspectorMods, 400);
 
-  console.log('[Salesforce Enhancer v1.3.1] Ready — Modular shortcuts, Quick Views, declarative Inspector Mods, developer themes & loading animations.');
+  console.log('[Salesforce Enhancer v1.3.2] Ready — Modular shortcuts, Quick Views, declarative Inspector Mods, developer themes & loading animations.');
 })();

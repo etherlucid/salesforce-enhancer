@@ -896,6 +896,65 @@
       font-size: 12.5px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }
+
+    /* Keybinds Editor */
+    .keybinds-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .keybind-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .keybind-row-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .keybind-row-desc {
+      font-size: 11.5px;
+      color: var(--subtext);
+      margin-top: 2px;
+    }
+    .keybind-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .keybind-record-btn {
+      min-width: 146px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border-dark);
+      background: #ffffff;
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.14s ease;
+    }
+    .keybind-record-btn:hover {
+      border-color: var(--primary);
+    }
+    .keybind-record-btn.recording {
+      border-color: var(--primary);
+      background: rgba(1, 118, 211, 0.1);
+      color: var(--primary);
+    }
+    .keybind-record-btn.unbound {
+      color: var(--subtext);
+      font-weight: 500;
+    }
   </style>
 </head>
 <body>
@@ -905,7 +964,7 @@
       <img src="icons/icon-48.png" alt="Salesforce Enhancer" class="brand-logo">
       <div class="brand-meta">
         <div class="brand-title">Salesforce Enhancer</div>
-        <span class="brand-version">v1.3.1</span>
+        <span class="brand-version">v1.3.2</span>
       </div>
     </div>
 
@@ -916,6 +975,11 @@
           <span>Plugins</span>
         </span>
         <span class="nav-badge" id="pluginsActiveCountPill">3</span>
+      </button>
+      <button type="button" class="nav-item" data-nav-page="keybinds" id="navBtnKeybinds">
+        <span class="nav-item-left">
+          <span>Keybinds</span>
+        </span>
       </button>
       <button type="button" class="nav-item" data-nav-page="themes" id="navBtnThemes">
         <span class="nav-item-left">
@@ -993,6 +1057,7 @@
               <input type="checkbox" id="chkHideAppName">
               <span>Hide "Service Console" app label</span>
             </label>
+            <button type="button" class="btn btn-neutral btn-sm" id="btnOpenKeybindsPage">Keybinds →</button>
           </div>
         </div>
 
@@ -1331,6 +1396,27 @@
             </label>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- PAGE 5: KEYBINDS -->
+    <section class="page-section" id="pageKeybinds">
+      <div class="panel-card">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px;">
+          <div>
+            <div class="panel-card-title">Tab &amp; Subtab Keybinds</div>
+            <div class="panel-card-desc" style="margin-bottom:0;">Shortcuts work when Subtabs &amp; Shortcuts is enabled and focus is outside text inputs.</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <button type="button" class="btn btn-neutral btn-sm" id="btnResetKeybinds">Reset Keybinds</button>
+            <label class="switch">
+              <input type="checkbox" id="chkKeybindsEnabled" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="keybinds-list" id="keybindsList"></div>
       </div>
     </section>
   </main>

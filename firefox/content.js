@@ -145,13 +145,47 @@
     return lum > 0.45 ? '#0f172a' : '#ffffff';
   }
 
+  const DEFAULT_KEYBINDS = {
+    enabled: true,
+    prevWorkspace: 'Ctrl+Shift+BracketLeft',
+    nextWorkspace: 'Ctrl+Shift+BracketRight',
+    prevSubtab: 'Ctrl+Alt+BracketLeft',
+    nextSubtab: 'Ctrl+Alt+BracketRight',
+    reorderTabLeft: 'Ctrl+Alt+Comma',
+    reorderTabRight: 'Ctrl+Alt+Period',
+    promoteSubtab: 'Ctrl+Shift+Backslash',
+    moveTabPrevWorkspace: 'Ctrl+Shift+Comma',
+    moveTabNextWorkspace: 'Ctrl+Shift+Period',
+    closeCurrentTab: 'Ctrl+Shift+Backspace'
+  };
+
+  function normalizeKeybinds(rawKeybinds) {
+    const res = Object.assign({}, DEFAULT_KEYBINDS);
+    if (!rawKeybinds || typeof rawKeybinds !== 'object') return res;
+    if (rawKeybinds.enabled !== undefined) res.enabled = rawKeybinds.enabled !== false;
+    if (
+      rawKeybinds.prevWorkspace === 'Alt+BracketLeft' &&
+      rawKeybinds.nextWorkspace === 'Alt+BracketRight' &&
+      rawKeybinds.promoteSubtab === 'Alt+ArrowUp' &&
+      rawKeybinds.closeCurrentTab === 'Alt+Shift+KeyW'
+    ) {
+      return res;
+    }
+    for (const k of Object.keys(DEFAULT_KEYBINDS)) {
+      if (k === 'enabled') continue;
+      if (typeof rawKeybinds[k] === 'string') res[k] = rawKeybinds[k].trim();
+    }
+    return res;
+  }
+
   function normalizeSettings(raw) {
     const hideAppName = raw ? (raw.hideAppName !== undefined ? !!raw.hideAppName : (raw.subtabs && raw.subtabs.hideAppName !== undefined ? !!raw.subtabs.hideAppName : false)) : false;
+    const keybinds = normalizeKeybinds(raw && raw.subtabs && raw.subtabs.keybinds);
     if (!raw || typeof raw !== 'object') {
       return {
-        version: '1.3.1',
+        version: '1.3.2',
         modules: { subtabs: true, quickViews: true, linkInterceptor: true, inspectorMods: false, theming: false, loadingAnimation: false },
-        subtabs: { hideAppName: false },
+        subtabs: { hideAppName: false, keybinds: Object.assign({}, DEFAULT_KEYBINDS) },
         hideAppName: false,
         inspectorMods: { mods: [] },
         theme: { preset: 'classic', customAccent: '#8b5cf6', applyToNavigation: true },
@@ -160,7 +194,7 @@
     }
 
     const res = {
-      version: '1.3.1',
+      version: '1.3.2',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
@@ -170,7 +204,8 @@
         loadingAnimation: raw.modules ? raw.modules.loadingAnimation === true : (raw.loadingImage ? raw.loadingImage.enabled === true : false)
       },
       subtabs: {
-        hideAppName: hideAppName
+        hideAppName: hideAppName,
+        keybinds: keybinds
       },
       hideAppName: hideAppName,
       inspectorMods: {

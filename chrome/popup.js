@@ -81,8 +81,41 @@
     }
   };
 
+  const DEFAULT_KEYBINDS = {
+    enabled: true,
+    prevWorkspace: 'Ctrl+Shift+BracketLeft',
+    nextWorkspace: 'Ctrl+Shift+BracketRight',
+    prevSubtab: 'Ctrl+Alt+BracketLeft',
+    nextSubtab: 'Ctrl+Alt+BracketRight',
+    reorderTabLeft: 'Ctrl+Alt+Comma',
+    reorderTabRight: 'Ctrl+Alt+Period',
+    promoteSubtab: 'Ctrl+Shift+Backslash',
+    moveTabPrevWorkspace: 'Ctrl+Shift+Comma',
+    moveTabNextWorkspace: 'Ctrl+Shift+Period',
+    closeCurrentTab: 'Ctrl+Shift+Backspace'
+  };
+
+  function normalizeKeybinds(rawKeybinds) {
+    const res = Object.assign({}, DEFAULT_KEYBINDS);
+    if (!rawKeybinds || typeof rawKeybinds !== 'object') return res;
+    if (rawKeybinds.enabled !== undefined) res.enabled = rawKeybinds.enabled !== false;
+    if (
+      rawKeybinds.prevWorkspace === 'Alt+BracketLeft' &&
+      rawKeybinds.nextWorkspace === 'Alt+BracketRight' &&
+      rawKeybinds.promoteSubtab === 'Alt+ArrowUp' &&
+      rawKeybinds.closeCurrentTab === 'Alt+Shift+KeyW'
+    ) {
+      return res;
+    }
+    for (const k of Object.keys(DEFAULT_KEYBINDS)) {
+      if (k === 'enabled') continue;
+      if (typeof rawKeybinds[k] === 'string') res[k] = rawKeybinds[k].trim();
+    }
+    return res;
+  }
+
   const DEFAULT_SETTINGS = {
-    version: '1.3.1',
+    version: '1.3.2',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -92,7 +125,8 @@
       loadingAnimation: false
     },
     subtabs: {
-      hideAppName: false
+      hideAppName: false,
+      keybinds: Object.assign({}, DEFAULT_KEYBINDS)
     },
     hideAppName: false,
     inspectorMods: {
@@ -126,6 +160,8 @@
 
   const chkModSubtabs = document.getElementById('chkModSubtabs');
   const chkHideAppName = document.getElementById('chkHideAppName');
+  const chkKeybindsEnabled = document.getElementById('chkKeybindsEnabled');
+  const btnOpenKeybinds = document.getElementById('btnOpenKeybinds');
   const subtabsHideAppNameRow = document.getElementById('subtabsHideAppNameRow');
   const chkModQuickViews = document.getElementById('chkModQuickViews');
   const chkModLinkInterceptor = document.getElementById('chkModLinkInterceptor');
@@ -251,7 +287,8 @@
     const hideAppName = loaded ? (loaded.hideAppName !== undefined ? !!loaded.hideAppName : (loaded.subtabs && loaded.subtabs.hideAppName !== undefined ? !!loaded.subtabs.hideAppName : false)) : false;
     res.hideAppName = hideAppName;
     res.subtabs = {
-      hideAppName: hideAppName
+      hideAppName: hideAppName,
+      keybinds: normalizeKeybinds(loaded.subtabs && loaded.subtabs.keybinds)
     };
     res.inspectorMods = {
       mods: Array.isArray(loaded.inspectorMods && loaded.inspectorMods.mods)
@@ -298,6 +335,9 @@
     chkModSubtabs.checked = isSubtabsEnabled;
     if (chkHideAppName) {
       chkHideAppName.checked = !!(currentSettings.subtabs?.hideAppName || currentSettings.hideAppName);
+    }
+    if (chkKeybindsEnabled) {
+      chkKeybindsEnabled.checked = currentSettings.subtabs?.keybinds?.enabled !== false;
     }
     if (subtabsHideAppNameRow) {
       subtabsHideAppNameRow.classList.toggle('is-disabled', !subtabsSettingsOpen);
@@ -529,10 +569,25 @@
   if (chkHideAppName) {
     chkHideAppName.addEventListener('change', (e) => {
       const val = e.target.checked;
-      if (!currentSettings.subtabs) currentSettings.subtabs = {};
+      if (!currentSettings.subtabs) currentSettings.subtabs = { keybinds: Object.assign({}, DEFAULT_KEYBINDS) };
       currentSettings.subtabs.hideAppName = val;
       currentSettings.hideAppName = val;
       saveAndApply();
+    });
+  }
+
+  if (chkKeybindsEnabled) {
+    chkKeybindsEnabled.addEventListener('change', (e) => {
+      if (!currentSettings.subtabs) currentSettings.subtabs = {};
+      currentSettings.subtabs.keybinds = normalizeKeybinds(currentSettings.subtabs.keybinds);
+      currentSettings.subtabs.keybinds.enabled = e.target.checked;
+      saveAndApply();
+    });
+  }
+
+  if (btnOpenKeybinds) {
+    btnOpenKeybinds.addEventListener('click', () => {
+      openExtensionTab('page=keybinds');
     });
   }
 

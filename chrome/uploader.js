@@ -27,8 +27,54 @@
     'custom': { name: 'Custom', isDark: false, accent: '#8b5cf6', contrast: '#ffffff', bg: '#ffffff', text: '#0f172a' }
   };
 
+  const DEFAULT_KEYBINDS = {
+    enabled: true,
+    prevWorkspace: 'Ctrl+Shift+BracketLeft',
+    nextWorkspace: 'Ctrl+Shift+BracketRight',
+    prevSubtab: 'Ctrl+Alt+BracketLeft',
+    nextSubtab: 'Ctrl+Alt+BracketRight',
+    reorderTabLeft: 'Ctrl+Alt+Comma',
+    reorderTabRight: 'Ctrl+Alt+Period',
+    promoteSubtab: 'Ctrl+Shift+Backslash',
+    moveTabPrevWorkspace: 'Ctrl+Shift+Comma',
+    moveTabNextWorkspace: 'Ctrl+Shift+Period',
+    closeCurrentTab: 'Ctrl+Shift+Backspace'
+  };
+
+  const KEYBIND_ROWS = [
+    { id: 'prevWorkspace', label: 'Previous Workspace Tab', desc: 'Focus the previous top-level workspace tab.' },
+    { id: 'nextWorkspace', label: 'Next Workspace Tab', desc: 'Focus the next top-level workspace tab.' },
+    { id: 'prevSubtab', label: 'Previous Subtab', desc: 'Cycle backward across the active workspace and its subtabs.' },
+    { id: 'nextSubtab', label: 'Next Subtab', desc: 'Cycle forward across the active workspace and its subtabs.' },
+    { id: 'reorderTabLeft', label: 'Reorder Tab / Subtab Left', desc: 'Move the active tab or subtab one position to the left of its neighbor.' },
+    { id: 'reorderTabRight', label: 'Reorder Tab / Subtab Right', desc: 'Move the active tab or subtab one position to the right of its neighbor.' },
+    { id: 'promoteSubtab', label: 'Promote Subtab to Workspace', desc: 'Move the active subtab out into its own workspace tab.' },
+    { id: 'moveTabPrevWorkspace', label: 'Move Tab to Previous Workspace', desc: 'Move the active subtab or merge the active workspace left.' },
+    { id: 'moveTabNextWorkspace', label: 'Move Tab to Next Workspace', desc: 'Move the active subtab or merge the active workspace right.' },
+    { id: 'closeCurrentTab', label: 'Close Active Tab / Subtab', desc: 'Close the currently focused workspace tab or subtab.' }
+  ];
+
+  function normalizeKeybinds(rawKeybinds) {
+    const res = Object.assign({}, DEFAULT_KEYBINDS);
+    if (!rawKeybinds || typeof rawKeybinds !== 'object') return res;
+    if (rawKeybinds.enabled !== undefined) res.enabled = rawKeybinds.enabled !== false;
+    if (
+      rawKeybinds.prevWorkspace === 'Alt+BracketLeft' &&
+      rawKeybinds.nextWorkspace === 'Alt+BracketRight' &&
+      rawKeybinds.promoteSubtab === 'Alt+ArrowUp' &&
+      rawKeybinds.closeCurrentTab === 'Alt+Shift+KeyW'
+    ) {
+      return res;
+    }
+    for (const k of Object.keys(DEFAULT_KEYBINDS)) {
+      if (k === 'enabled') continue;
+      if (typeof rawKeybinds[k] === 'string') res[k] = rawKeybinds[k].trim();
+    }
+    return res;
+  }
+
   const DEFAULT_SETTINGS = {
-    version: '1.3.1',
+    version: '1.3.2',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -38,7 +84,8 @@
       loadingAnimation: false
     },
     subtabs: {
-      hideAppName: false
+      hideAppName: false,
+      keybinds: Object.assign({}, DEFAULT_KEYBINDS)
     },
     hideAppName: false,
     inspectorMods: {
@@ -91,6 +138,10 @@
       title: 'Plugins',
       subtitle: 'Enable, disable, and search built-in and custom Salesforce Enhancer plugins.'
     },
+    keybinds: {
+      title: 'Keybinds',
+      subtitle: 'Configure keyboard shortcuts for navigating and moving tabs and subtabs.'
+    },
     themes: {
       title: 'Themes',
       subtitle: 'Customize console accent bars and developer color palettes.'
@@ -111,6 +162,7 @@
 
   function resolveInitialPage(raw) {
     const val = String(raw || '').trim().toLowerCase();
+    if (val === 'keybinds' || val === 'shortcuts' || val === 'keys') return 'keybinds';
     if (val === 'mod' || val === 'import-plugin' || val === 'import') return 'import-plugin';
     if (val === 'gif' || val === 'loading-animation' || val === 'loading') return 'loading-animation';
     if (val === 'themes' || val === 'theme') return 'themes';
@@ -120,6 +172,7 @@
   let activePage = resolveInitialPage(requestedPageParam);
   let selectedEditModId = initialEditModId;
   let activePluginFilter = 'all';
+  let recordingKeybindId = '';
   let currentSettings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
   let loadedFileName = '';
 
@@ -127,6 +180,7 @@
   const navItems = document.querySelectorAll('.nav-item[data-nav-page]');
   const pageSections = {
     plugins: document.getElementById('pagePlugins'),
+    keybinds: document.getElementById('pageKeybinds'),
     themes: document.getElementById('pageThemes'),
     'import-plugin': document.getElementById('pageImportPlugin'),
     'loading-animation': document.getElementById('pageLoadingAnimation')
@@ -143,6 +197,7 @@
   const filterPills = document.querySelectorAll('.filter-pill[data-filter]');
   const chkModSubtabs = document.getElementById('chkModSubtabs');
   const chkHideAppName = document.getElementById('chkHideAppName');
+  const btnOpenKeybindsPage = document.getElementById('btnOpenKeybindsPage');
   const chkModLinkInterceptor = document.getElementById('chkModLinkInterceptor');
   const chkModQuickViews = document.getElementById('chkModQuickViews');
   const chkModLoading = document.getElementById('chkModLoading');
@@ -151,6 +206,11 @@
   const customPluginsSectionWrap = document.getElementById('customPluginsSectionWrap');
   const overviewCustomModsGrid = document.getElementById('overviewCustomModsGrid');
   const btnGoCustomImporter = document.getElementById('btnGoCustomImporter');
+
+  // Keybinds Page Elements
+  const chkKeybindsEnabled = document.getElementById('chkKeybindsEnabled');
+  const btnResetKeybinds = document.getElementById('btnResetKeybinds');
+  const keybindsList = document.getElementById('keybindsList');
 
   // Themes Elements
   const chkModTheming = document.getElementById('chkModTheming');
@@ -279,6 +339,9 @@
   }
   if (btnOpenGifStudio) {
     btnOpenGifStudio.addEventListener('click', () => navigateToPage('loading-animation', true));
+  }
+  if (btnOpenKeybindsPage) {
+    btnOpenKeybindsPage.addEventListener('click', () => navigateToPage('keybinds', true));
   }
 
   function persistCurrentSettings(onComplete) {
@@ -726,7 +789,159 @@
     }
 
     renderModsViews();
+    renderKeybindsList();
     updateLoadingPreview();
+  }
+
+  const CODE_DISPLAY_MAP = {
+    BracketLeft: '[',
+    BracketRight: ']',
+    Comma: ',',
+    Period: '.',
+    Slash: '/',
+    Backslash: '\\',
+    Semicolon: ';',
+    Quote: '\'',
+    Minus: '-',
+    Equal: '=',
+    Backquote: '`',
+    ArrowUp: '↑',
+    ArrowDown: '↓',
+    ArrowLeft: '←',
+    ArrowRight: '→',
+    Space: 'Space',
+    Tab: 'Tab',
+    Backspace: 'Backspace'
+  };
+
+  function formatKeyCombo(combo) {
+    if (!combo) return 'Unbound';
+    return combo
+      .split('+')
+      .map((part) => {
+        if (CODE_DISPLAY_MAP[part]) return CODE_DISPLAY_MAP[part];
+        if (part.startsWith('Key')) return part.slice(3);
+        if (part.startsWith('Digit')) return part.slice(5);
+        return part;
+      })
+      .join(' + ');
+  }
+
+  function buildComboFromKeyEvent(event) {
+    const ignored = new Set([
+      'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight',
+      'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight', 'CapsLock'
+    ]);
+    if (!event || !event.code || ignored.has(event.code)) return '';
+    const isFunctionKey = /^F([1-9]|1[0-2])$/.test(event.code);
+    if (!event.ctrlKey && !event.altKey && !event.metaKey && !isFunctionKey) {
+      return null;
+    }
+    const parts = [];
+    if (event.ctrlKey) parts.push('Ctrl');
+    if (event.altKey) parts.push('Alt');
+    if (event.shiftKey) parts.push('Shift');
+    if (event.metaKey) parts.push('Meta');
+    parts.push(event.code);
+    return parts.join('+');
+  }
+
+  function renderKeybindsList() {
+    if (!currentSettings.subtabs) currentSettings.subtabs = {};
+    const kb = normalizeKeybinds(currentSettings.subtabs.keybinds);
+    currentSettings.subtabs.keybinds = kb;
+
+    if (chkKeybindsEnabled) {
+      chkKeybindsEnabled.checked = kb.enabled !== false;
+    }
+    if (!keybindsList) return;
+
+    keybindsList.innerHTML = KEYBIND_ROWS.map((row) => {
+      const combo = kb[row.id] || '';
+      const isRec = recordingKeybindId === row.id;
+      const cls = isRec ? 'keybind-record-btn recording' : (combo ? 'keybind-record-btn' : 'keybind-record-btn unbound');
+      const label = isRec ? 'Press shortcut…' : formatKeyCombo(combo);
+      return `
+        <div class="keybind-row">
+          <div>
+            <div class="keybind-row-title">${escapeHtml(row.label)}</div>
+            <div class="keybind-row-desc">${escapeHtml(row.desc)}</div>
+          </div>
+          <div class="keybind-controls">
+            <button type="button" class="${cls}" data-kb-id="${escapeHtml(row.id)}" title="Click and press a key combination">${escapeHtml(label)}</button>
+            <button type="button" class="btn btn-danger-ghost btn-sm keybind-clear-btn" data-kb-clear="${escapeHtml(row.id)}" title="Clear shortcut">✕</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    keybindsList.querySelectorAll('.keybind-record-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.kbId;
+        recordingKeybindId = recordingKeybindId === id ? '' : id;
+        renderKeybindsList();
+      });
+    });
+
+    keybindsList.querySelectorAll('.keybind-clear-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.kbClear;
+        if (recordingKeybindId === id) recordingKeybindId = '';
+        currentSettings.subtabs.keybinds[id] = '';
+        renderKeybindsList();
+        persistCurrentSettings(() => showStatus('Shortcut cleared.'));
+      });
+    });
+  }
+
+  window.addEventListener(
+    'keydown',
+    (event) => {
+      if (!recordingKeybindId) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (event.code === 'Escape') {
+        recordingKeybindId = '';
+        renderKeybindsList();
+        return;
+      }
+
+      const combo = buildComboFromKeyEvent(event);
+      if (combo === '') return;
+      if (combo === null) {
+        showStatus('Include Ctrl, Alt, Cmd, or a function key (F1–F12).', true);
+        return;
+      }
+
+      if (!currentSettings.subtabs) currentSettings.subtabs = {};
+      currentSettings.subtabs.keybinds = normalizeKeybinds(currentSettings.subtabs.keybinds);
+      currentSettings.subtabs.keybinds[recordingKeybindId] = combo;
+      currentSettings.subtabs.keybinds.enabled = true;
+      recordingKeybindId = '';
+      renderKeybindsList();
+      persistCurrentSettings(() => showStatus(`Shortcut set to ${formatKeyCombo(combo)}.`));
+    },
+    true
+  );
+
+  if (chkKeybindsEnabled) {
+    chkKeybindsEnabled.addEventListener('change', (e) => {
+      if (!currentSettings.subtabs) currentSettings.subtabs = {};
+      currentSettings.subtabs.keybinds = normalizeKeybinds(currentSettings.subtabs.keybinds);
+      currentSettings.subtabs.keybinds.enabled = e.target.checked;
+      persistCurrentSettings();
+    });
+  }
+
+  if (btnResetKeybinds) {
+    btnResetKeybinds.addEventListener('click', () => {
+      recordingKeybindId = '';
+      if (!currentSettings.subtabs) currentSettings.subtabs = {};
+      currentSettings.subtabs.keybinds = Object.assign({}, DEFAULT_KEYBINDS);
+      renderKeybindsList();
+      persistCurrentSettings(() => showStatus('Keybinds reset to defaults.'));
+    });
   }
 
   function installAndSaveModsFromRawText(rawText) {
@@ -1187,7 +1402,12 @@
         const loaded = res?.sf_enhancer_settings || res?.sf_appearance_settings;
         if (loaded && typeof loaded === 'object') {
           if (loaded.modules) currentSettings.modules = Object.assign({}, currentSettings.modules, loaded.modules);
-          if (loaded.subtabs) currentSettings.subtabs = Object.assign({}, currentSettings.subtabs, loaded.subtabs);
+          if (loaded.subtabs) {
+            currentSettings.subtabs = {
+              hideAppName: !!(loaded.subtabs.hideAppName !== undefined ? loaded.subtabs.hideAppName : loaded.hideAppName),
+              keybinds: normalizeKeybinds(loaded.subtabs.keybinds)
+            };
+          }
           if (loaded.hideAppName !== undefined) currentSettings.hideAppName = loaded.hideAppName;
           if (loaded.inspectorMods && Array.isArray(loaded.inspectorMods.mods)) {
             currentSettings.inspectorMods = { mods: loaded.inspectorMods.mods };

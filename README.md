@@ -1,15 +1,38 @@
 # Salesforce Enhancer
 
-Salesforce Enhancer is a browser extension for Salesforce Lightning Experience and Service Cloud Console that adds workspace subtab management, quick view navigation, developer themes, and optional loading screen customization.
+Salesforce Enhancer is a browser extension for Salesforce Lightning Experience and Service Cloud Console that adds workspace/subtab shortcuts and drag-and-drop management, customizable tab keybinds, Link Interceptor, Quick Views pinning, declarative Inspector Mods (`.mod.json`), developer themes, and custom loading animations.
 
 ## Features
 
-- **Workspace Subtab Management**: Automatically opens records (such as Cases) as subtabs within an existing workspace tab (such as an Account) using the Salesforce Console `workspaceAPI`. Falls back to standard navigation when operating outside a console app.
-- **Quick Views Menu**: Provides a dropdown list in the extension popup to navigate directly to frequently accessed list views, queues, and object pages.
-- **Developer Themes**: Offers low-strain color palettes including Gruvbox, Solarized Dark, Solarized Light, Nord, and Dracula. Styles are scoped to maintain contrast and visibility for Salesforce Lightning Design System (SLDS) progress bars, path stages, and status badges.
-- **Custom Loading Screen**: Allows replacing the standard Salesforce loading animation with bundled offline presets (Party Parrot, Nyan Cat) or a custom GIF. Disabled by default.
-- **Standalone Uploader Window**: Uses an independent popup window for GIF selection, supporting file browsing, drag-and-drop, and direct clipboard paste without closing when focus changes.
-- **Offline and Private**: Runs entirely locally with zero telemetry, zero analytics, and no external network calls. Permissions are strictly scoped to Salesforce domains.
+- **Subtabs & Shortcuts**:
+  - `Alt+Click` opens records as subtabs (`Alt+Shift+Click` in the background); `Cmd/Ctrl+Click` opens new primary workspace tabs (`Cmd/Ctrl+Shift+Click` in the background).
+  - Bidirectional tab drag-and-drop to convert workspaces into subtabs, promote subtabs into workspaces, or move subtabs between workspaces, with a confirmation prompt before merging a workspace that contains multiple tabs.
+  - Optional toggle to hide the `"Service Console"` app label.
+- **Customizable Tab & Subtab Keybinds**: Navigate between workspaces and subtabs, reorder tabs/subtabs left or right (including pinned tabs within the pinned group), promote subtabs, move tabs across workspaces, and close active tabs via keyboard shortcuts. All shortcuts can be rebound or cleared on the Extension Site's **Keybinds** page.
+- **Link Interceptor**: Routes external Salesforce Lightning and Knowledge article links (`/lightning/...`, `/articles/...`, `/lightning/articles/...`) into your active Salesforce Console tab instead of spawning duplicate browser tabs.
+- **Quick Views**: Pin favorite list views to the top of the List View Switcher dropdown with manual reordering and A–Z sorting.
+- **Custom Plugins (Declarative Inspector Mods)**: Org-agnostic `.mod.json` engine that renders related record status cards across Hover Previews, Record Highlights Panels, and Right Panes without hardcoding org-specific schemas into the extension.
+- **Developer Themes**: Includes Classic SF, Gruvbox Dark/Light, Solarized Dark/Light, Nord, Dracula, One Dark, and Custom accent colors with optional navigation bar accent styling.
+- **Loading Animation**: Built-in plugin to replace the default Salesforce spinner with bundled offline presets (`Parrot`, `Nyan Cat`) or a custom uploaded GIF/image/URL, with configurable display size (`48px`–`128px`) and rotation. Disabled by default.
+- **Multi-Page Extension Site**: Full browser-tab settings site (`options_ui`) with dedicated pages for **Plugins**, **Keybinds**, **Themes**, **Custom Plugins** (`.mod.json` uploader and JSON editor), and **Loading Animation**.
+- **Offline and Private**: Runs locally with zero telemetry, zero analytics, and permissions scoped strictly to Salesforce domains.
+
+## Default Keybinds
+
+Shortcuts match by layout-independent `event.code`, ignore keypresses inside inputs/textareas/rich-text editors, and can be customized or cleared under **Keybinds** on the extension page.
+
+| Action | Default Shortcut |
+| --- | --- |
+| Previous Workspace Tab | `Ctrl + Shift + [` |
+| Next Workspace Tab | `Ctrl + Shift + ]` |
+| Previous Subtab *(cycles workspace + subtabs)* | `Ctrl + Alt + [` |
+| Next Subtab *(cycles workspace + subtabs)* | `Ctrl + Alt + ]` |
+| Reorder Tab / Subtab Left *(including pinned tabs)* | `Ctrl + Alt + ,` |
+| Reorder Tab / Subtab Right *(including pinned tabs)* | `Ctrl + Alt + .` |
+| Promote Subtab to Workspace | `Ctrl + Shift + \` |
+| Move Tab / Subtab to Previous Workspace | `Ctrl + Shift + ,` |
+| Move Tab / Subtab to Next Workspace | `Ctrl + Shift + .` |
+| Close Active Tab / Subtab | `Ctrl + Shift + Backspace` |
 
 ## Installation
 
@@ -49,9 +72,9 @@ Output `.zip` files are generated in the `dist/` directory:
 
 ## Technical Details
 
-- **Chromium (Manifest V3)**: Declares `page-script.js` in the `MAIN` execution world (`"world": "MAIN"`), allowing direct access to Salesforce's global `window.$A` object and console APIs while adhering to Salesforce's strict Content Security Policy (CSP).
-- **Firefox (Manifest V3)**: Injects the page script bridge into the DOM and communicates with the content script via `window.postMessage`, validating `origin` and `source` on every event.
-- **Security**: Strict origin validation is enforced across cross-frame communications, color inputs are validated with regular expressions, and navigation targets are sanitized to prevent `javascript:` and `data:` URI execution.
+- **Chromium (Manifest V3)**: Declares `page-script.js` in the `MAIN` execution world (`"world": "MAIN"`), allowing direct access to Salesforce's global `window.$A` object and Console Workspace API while adhering to Salesforce's Content Security Policy (CSP).
+- **Firefox (Manifest V2)**: Injects `page-script.js` into the page context and bridges settings/events with `content.js` via `window.postMessage`, validating `origin` on every event.
+- **Security**: Origin validation is enforced across cross-frame communications, color inputs are validated with regular expressions, and navigation targets are sanitized to block `javascript:`, `data:`, and `vbscript:` URIs.
 
 ## License
 
