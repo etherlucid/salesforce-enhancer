@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salesforce Enhancer
 // @namespace    https://etherlucid.local/
-// @version      1.3.0-alpha.3
+// @version      1.3.1
 // @description  Salesforce productivity: subtabs & tab drag-and-drop, Quick Views list bookmarking, declarative Inspector Mods, developer themes, and custom animations.
 // @match        https://*.lightning.force.com/*
 // @match        https://*.salesforce.com/*
@@ -227,7 +227,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    version: '1.3.0-alpha.2',
+    version: '1.3.1',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -265,7 +265,7 @@
     const hideAppName = raw.hideAppName !== undefined ? !!raw.hideAppName : (raw.subtabs && raw.subtabs.hideAppName !== undefined ? !!raw.subtabs.hideAppName : false);
 
     const res = {
-      version: '1.3.0-alpha.2',
+      version: '1.3.1',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
@@ -1714,16 +1714,218 @@
     setTimeout(ensureFocus, 280);
   }
 
+  function getTabDisplayTitle(tabId, tabInfo, fallbackLabel = 'Tab') {
+    const infoTitle = (tabInfo && (tabInfo.title || tabInfo.customTitle || tabInfo.pageTitle)) || '';
+    if (String(infoTitle).trim()) return String(infoTitle).trim();
+    if (tabId) {
+      try {
+        const escaped = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+          ? CSS.escape(String(tabId))
+          : String(tabId).replace(/"/g, '\\"');
+        const link = document.querySelector(`li[data-tabid="${escaped}"] a.tabHeader, a[data-tabid="${escaped}"]`);
+        const domTitle = (link && (link.getAttribute('title') || link.textContent)) || '';
+        if (domTitle.trim()) return domTitle.trim();
+      } catch (_) {}
+    }
+    return fallbackLabel;
+  }
+
+  function promptMergeMultipleTabs({ sourceTitle, targetTitle, sourceTabId, childSubtabs }) {
+    return new Promise((resolve) => {
+      const existing = document.getElementById('sf-enhancer-merge-modal');
+      if (existing) existing.remove();
+
+      const totalCount = 1 + childSubtabs.length;
+      const backdrop = document.createElement('div');
+      backdrop.id = 'sf-enhancer-merge-modal';
+      backdrop.setAttribute('role', 'dialog');
+      backdrop.setAttribute('aria-modal', 'true');
+      backdrop.style.cssText = [
+        'position:fixed',
+        'inset:0',
+        'z-index:2147483647',
+        'background:rgba(15,23,42,0.48)',
+        'display:flex',
+        'align-items:center',
+        'justify-content:center',
+        'padding:16px',
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif'
+      ].join(';');
+
+      const card = document.createElement('div');
+      card.style.cssText = [
+        'width:100%',
+        'max-width:440px',
+        'background:var(--sf-theme-bg,#ffffff)',
+        'color:var(--sf-theme-text,#181818)',
+        'border:1px solid var(--sf-theme-border,#dddbda)',
+        'border-radius:8px',
+        'box-shadow:0 12px 32px rgba(0,0,0,0.28)',
+        'overflow:hidden'
+      ].join(';');
+
+      const header = document.createElement('div');
+      header.style.cssText = [
+        'display:flex',
+        'align-items:center',
+        'justify-content:space-between',
+        'padding:14px 18px',
+        'border-bottom:1px solid var(--sf-theme-border,#e5e5e5)'
+      ].join(';');
+
+      const heading = document.createElement('h2');
+      heading.textContent = 'Merge Multiple Tabs?';
+      heading.style.cssText = 'margin:0;font-size:15px;font-weight:700;';
+
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.textContent = '✕';
+      closeBtn.setAttribute('aria-label', 'Cancel');
+      closeBtn.style.cssText = [
+        'border:none',
+        'background:transparent',
+        'color:inherit',
+        'font-size:15px',
+        'line-height:1',
+        'cursor:pointer',
+        'padding:4px 6px',
+        'opacity:0.7'
+      ].join(';');
+
+      header.appendChild(heading);
+      header.appendChild(closeBtn);
+
+      const body = document.createElement('div');
+      body.style.cssText = 'padding:16px 18px;font-size:13px;line-height:1.45;';
+
+      const summary = document.createElement('p');
+      summary.style.cssText = 'margin:0 0 10px 0;';
+      summary.textContent =
+        `Merging "${sourceTitle}" into "${targetTitle}" will move ${totalCount} tabs (1 workspace + ${childSubtabs.length} subtab${childSubtabs.length === 1 ? '' : 's'}) as subtabs.`;
+      body.appendChild(summary);
+
+      const listEl = document.createElement('div');
+      listEl.style.cssText = [
+        'background:var(--sf-theme-surface,#f8fafc)',
+        'border:1px solid var(--sf-theme-border,#e2e8f0)',
+        'border-radius:6px',
+        'padding:8px 10px',
+        'font-size:12px',
+        'max-height:150px',
+        'overflow-y:auto',
+        'display:flex',
+        'flex-direction:column',
+        'gap:4px'
+      ].join(';');
+
+      const tabNames = [sourceTitle].concat(
+        childSubtabs.map((st, idx) => getTabDisplayTitle(st.tabId, st, `Subtab ${idx + 1}`))
+      );
+      const maxVisible = 6;
+      tabNames.slice(0, maxVisible).forEach((name, idx) => {
+        const item = document.createElement('div');
+        item.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        item.textContent = `${idx === 0 ? '• Workspace:' : '↳ Subtab:'} ${name}`;
+        listEl.appendChild(item);
+      });
+      if (tabNames.length > maxVisible) {
+        const more = document.createElement('div');
+        more.style.cssText = 'opacity:0.75;font-style:italic;';
+        more.textContent = `+ ${tabNames.length - maxVisible} more tab${tabNames.length - maxVisible === 1 ? '' : 's'}`;
+        listEl.appendChild(more);
+      }
+      body.appendChild(listEl);
+
+      const footer = document.createElement('div');
+      footer.style.cssText = [
+        'display:flex',
+        'justify-content:flex-end',
+        'gap:8px',
+        'padding:12px 18px',
+        'border-top:1px solid var(--sf-theme-border,#e5e5e5)'
+      ].join(';');
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.style.cssText = [
+        'padding:6px 14px',
+        'border-radius:5px',
+        'border:1px solid var(--sf-theme-border,#cbd5e1)',
+        'background:var(--sf-theme-bg,#ffffff)',
+        'color:var(--sf-theme-text,#181818)',
+        'font-size:12.5px',
+        'font-weight:600',
+        'cursor:pointer'
+      ].join(';');
+
+      const confirmBtn = document.createElement('button');
+      confirmBtn.type = 'button';
+      confirmBtn.textContent = `Merge ${totalCount} Tabs`;
+      confirmBtn.style.cssText = [
+        'padding:6px 14px',
+        'border-radius:5px',
+        'border:1px solid transparent',
+        'background:var(--sf-theme-accent,#0176d3)',
+        'color:var(--sf-theme-accent-contrast,#ffffff)',
+        'font-size:12.5px',
+        'font-weight:600',
+        'cursor:pointer'
+      ].join(';');
+
+      footer.appendChild(cancelBtn);
+      footer.appendChild(confirmBtn);
+
+      card.appendChild(header);
+      card.appendChild(body);
+      card.appendChild(footer);
+      backdrop.appendChild(card);
+
+      let settled = false;
+      const cleanup = (accepted) => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('keydown', onKeyDown, true);
+        backdrop.remove();
+        resolve(accepted);
+      };
+
+      const onKeyDown = (ev) => {
+        if (ev.key === 'Escape') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          cleanup(false);
+        }
+      };
+
+      closeBtn.addEventListener('click', () => cleanup(false));
+      cancelBtn.addEventListener('click', () => cleanup(false));
+      confirmBtn.addEventListener('click', () => cleanup(true));
+      backdrop.addEventListener('click', (ev) => {
+        if (ev.target === backdrop) cleanup(false);
+      });
+      document.addEventListener('keydown', onKeyDown, true);
+
+      (document.body || document.documentElement).appendChild(backdrop);
+      confirmBtn.focus();
+    });
+  }
+
   /**
    * Move a Primary Workspace Tab into another Primary Tab as a Subtab
    */
   async function movePrimaryTabToSubtab(sourceTabId, targetTabId) {
     if (!sourceTabId || !targetTabId || sourceTabId === targetTabId) return;
-    showToast('Moving workspace into subtab...');
-    isInternalWorkspaceCall = true;
+    let ws;
+    let sourceInfo;
+    let targetInfo;
+    let effectiveParentTabId;
+    let targetParentInfo;
+    let childSubtabs = [];
+
     try {
-      const ws = await getWorkspaceAPI();
-      const [sourceInfo, targetInfo] = await Promise.all([
+      ws = await getWorkspaceAPI();
+      [sourceInfo, targetInfo] = await Promise.all([
         ws.getTabInfo({ tabId: sourceTabId }).catch(() => null),
         ws.getTabInfo({ tabId: targetTabId }).catch(() => null)
       ]);
@@ -1734,11 +1936,44 @@
       }
 
       // If target is itself a subtab, nest under its parent workspace tab
-      const effectiveParentTabId = targetInfo.isSubtab ? targetInfo.parentTabId : targetTabId;
+      effectiveParentTabId = targetInfo.isSubtab ? targetInfo.parentTabId : targetTabId;
       if (!effectiveParentTabId || effectiveParentTabId === sourceTabId) {
         showToast('Cannot move tab into itself');
         return;
       }
+
+      targetParentInfo =
+        effectiveParentTabId === targetTabId
+          ? targetInfo
+          : await ws.getTabInfo({ tabId: effectiveParentTabId }).catch(() => targetInfo);
+
+      childSubtabs = Array.isArray(sourceInfo.subtabs)
+        ? sourceInfo.subtabs.filter((st) => st && st.tabId !== sourceTabId && (st.recordId || st.url || st.pageReference))
+        : [];
+
+      if (childSubtabs.length > 0) {
+        const sourceTitle = getTabDisplayTitle(sourceTabId, sourceInfo, 'Workspace');
+        const targetTitle = getTabDisplayTitle(effectiveParentTabId, targetParentInfo, 'Target Workspace');
+        const confirmed = await promptMergeMultipleTabs({
+          sourceTitle,
+          targetTitle,
+          sourceTabId,
+          childSubtabs
+        });
+        if (!confirmed) {
+          showToast('Tab merge cancelled');
+          return;
+        }
+      }
+    } catch (preErr) {
+      console.error('[Salesforce Enhancer] Failed preparing tab merge:', preErr);
+      showToast('Could not convert to subtab');
+      return;
+    }
+
+    showToast('Moving workspace into subtab...');
+    isInternalWorkspaceCall = true;
+    try {
 
       // Clean URL and pageReference so Salesforce doesn't force stale workspace routing
       let cleanUrl = sourceInfo.url || '';
@@ -1799,18 +2034,17 @@
       let newSubtabId = await tryOpen();
 
       // If source tab had subtabs of its own, transfer them too!
-      if (Array.isArray(sourceInfo.subtabs) && sourceInfo.subtabs.length > 0) {
-        for (const st of sourceInfo.subtabs) {
-          if (st.tabId !== sourceTabId && (st.recordId || st.url)) {
-            let stUrl = st.url || '';
-            if (stUrl) stUrl = stUrl.replace(/[?&]ws=[^&#]*/g, '').replace(/\?&/, '?').replace(/[?&]$/, '');
-            await ws.openSubtab({
-              parentTabId: effectiveParentTabId,
-              recordId: st.recordId,
-              url: stUrl,
-              focus: false
-            }).catch(() => {});
-          }
+      if (childSubtabs.length > 0) {
+        for (const st of childSubtabs) {
+          let stUrl = st.url || '';
+          if (stUrl) stUrl = stUrl.replace(/[?&]ws=[^&#]*/g, '').replace(/\?&/, '?').replace(/[?&]$/, '');
+          await ws.openSubtab({
+            parentTabId: effectiveParentTabId,
+            recordId: st.recordId,
+            pageReference: st.pageReference,
+            url: stUrl || undefined,
+            focus: false
+          }).catch(() => {});
         }
       }
 
@@ -10696,5 +10930,5 @@
     setInterval(refreshInspectorMods, 850);
     setTimeout(refreshInspectorMods, 400);
 
-  console.log('[Salesforce Enhancer v1.3.0-alpha.2] Ready — Modular shortcuts, Quick Views, declarative Inspector Mods, developer themes & loading animations.');
+  console.log('[Salesforce Enhancer v1.3.1] Ready — Modular shortcuts, Quick Views, declarative Inspector Mods, developer themes & loading animations.');
 })();

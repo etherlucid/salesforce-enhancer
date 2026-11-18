@@ -28,7 +28,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    version: '1.3.0-alpha.3',
+    version: '1.3.1',
     modules: {
       subtabs: true,
       quickViews: true,
