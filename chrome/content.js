@@ -149,21 +149,23 @@
     const hideAppName = raw ? (raw.hideAppName !== undefined ? !!raw.hideAppName : (raw.subtabs && raw.subtabs.hideAppName !== undefined ? !!raw.subtabs.hideAppName : false)) : false;
     if (!raw || typeof raw !== 'object') {
       return {
-        version: '1.2.4',
-        modules: { subtabs: true, quickViews: true, linkInterceptor: true, theming: false, loadingAnimation: false },
+        version: '1.3.0-alpha.1',
+        modules: { subtabs: true, quickViews: true, linkInterceptor: true, inspectorMods: false, theming: false, loadingAnimation: false },
         subtabs: { hideAppName: false },
         hideAppName: false,
+        inspectorMods: { mods: [] },
         theme: { preset: 'classic', customAccent: '#8b5cf6', applyToNavigation: true },
         loadingImage: { url: GIF_PARROT, size: 64, rotate: false }
       };
     }
 
     const res = {
-      version: '1.2.4',
+      version: '1.3.0-alpha.1',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
         linkInterceptor: raw.modules ? raw.modules.linkInterceptor !== false : true,
+        inspectorMods: raw.modules ? !!raw.modules.inspectorMods : false,
         theming: raw.modules ? !!raw.modules.theming : (raw.applyToSalesforce === false ? false : !!(raw.theme && raw.theme !== 'classic')),
         loadingAnimation: raw.modules ? raw.modules.loadingAnimation === true : (raw.loadingImage ? raw.loadingImage.enabled === true : false)
       },
@@ -171,6 +173,11 @@
         hideAppName: hideAppName
       },
       hideAppName: hideAppName,
+      inspectorMods: {
+        mods: Array.isArray(raw.inspectorMods && raw.inspectorMods.mods)
+          ? raw.inspectorMods.mods.filter((m) => m && typeof m === 'object' && m.id && m.target)
+          : []
+      },
       theme: {
         preset: (raw.theme && typeof raw.theme === 'object' && raw.theme.preset) ? raw.theme.preset : (typeof raw.theme === 'string' ? raw.theme : 'classic'),
         customAccent: (raw.theme && typeof raw.theme === 'object' && raw.theme.customAccent) ? raw.theme.customAccent : (raw.accentColor || '#8b5cf6'),

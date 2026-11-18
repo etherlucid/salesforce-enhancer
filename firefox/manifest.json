@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Salesforce Enhancer",
-  "version": "1.2.4",
-  "description": "Salesforce productivity: subtabs & tab drag-and-drop, Quick Views list bookmarking, developer themes, and custom animations.",
+  "version": "1.3.0",
+  "description": "Salesforce productivity: subtabs & tab drag-and-drop, Quick Views list bookmarking, declarative Inspector Mods, developer themes, and custom animations.",
   "permissions": [
     "storage",
     "unlimitedStorage",

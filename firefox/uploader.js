@@ -4,10 +4,12 @@
   const api = typeof browser !== 'undefined' ? browser : chrome;
 
   const DEFAULT_SETTINGS = {
-    version: '1.2.4',
+    version: '1.3.0-alpha.1',
     modules: {
       subtabs: true,
       quickViews: true,
+      linkInterceptor: true,
+      inspectorMods: false,
       theming: false,
       loadingAnimation: true
     },
@@ -15,6 +17,9 @@
       hideAppName: false
     },
     hideAppName: false,
+    inspectorMods: {
+      mods: []
+    },
     theme: {
       preset: 'classic',
       customAccent: '#8b5cf6',
@@ -130,6 +135,7 @@
         modules: currentSettings.modules,
         subtabs: currentSettings.subtabs,
         hideAppName: currentSettings.hideAppName,
+        inspectorMods: currentSettings.inspectorMods,
         loadingImage: {
           enabled: true,
           url: currentSettings.loadingImage.url,
@@ -190,6 +196,9 @@
           if (loaded.modules) currentSettings.modules = Object.assign({}, currentSettings.modules, loaded.modules);
           if (loaded.subtabs) currentSettings.subtabs = Object.assign({}, currentSettings.subtabs, loaded.subtabs);
           if (loaded.hideAppName !== undefined) currentSettings.hideAppName = loaded.hideAppName;
+          if (loaded.inspectorMods && Array.isArray(loaded.inspectorMods.mods)) {
+            currentSettings.inspectorMods = { mods: loaded.inspectorMods.mods };
+          }
           if (loaded.theme) currentSettings.theme = Object.assign({}, currentSettings.theme, loaded.theme);
           if (loaded.loadingImage) {
             currentSettings.loadingImage = Object.assign({}, currentSettings.loadingImage, loaded.loadingImage);

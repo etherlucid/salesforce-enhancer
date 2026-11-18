@@ -82,11 +82,12 @@
   };
 
   const DEFAULT_SETTINGS = {
-    version: '1.2.4',
+    version: '1.3.0-alpha.1',
     modules: {
       subtabs: true,
       quickViews: true,
       linkInterceptor: true,
+      inspectorMods: false,
       theming: false,
       loadingAnimation: false
     },
@@ -94,6 +95,9 @@
       hideAppName: false
     },
     hideAppName: false,
+    inspectorMods: {
+      mods: []
+    },
     theme: {
       preset: 'classic',
       customAccent: '#8b5cf6',
@@ -114,6 +118,21 @@
   const subtabsHideAppNameRow = document.getElementById('subtabsHideAppNameRow');
   const chkModQuickViews = document.getElementById('chkModQuickViews');
   const chkModLinkInterceptor = document.getElementById('chkModLinkInterceptor');
+
+  const cardInspectorMods = document.getElementById('cardInspectorMods');
+  const chkModInspectorMods = document.getElementById('chkModInspectorMods');
+  const inspectorModsDesc = document.getElementById('inspectorModsDesc');
+  const inspectorModsBody = document.getElementById('inspectorModsBody');
+  const installedModsList = document.getElementById('installedModsList');
+  const btnImportModFile = document.getElementById('btnImportModFile');
+  const btnToggleModPaste = document.getElementById('btnToggleModPaste');
+  const btnExportMods = document.getElementById('btnExportMods');
+  const modFileInput = document.getElementById('modFileInput');
+  const modPasteDrawer = document.getElementById('modPasteDrawer');
+  const txtModJson = document.getElementById('txtModJson');
+  const btnCancelPasteMod = document.getElementById('btnCancelPasteMod');
+  const btnInstallPastedMod = document.getElementById('btnInstallPastedMod');
+  const modStatusMsg = document.getElementById('modStatusMsg');
 
   const chkModTheming = document.getElementById('chkModTheming');
   const themingDesc = document.getElementById('themingDesc');
@@ -188,6 +207,7 @@
       res.modules.subtabs = loaded.modules.subtabs !== false;
       res.modules.quickViews = loaded.modules.quickViews !== false;
       res.modules.linkInterceptor = loaded.modules.linkInterceptor !== false;
+      res.modules.inspectorMods = !!loaded.modules.inspectorMods;
       res.modules.theming = !!loaded.modules.theming;
       res.modules.loadingAnimation = loaded.modules.loadingAnimation === true;
     } else {
@@ -195,6 +215,7 @@
       res.modules.subtabs = true;
       res.modules.quickViews = true;
       res.modules.linkInterceptor = true;
+      res.modules.inspectorMods = false;
       if (loaded.applyToSalesforce === false && !loaded.isDarkMode && (!loaded.theme || loaded.theme === 'classic')) {
         res.modules.theming = false;
       } else if (loaded.theme && loaded.theme !== 'classic') {
@@ -232,6 +253,11 @@
     res.hideAppName = hideAppName;
     res.subtabs = {
       hideAppName: hideAppName
+    };
+    res.inspectorMods = {
+      mods: Array.isArray(loaded.inspectorMods && loaded.inspectorMods.mods)
+        ? loaded.inspectorMods.mods.filter((m) => m && typeof m === 'object' && m.id && m.target)
+        : []
     };
 
     return res;
@@ -291,6 +317,16 @@
     if (chkModLinkInterceptor) {
       chkModLinkInterceptor.checked = currentSettings.modules.linkInterceptor !== false;
     }
+
+    // 2c. Inspector Mods module
+    const isInspectorModsEnabled = !!currentSettings.modules.inspectorMods;
+    if (chkModInspectorMods) {
+      chkModInspectorMods.checked = isInspectorModsEnabled;
+    }
+    if (inspectorModsBody) {
+      inspectorModsBody.classList.toggle('is-disabled', !isInspectorModsEnabled);
+    }
+    renderInstalledModsList();
 
     // 3. Theming module
     const isThemingEnabled = !!currentSettings.modules.theming;
@@ -429,6 +465,7 @@
           modules: currentSettings.modules,
           subtabs: currentSettings.subtabs,
           hideAppName: currentSettings.hideAppName,
+          inspectorMods: currentSettings.inspectorMods,
           loadingImage: {
             enabled: currentSettings.modules.loadingAnimation,
             url: currentSettings.loadingImage.url,
@@ -504,6 +541,277 @@
     chkModLinkInterceptor.addEventListener('change', (e) => {
       currentSettings.modules.linkInterceptor = e.target.checked;
       saveAndApply();
+    });
+  }
+
+  function escapePopupHtml(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function showModStatus(msg, isError = false) {
+    if (!modStatusMsg) return;
+    if (!msg) {
+      modStatusMsg.textContent = '';
+      modStatusMsg.className = 'mod-status-msg';
+      return;
+    }
+    modStatusMsg.textContent = msg;
+    modStatusMsg.className = 'mod-status-msg ' + (isError ? 'error' : 'success');
+  }
+
+  function validateAndNormalizeModObject(rawMod) {
+    if (!rawMod || typeof rawMod !== 'object' || Array.isArray(rawMod)) {
+      throw new Error('Mod must be a JSON object.');
+    }
+    const id = String(rawMod.id || '').trim();
+    const name = String(rawMod.name || '').trim();
+    if (!id || !name) {
+      throw new Error('Mod JSON requires "id" and "name".');
+    }
+    if (!rawMod.target || typeof rawMod.target !== 'object' || !rawMod.target.keyPrefix || !rawMod.target.objectApiName) {
+      throw new Error('Mod JSON requires "target.objectApiName" and "target.keyPrefix".');
+    }
+    if (!rawMod.pipeline || typeof rawMod.pipeline !== 'object' || !rawMod.pipeline.childRecords) {
+      throw new Error('Mod JSON requires "pipeline.childRecords".');
+    }
+    return Object.assign({}, rawMod, {
+      id,
+      name,
+      version: String(rawMod.version || '1.0.0'),
+      enabled: rawMod.enabled !== false
+    });
+  }
+
+  function installModsFromParsedJson(parsed) {
+    const incoming = Array.isArray(parsed)
+      ? parsed
+      : parsed && Array.isArray(parsed.mods)
+      ? parsed.mods
+      : [parsed];
+    if (!incoming.length) {
+      throw new Error('No mod definitions found in JSON.');
+    }
+    const validated = incoming.map(validateAndNormalizeModObject);
+    if (!currentSettings.inspectorMods || !Array.isArray(currentSettings.inspectorMods.mods)) {
+      currentSettings.inspectorMods = { mods: [] };
+    }
+    for (const mod of validated) {
+      const idx = currentSettings.inspectorMods.mods.findIndex((m) => m.id === mod.id);
+      if (idx >= 0) {
+        currentSettings.inspectorMods.mods[idx] = mod;
+      } else {
+        currentSettings.inspectorMods.mods.push(mod);
+      }
+    }
+    currentSettings.modules.inspectorMods = true;
+    updateUI();
+    saveAndApply(true);
+    return validated;
+  }
+
+  function renderInstalledModsList() {
+    if (!installedModsList) return;
+    const mods = (currentSettings.inspectorMods && Array.isArray(currentSettings.inspectorMods.mods))
+      ? currentSettings.inspectorMods.mods
+      : [];
+
+    if (btnExportMods) {
+      btnExportMods.style.display = mods.length > 0 ? 'inline-block' : 'none';
+    }
+
+    if (inspectorModsDesc) {
+      if (!currentSettings.modules.inspectorMods) {
+        inspectorModsDesc.textContent =
+          'Run declarative JSON record/entitlement inspector cards inside Hover Panels, Highlights Panels, and Right Panes without custom JS.';
+      } else {
+        const activeCount = mods.filter((m) => m.enabled !== false).length;
+        inspectorModsDesc.textContent = mods.length
+          ? `${activeCount} of ${mods.length} declarative mod${mods.length === 1 ? '' : 's'} active.`
+          : 'Enabled. Import or paste a .mod.json definition below.';
+      }
+    }
+
+    if (!mods.length) {
+      installedModsList.innerHTML =
+        '<div class="mod-empty">No mods installed. Click <strong>Import .json</strong>, <strong>Paste JSON</strong>, or drop a <code>.mod.json</code> file here.</div>';
+      return;
+    }
+
+    installedModsList.innerHTML = mods
+      .map((mod) => {
+        const targetObj = (mod.target && mod.target.objectApiName) || 'Record';
+        const keyPrefix = (mod.target && mod.target.keyPrefix) || '';
+        return `
+          <div class="mod-item" data-mod-id="${escapePopupHtml(mod.id)}">
+            <div class="mod-item-left">
+              <input type="checkbox" class="mod-item-toggle" data-mod-id="${escapePopupHtml(mod.id)}" ${
+          mod.enabled !== false ? 'checked' : ''
+        } title="Enable or disable this mod">
+              <div class="mod-item-info">
+                <div class="mod-item-title">
+                  <span>${escapePopupHtml(mod.name)}</span>
+                  <span class="mod-item-tag">${escapePopupHtml(targetObj)}${
+          keyPrefix ? ` (${escapePopupHtml(keyPrefix)})` : ''
+        }</span>
+                  ${mod.version ? `<span class="mod-item-tag">v${escapePopupHtml(mod.version)}</span>` : ''}
+                </div>
+                ${
+                  mod.description
+                    ? `<div class="mod-item-desc">${escapePopupHtml(mod.description)}</div>`
+                    : ''
+                }
+              </div>
+            </div>
+            <div class="mod-item-actions">
+              <button type="button" class="btn-icon mod-item-edit" data-mod-id="${escapePopupHtml(
+                mod.id
+              )}" title="View / Edit Mod JSON">{ }</button>
+              <button type="button" class="btn-icon danger mod-item-remove" data-mod-id="${escapePopupHtml(
+                mod.id
+              )}" title="Remove Mod">✕</button>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+
+    installedModsList.querySelectorAll('.mod-item-toggle').forEach((chk) => {
+      chk.addEventListener('change', (e) => {
+        const modId = chk.dataset.modId;
+        const target = currentSettings.inspectorMods?.mods?.find((m) => m.id === modId);
+        if (target) {
+          target.enabled = e.target.checked;
+          renderInstalledModsList();
+          saveAndApply(true);
+        }
+      });
+    });
+
+    installedModsList.querySelectorAll('.mod-item-edit').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const modId = btn.dataset.modId;
+        const target = currentSettings.inspectorMods?.mods?.find((m) => m.id === modId);
+        if (target && modPasteDrawer && txtModJson) {
+          txtModJson.value = JSON.stringify(target, null, 2);
+          modPasteDrawer.style.display = 'block';
+          showModStatus(`Editing "${target.name}". Click Install Mod to save changes.`);
+        }
+      });
+    });
+
+    installedModsList.querySelectorAll('.mod-item-remove').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const modId = btn.dataset.modId;
+        if (!currentSettings.inspectorMods || !Array.isArray(currentSettings.inspectorMods.mods)) return;
+        currentSettings.inspectorMods.mods = currentSettings.inspectorMods.mods.filter((m) => m.id !== modId);
+        updateUI();
+        saveAndApply(true);
+        showModStatus('Mod removed.');
+      });
+    });
+  }
+
+  function handleModJsonFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const parsed = JSON.parse(String(evt.target.result || ''));
+        const installed = installModsFromParsedJson(parsed);
+        if (modPasteDrawer) modPasteDrawer.style.display = 'none';
+        showModStatus(`Installed ${installed.map((m) => m.name).join(', ')}.`);
+      } catch (err) {
+        showModStatus(`Invalid mod JSON: ${err.message || err}`, true);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  if (chkModInspectorMods) {
+    chkModInspectorMods.addEventListener('change', (e) => {
+      currentSettings.modules.inspectorMods = e.target.checked;
+      updateUI();
+      saveAndApply(true);
+    });
+  }
+
+  if (btnImportModFile && modFileInput) {
+    btnImportModFile.addEventListener('click', () => {
+      modFileInput.value = '';
+      modFileInput.click();
+    });
+    modFileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) handleModJsonFile(file);
+    });
+  }
+
+  if (btnToggleModPaste && modPasteDrawer) {
+    btnToggleModPaste.addEventListener('click', () => {
+      const isVisible = modPasteDrawer.style.display === 'block';
+      modPasteDrawer.style.display = isVisible ? 'none' : 'block';
+      if (!isVisible && txtModJson) {
+        txtModJson.focus();
+      }
+    });
+  }
+
+  if (btnCancelPasteMod && modPasteDrawer) {
+    btnCancelPasteMod.addEventListener('click', () => {
+      modPasteDrawer.style.display = 'none';
+      showModStatus('');
+    });
+  }
+
+  if (btnInstallPastedMod && txtModJson) {
+    btnInstallPastedMod.addEventListener('click', () => {
+      try {
+        const raw = txtModJson.value.trim();
+        if (!raw) throw new Error('Paste a JSON mod object first.');
+        const parsed = JSON.parse(raw);
+        const installed = installModsFromParsedJson(parsed);
+        txtModJson.value = '';
+        if (modPasteDrawer) modPasteDrawer.style.display = 'none';
+        showModStatus(`Installed ${installed.map((m) => m.name).join(', ')}.`);
+      } catch (err) {
+        showModStatus(`Error: ${err.message || err}`, true);
+      }
+    });
+  }
+
+  if (btnExportMods) {
+    btnExportMods.addEventListener('click', () => {
+      const mods = currentSettings.inspectorMods?.mods || [];
+      if (!mods.length) return;
+      const payload = mods.length === 1 ? mods[0] : { mods };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = mods.length === 1 ? `${mods[0].id}.mod.json` : 'salesforce-enhancer-mods.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  }
+
+  if (cardInspectorMods) {
+    cardInspectorMods.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    cardInspectorMods.addEventListener('drop', (e) => {
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length > 0 && files[0].name.toLowerCase().endsWith('.json')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleModJsonFile(files[0]);
+      }
     });
   }
 
