@@ -626,18 +626,18 @@
     if (inspectorModsDesc) {
       if (!currentSettings.modules.inspectorMods) {
         inspectorModsDesc.textContent =
-          'Run declarative JSON record/entitlement inspector cards inside Hover Panels, Highlights Panels, and Right Panes without custom JS.';
+          'Display custom record and entitlement cards in Hover Panels, Highlights Panels, and Right Panes.';
       } else {
         const activeCount = mods.filter((m) => m.enabled !== false).length;
         inspectorModsDesc.textContent = mods.length
-          ? `${activeCount} of ${mods.length} declarative mod${mods.length === 1 ? '' : 's'} active.`
-          : 'Enabled. Import or paste a .mod.json definition below.';
+          ? `${activeCount} of ${mods.length} mod${mods.length === 1 ? '' : 's'} active.`
+          : 'No mods installed.';
       }
     }
 
     if (!mods.length) {
       installedModsList.innerHTML =
-        '<div class="mod-empty">No mods installed. Click <strong>Import .json</strong>, <strong>Paste JSON</strong>, or drop a <code>.mod.json</code> file here.</div>';
+        '<div class="mod-empty">No mods installed.</div>';
       return;
     }
 
@@ -667,9 +667,6 @@
               </div>
             </div>
             <div class="mod-item-actions">
-              <button type="button" class="btn-icon mod-item-edit" data-mod-id="${escapePopupHtml(
-                mod.id
-              )}" title="View / Edit Mod JSON">{ }</button>
               <button type="button" class="btn-icon danger mod-item-remove" data-mod-id="${escapePopupHtml(
                 mod.id
               )}" title="Remove Mod">✕</button>
@@ -691,18 +688,6 @@
       });
     });
 
-    installedModsList.querySelectorAll('.mod-item-edit').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const modId = btn.dataset.modId;
-        const target = currentSettings.inspectorMods?.mods?.find((m) => m.id === modId);
-        if (target && modPasteDrawer && txtModJson) {
-          txtModJson.value = JSON.stringify(target, null, 2);
-          modPasteDrawer.style.display = 'block';
-          showModStatus(`Editing "${target.name}". Click Install Mod to save changes.`);
-        }
-      });
-    });
-
     installedModsList.querySelectorAll('.mod-item-remove').forEach((btn) => {
       btn.addEventListener('click', () => {
         const modId = btn.dataset.modId;
@@ -710,25 +695,20 @@
         currentSettings.inspectorMods.mods = currentSettings.inspectorMods.mods.filter((m) => m.id !== modId);
         updateUI();
         saveAndApply(true);
-        showModStatus('Mod removed.');
       });
     });
   }
 
-  function handleModJsonFile(file) {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const parsed = JSON.parse(String(evt.target.result || ''));
-        const installed = installModsFromParsedJson(parsed);
-        if (modPasteDrawer) modPasteDrawer.style.display = 'none';
-        showModStatus(`Installed ${installed.map((m) => m.name).join(', ')}.`);
-      } catch (err) {
-        showModStatus(`Invalid mod JSON: ${err.message || err}`, true);
+  function openExtensionTab(query) {
+    const rel = query ? `uploader.html?${query}` : 'uploader.html';
+    const targetUrl = api?.runtime?.getURL ? api.runtime.getURL(rel) : rel;
+    try {
+      if (api?.tabs && api.tabs.create) {
+        api.tabs.create({ url: targetUrl });
+        return;
       }
-    };
-    reader.readAsText(file);
+    } catch (_) {}
+    window.open(targetUrl, '_blank');
   }
 
   if (chkModInspectorMods) {
@@ -739,79 +719,11 @@
     });
   }
 
-  if (btnImportModFile && modFileInput) {
-    btnImportModFile.addEventListener('click', () => {
-      modFileInput.value = '';
-      modFileInput.click();
-    });
-    modFileInput.addEventListener('change', (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (file) handleModJsonFile(file);
-    });
-  }
-
-  if (btnToggleModPaste && modPasteDrawer) {
-    btnToggleModPaste.addEventListener('click', () => {
-      const isVisible = modPasteDrawer.style.display === 'block';
-      modPasteDrawer.style.display = isVisible ? 'none' : 'block';
-      if (!isVisible && txtModJson) {
-        txtModJson.focus();
-      }
-    });
-  }
-
-  if (btnCancelPasteMod && modPasteDrawer) {
-    btnCancelPasteMod.addEventListener('click', () => {
-      modPasteDrawer.style.display = 'none';
-      showModStatus('');
-    });
-  }
-
-  if (btnInstallPastedMod && txtModJson) {
-    btnInstallPastedMod.addEventListener('click', () => {
-      try {
-        const raw = txtModJson.value.trim();
-        if (!raw) throw new Error('Paste a JSON mod object first.');
-        const parsed = JSON.parse(raw);
-        const installed = installModsFromParsedJson(parsed);
-        txtModJson.value = '';
-        if (modPasteDrawer) modPasteDrawer.style.display = 'none';
-        showModStatus(`Installed ${installed.map((m) => m.name).join(', ')}.`);
-      } catch (err) {
-        showModStatus(`Error: ${err.message || err}`, true);
-      }
-    });
-  }
-
-  if (btnExportMods) {
-    btnExportMods.addEventListener('click', () => {
-      const mods = currentSettings.inspectorMods?.mods || [];
-      if (!mods.length) return;
-      const payload = mods.length === 1 ? mods[0] : { mods };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = mods.length === 1 ? `${mods[0].id}.mod.json` : 'salesforce-enhancer-mods.json';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    });
-  }
-
-  if (cardInspectorMods) {
-    cardInspectorMods.addEventListener('dragover', (e) => {
+  if (btnImportModFile) {
+    btnImportModFile.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-    });
-    cardInspectorMods.addEventListener('drop', (e) => {
-      const files = e.dataTransfer && e.dataTransfer.files;
-      if (files && files.length > 0 && files[0].name.toLowerCase().endsWith('.json')) {
-        e.preventDefault();
-        e.stopPropagation();
-        handleModJsonFile(files[0]);
-      }
+      openExtensionTab('mode=mod');
     });
   }
 
@@ -865,25 +777,7 @@
   });
 
   function openUploader() {
-    const uploaderUrl = api?.runtime?.getURL ? api.runtime.getURL('uploader.html') : 'uploader.html';
-    try {
-      if (api?.windows && api.windows.create) {
-        api.windows.create({
-          url: uploaderUrl,
-          type: 'popup',
-          width: 460,
-          height: 520
-        }, () => {});
-        return;
-      }
-    } catch (_) {}
-    try {
-      if (api?.tabs && api.tabs.create) {
-        api.tabs.create({ url: uploaderUrl });
-        return;
-      }
-    } catch (_) {}
-    window.open(uploaderUrl, '_blank', 'width=460,height=520');
+    openExtensionTab('mode=gif');
   }
 
   function handleFile(file) {

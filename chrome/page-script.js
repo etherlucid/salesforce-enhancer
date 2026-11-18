@@ -8985,6 +8985,18 @@
       };
     } catch (_) {}
 
+    try {
+      const origFetch = window.fetch;
+      if (typeof origFetch === 'function') {
+        window.fetch = function (input, init) {
+          try {
+            if (init && typeof init.body === 'string') extractModAuraAuthFromBody(init.body);
+          } catch (_) {}
+          return origFetch.apply(this, arguments);
+        };
+      }
+    } catch (_) {}
+
     function resolveModAuraAuth() {
       let token = modAuraCapture.token;
       let context = modAuraCapture.context;
@@ -9008,18 +9020,30 @@
             const ctxObj = pageA.getContext();
             if (ctxObj) {
               let fwuid = '';
-              for (const k of Object.getOwnPropertyNames(ctxObj)) {
-                const v = ctxObj[k];
-                if (
-                  typeof v === 'string' &&
-                  v.length > 20 &&
-                  v.length < 120 &&
-                  /^[A-Za-z0-9_=-]+$/.test(v) &&
-                  v !== 'PROD' &&
-                  v !== 'one:one'
-                ) {
-                  fwuid = v;
-                  break;
+              try {
+                const scripts = document.querySelectorAll('script[src*="/auraFW/javascript/"]');
+                for (const s of scripts) {
+                  const m = (s.getAttribute('src') || '').match(/\/auraFW\/javascript\/([^/]+)\//);
+                  if (m && m[1]) {
+                    fwuid = m[1];
+                    break;
+                  }
+                }
+              } catch (_) {}
+              if (!fwuid) {
+                for (const k of Object.getOwnPropertyNames(ctxObj)) {
+                  const v = ctxObj[k];
+                  if (
+                    typeof v === 'string' &&
+                    v.length > 20 &&
+                    v.length < 120 &&
+                    /^[A-Za-z0-9_=-]+$/.test(v) &&
+                    v !== 'PROD' &&
+                    v !== 'one:one'
+                  ) {
+                    fwuid = v;
+                    break;
+                  }
                 }
               }
               const loadedPlain = {};
@@ -10098,7 +10122,97 @@
       return mods.filter((m) => m && m.enabled !== false && m.id && m.target && m.target.keyPrefix);
     }
 
+    const modMountedByUid = new Map(); // `${modId}:${uid}` -> Element
+    const modVisibleRightPaneCards = new Map(); // `${modId}:${parentId}` -> Element
+    let nextModMountUid = 1;
+
+    function ensureModGlobalStyles() {
+      if (document.getElementById('sfe-inspector-mod-styles')) return;
+      const st = document.createElement('style');
+      st.id = 'sfe-inspector-mod-styles';
+      st.textContent = `
+        .forceHoverPanel .container {
+          height: auto !important;
+          overflow-y: auto !important;
+        }
+      `;
+      (document.head || document.documentElement).appendChild(st);
+    }
+
+    function getModHostUid(hostEl, createIfMissing) {
+      if (!hostEl || typeof hostEl.getAttribute !== 'function') return null;
+      try {
+        let uid = hostEl.getAttribute('data-sfe-mount-uid');
+        if (!uid && createIfMissing) {
+          uid = `sfe_${nextModMountUid++}`;
+          hostEl.setAttribute('data-sfe-mount-uid', uid);
+        }
+        return uid;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function trackModMountedElement(modId, hostKey, el) {
+      const uid = getModHostUid(hostKey, true);
+      if (uid && el) modMountedByUid.set(`${modId}:${uid}`, el);
+    }
+
+    function clearModMountedElement(modId, hostKey) {
+      const uid = getModHostUid(hostKey, false);
+      if (uid) modMountedByUid.delete(`${modId}:${uid}`);
+    }
+
+    function findModMountedChild(modId, hostKey, container, className) {
+      const uid = getModHostUid(hostKey, false);
+      const tracked = uid ? modMountedByUid.get(`${modId}:${uid}`) : null;
+      const children = [];
+      try {
+        for (const n of container.childNodes || []) {
+          if (
+            n &&
+            n.nodeType === 1 &&
+            n.classList &&
+            n.classList.contains(className) &&
+            n.dataset.sfeModId === modId
+          ) {
+            children.push(n);
+          }
+        }
+      } catch (_) {}
+      if (!children.length && typeof container.querySelector === 'function') {
+        try {
+          const q = container.querySelector(`.${className}[data-sfe-mod-id="${modId}"]`);
+          if (q) children.push(q);
+        } catch (_) {}
+      }
+
+      let kept = null;
+      if (tracked && tracked.isConnected) {
+        kept = tracked;
+      } else if (children.length) {
+        kept = children[0];
+      }
+
+      for (const extra of children) {
+        if (extra !== kept) {
+          try {
+            extra.remove();
+          } catch (_) {}
+        }
+      }
+      if (kept) trackModMountedElement(modId, hostKey, kept);
+      return kept;
+    }
+
     function clearAllModInjectedNodes() {
+      for (const el of modMountedByUid.values()) {
+        try {
+          if (el && el.remove) el.remove();
+        } catch (_) {}
+      }
+      modMountedByUid.clear();
+      modVisibleRightPaneCards.clear();
       walkModShadowRoots(document, (root) => {
         if (!root.querySelectorAll) return;
         root
@@ -10129,7 +10243,18 @@
         const rn = cur.getRootNode ? cur.getRootNode() : null;
         cur = cur.parentElement || (rn && rn.host) || null;
       }
-      return extractModRecordIdByPrefix(location.pathname || '', prefix);
+      const fromUrl = extractModRecordIdByPrefix(location.pathname || '', prefix);
+      if (fromUrl) return fromUrl;
+      try {
+        const activeTabLinks = document.querySelectorAll(
+          `li.active a[href*="${prefix}"], li.slds-is-active a[href*="${prefix}"], a[aria-selected="true"][href*="${prefix}"]`
+        );
+        for (const a of activeTabLinks) {
+          const m = extractModRecordIdByPrefix(a.getAttribute('href'), prefix);
+          if (m) return m;
+        }
+      } catch (_) {}
+      return null;
     }
 
     async function resolveModParentTargetId(mod, parentId) {
@@ -10146,14 +10271,40 @@
 
       const p = (async () => {
         const pObj = parentCfg.parentObjectApiName || 'Case';
+        const viaCfg = parentCfg.viaChildLookup || {
+          parentChildField: 'AssetId',
+          parentEntitlementField: 'EntitlementId',
+          entitlementObjectApiName: 'Entitlement',
+          entitlementChildField: 'AssetId',
+          childObjectApiName: (mod.pipeline && mod.pipeline.childRecords && mod.pipeline.childRecords.objectApiName) || 'Asset',
+          childTargetField: mod.target.objectApiName
+        };
+        const directFields = Array.isArray(parentCfg.directLookupFields) && parentCfg.directLookupFields.length
+          ? parentCfg.directLookupFields
+          : [mod.target.objectApiName];
         const optFields = [`${pObj}.Id`];
-        for (const f of parentCfg.directLookupFields || []) {
+        for (const f of directFields) {
           optFields.push(`${pObj}.${f}`);
         }
-        const rec = await modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
+        if (viaCfg.parentChildField) optFields.push(`${pObj}.${viaCfg.parentChildField}`);
+        if (viaCfg.parentEntitlementField) optFields.push(`${pObj}.${viaCfg.parentEntitlementField}`);
+
+        let rec = await modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
           recordId: parentId,
           optionalFields: optFields
         }).catch(() => null);
+
+        if (!rec && directFields.length > 1) {
+          rec = await modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
+            recordId: parentId,
+            optionalFields: [
+              `${pObj}.Id`,
+              `${pObj}.${directFields[0]}`,
+              ...(viaCfg.parentChildField ? [`${pObj}.${viaCfg.parentChildField}`] : []),
+              ...(viaCfg.parentEntitlementField ? [`${pObj}.${viaCfg.parentEntitlementField}`] : [])
+            ]
+          }).catch(() => null);
+        }
 
         const fields = (rec && rec.fields) || {};
         for (const k of Object.keys(fields)) {
@@ -10162,6 +10313,38 @@
           if (m) {
             pMap.set(parentId, { targetId: m, cachedAt: Date.now() });
             return m;
+          }
+        }
+
+        if (viaCfg) {
+          let childId = viaCfg.parentChildField ? readAuraFieldPath(fields, viaCfg.parentChildField) : null;
+          const entId = viaCfg.parentEntitlementField ? readAuraFieldPath(fields, viaCfg.parentEntitlementField) : null;
+          if (!childId && entId && viaCfg.entitlementChildField) {
+            try {
+              const entObj = viaCfg.entitlementObjectApiName || 'Entitlement';
+              const entRec = await modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
+                recordId: entId,
+                optionalFields: [`${entObj}.Id`, `${entObj}.${viaCfg.entitlementChildField}`]
+              });
+              childId = readAuraFieldPath(entRec && entRec.fields, viaCfg.entitlementChildField);
+            } catch (_) {}
+          }
+          if (childId && viaCfg.childTargetField) {
+            try {
+              const cObj = viaCfg.childObjectApiName || 'Asset';
+              const cRec = await modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
+                recordId: childId,
+                optionalFields: [`${cObj}.Id`, `${cObj}.${viaCfg.childTargetField}`]
+              });
+              const tid = extractModRecordIdByPrefix(
+                readAuraFieldPath(cRec && cRec.fields, viaCfg.childTargetField),
+                keyPrefix
+              );
+              if (tid) {
+                pMap.set(parentId, { targetId: tid, cachedAt: Date.now() });
+                return tid;
+              }
+            } catch (_) {}
           }
         }
 
@@ -10189,6 +10372,29 @@
       return p;
     }
 
+    const modObjectThemeCache = new Map();
+    const modObjectThemeInFlight = new Set();
+
+    function getModObjectThemeInfo(objectApiName) {
+      if (!objectApiName) return null;
+      if (modObjectThemeCache.has(objectApiName)) return modObjectThemeCache.get(objectApiName);
+      if (!modObjectThemeInFlight.has(objectApiName)) {
+        modObjectThemeInFlight.add(objectApiName);
+        modAuraCall('aura://RecordUiController/ACTION$getObjectInfo', { objectApiName })
+          .then((info) => {
+            if (info && info.themeInfo) {
+              modObjectThemeCache.set(objectApiName, info.themeInfo);
+              scheduleModDomScan(30);
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            modObjectThemeInFlight.delete(objectApiName);
+          });
+      }
+      return null;
+    }
+
     function runInspectorModOnRoot(mod, root) {
       const prefix = mod.target.keyPrefix;
       // 1. Prefetch links
@@ -10211,10 +10417,14 @@
           const tid = readContextRecordIdByPrefix(host, prefix);
           if (!tid) continue;
 
-          const sr = host.shadowRoot || host._sfShadowRoot;
-          const container =
-            (sr && (sr.querySelector('.highlights.slds-page-header') || sr.querySelector('.slds-page-header') || sr.firstElementChild)) ||
-            host;
+          const sr =
+            host.shadowRoot ||
+            host._sfShadowRoot ||
+            (host.querySelector('.highlights.slds-page-header') ? host : null);
+          if (!sr) continue;
+          const container = sr.querySelector('.highlights.slds-page-header');
+          if (!container) continue;
+
           const cached = getCachedModTarget(mod.id, tid);
           const err = modErrorMap.get(`${mod.id}:${tid}`);
 
@@ -10223,13 +10433,28 @@
             continue;
           }
 
-          let bar = container.querySelector(`.sfe-mod-highlights-bar[data-sfe-mod-id="${mod.id}"]`);
+          if (!host.hasAttribute('data-sfe-highlights-styled')) {
+            host.setAttribute('data-sfe-highlights-styled', '1');
+            const srStyle = document.createElement('style');
+            srStyle.className = 'sfe-highlights-shadow-style';
+            srStyle.textContent = `
+              .highlights.slds-page-header {
+                height: auto !important;
+                min-height: 51.5px !important;
+              }
+            `;
+            sr.appendChild(srStyle);
+          }
+          if (container.style.height !== 'auto') container.style.height = 'auto';
+
+          let bar = findModMountedChild(mod.id, host, container, 'sfe-mod-highlights-bar');
           if (!bar) {
             bar = document.createElement('div');
             bar.className = 'sfe-mod-highlights-bar';
             bar.dataset.sfeModId = mod.id;
             bar.style.cssText =
               'margin-top:0.5rem; padding-top:0.625rem; border-top:1px solid var(--lwc-colorBorder, #dddbda); width:100%;';
+            trackModMountedElement(mod.id, host, bar);
             container.appendChild(bar);
           }
           const stamp = `${tid}|${cached ? cached.cachedAt : ''}|${err ? err.message : ''}`;
@@ -10252,7 +10477,29 @@
           const parentId = readContextRecordIdByPrefix(rightCol, pPrefix);
           if (!parentId) continue;
 
-          let card = rightCol.querySelector(`.sfe-mod-rightpane-card[data-sfe-mod-id="${mod.id}"]`);
+          const existingCard = findModMountedChild(mod.id, rightCol, rightCol, 'sfe-mod-rightpane-card');
+          const mountAttr = `data-sfe-mounted-${mod.id}`;
+          if (!existingCard && rightCol.getAttribute(mountAttr) === parentId) {
+            continue;
+          }
+          const visKey = `${mod.id}:${parentId}`;
+          const prevGlobal = modVisibleRightPaneCards.get(visKey);
+          if (!existingCard && prevGlobal && prevGlobal.isConnected) {
+            continue;
+          }
+
+          const pMap = modParentCaches.get(mod.id);
+          const parentEntry = pMap ? pMap.get(parentId) : null;
+
+          if (parentEntry && !parentEntry.targetId) {
+            if (existingCard) existingCard.remove();
+            clearModMountedElement(mod.id, rightCol);
+            rightCol.removeAttribute(mountAttr);
+            if (modVisibleRightPaneCards.get(visKey) === existingCard) modVisibleRightPaneCards.delete(visKey);
+            continue;
+          }
+
+          let card = existingCard;
           if (!card) {
             card = document.createElement('article');
             card.className = 'sfe-mod-rightpane-card slds-card';
@@ -10269,11 +10516,12 @@
               'width:100%',
               'text-align:left'
             ].join(';');
-            rightCol.insertBefore(card, rightCol.firstElementChild);
+            trackModMountedElement(mod.id, rightCol, card);
+            rightCol.setAttribute(mountAttr, parentId);
+            modVisibleRightPaneCards.set(visKey, card);
+            rightCol.prepend(card);
           }
 
-          const pMap = modParentCaches.get(mod.id);
-          const parentEntry = pMap ? pMap.get(parentId) : null;
           if (!parentEntry) {
             resolveModParentTargetId(mod, parentId)
               .then((tid) => {
@@ -10288,11 +10536,6 @@
             continue;
           }
 
-          if (!parentEntry.targetId) {
-            card.style.display = 'none';
-            continue;
-          }
-
           card.style.display = 'block';
           const tid = parentEntry.targetId;
           const tData = getCachedModTarget(mod.id, tid);
@@ -10301,21 +10544,36 @@
             fetchModTargetData(mod, tid).catch(() => {});
           }
 
-          const stamp = `${parentId}|${tid}|${tData ? tData.cachedAt : ''}|${tErr ? tErr.message : ''}`;
-          if (card.dataset.sfeStamp === stamp) continue;
-          card.dataset.sfeStamp = stamp;
-
           const targetUrl = `/lightning/r/${mod.target.objectApiName}/${tid}/view`;
           const targetLabel = (tData && tData.targetName) || tid;
           const headerTitle = mod.target.headerTitle || mod.target.objectApiName;
+          const themeInfo = getModObjectThemeInfo(mod.target.objectApiName);
+          const iconCfg = (mod.target && mod.target.icon) || {};
+          const iconBg =
+            iconCfg.backgroundColor ||
+            (themeInfo && themeInfo.color ? `#${String(themeInfo.color).replace(/^#/, '')}` : '#8a7aed');
+          const iconSvgPath =
+            iconCfg.svgPath ||
+            'M576 711c-3-7-10-11-18-11H442c-8 0-15 4-18 11l-27 74c-3 7 2 14 9 14h188c7 0 12-8 9-14zm164-511H260c-33 0-60 27-60 60v320c0 33 27 60 60 60h480c33 0 60-27 60-60V260c0-33-27-60-60-60zM500 620c-17 0-30-13-30-30s13-30 30-30 30 13 30 30-13 30-30 30zm240-100c0 11-9 20-20 20H280c-11 0-20-9-20-20V280c0-11 9-20 20-20h440c11 0 20 9 20 20z';
+          const iconSvgViewBox = iconCfg.svgViewBox || '0 0 1000 1000';
+          const iconImgUrl = (!iconCfg.svgPath && (iconCfg.iconUrl || (themeInfo && themeInfo.iconUrl))) || '';
+          const iconInnerHtml = iconImgUrl
+            ? `<img src="${escapeModHtml(iconImgUrl)}" alt="" style="width:18px; height:18px; display:block;">`
+            : `<svg viewBox="${escapeModHtml(iconSvgViewBox)}" width="18" height="18" fill="#ffffff" aria-hidden="true"><path d="${escapeModHtml(iconSvgPath)}"/></svg>`;
+
+          const stampWithTheme = `${parentId}|${tid}|${tData ? tData.cachedAt : ''}|${
+            tErr ? tErr.message : ''
+          }|${iconBg}|${iconImgUrl}`;
+          if (card.dataset.sfeStamp === stampWithTheme) continue;
+          card.dataset.sfeStamp = stampWithTheme;
 
           card.innerHTML = `
             <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:0.625rem;">
               <div style="display:flex; align-items:center; gap:0.5rem; min-width:0;">
-                <span style="flex:0 0 auto; width:24px; height:24px; border-radius:var(--lwc-borderRadiusMedium, 0.25rem); background:#0176d3; display:inline-flex; align-items:center; justify-content:center;">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="#ffffff" aria-hidden="true">
-                    <path d="M12 2L2 7l10 5 10-5-10-5zm0 7.5l-6-3 6-3 6 3-6 3zm0 2.5l-8-4-2 1 10 5 10-5-2-1-8 4zm0 4l-8-4-2 1 10 5 10-5-2-1-8 4z"/>
-                  </svg>
+                <span style="flex:0 0 auto; width:24px; height:24px; border-radius:var(--lwc-borderRadiusMedium, 0.25rem); background:${escapeModHtml(
+                  iconBg
+                )}; display:inline-flex; align-items:center; justify-content:center;">
+                  ${iconInnerHtml}
                 </span>
                 <div style="font-size:0.875rem; font-weight:700; color:var(--lwc-colorTextDefault, #181818); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                   <span>${escapeModHtml(headerTitle)}: </span>
@@ -10339,7 +10597,6 @@
       const prefix = mod.target.keyPrefix;
       const panels = document.querySelectorAll('.forceHoverPanel, .uiPanel--preview');
       for (const panel of panels) {
-        if (!panel.offsetParent && panel.style.display === 'none') continue;
         let tid = null;
         for (const a of panel.querySelectorAll('a')) {
           tid =
@@ -10348,22 +10605,29 @@
             extractModRecordIdByPrefix(a.getAttribute('data-recordid'), prefix);
           if (tid) break;
         }
-        let box = panel.querySelector(`.sfe-mod-hover-box[data-sfe-mod-id="${mod.id}"]`);
+        const mountTarget =
+          panel.querySelector('.forceHighlightsPreviewStencil.forceRecordLayout') ||
+          panel.querySelector('header.forceHighlightsPanel') ||
+          panel.querySelector('.panel-content') ||
+          panel.querySelector('.HoverPanel.forceRecordLayout') ||
+          panel.querySelector('.panelContent');
+        const existingBox =
+          (mountTarget && findModMountedChild(mod.id, panel, mountTarget, 'sfe-mod-hover-box')) ||
+          panel.querySelector(`.sfe-mod-hover-box[data-sfe-mod-id="${mod.id}"]`);
         if (!tid) {
-          if (box) box.remove();
+          if (existingBox) existingBox.remove();
+          clearModMountedElement(mod.id, panel);
           continue;
         }
-        const mountTarget =
-          panel.querySelector('.HoverPanel.forceRecordLayout') ||
-          panel.querySelector('.panelContent') ||
-          panel.querySelector('.container') ||
-          panel;
+        if (!mountTarget) continue;
+        let box = existingBox;
         if (!box) {
           box = document.createElement('div');
           box.className = 'sfe-mod-hover-box';
           box.dataset.sfeModId = mod.id;
           box.style.cssText =
             'margin-top:8px; padding:8px 4px 4px 4px; box-sizing:border-box; width:100%; border-top:1px solid var(--lwc-colorBorder, #dddbda); text-align:left;';
+          trackModMountedElement(mod.id, panel, box);
           mountTarget.appendChild(box);
         }
         const cached = getCachedModTarget(mod.id, tid);
@@ -10405,6 +10669,7 @@
       }
 
       // Mark active mod prefixes so standalone userscripts yield and never duplicate cards
+      ensureModGlobalStyles();
       for (const mod of activeMods) {
         const prefix = String(mod.target.keyPrefix || '').toLowerCase();
         if (prefix && document.documentElement) {

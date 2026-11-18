@@ -665,29 +665,15 @@
       </label>
     </div>
     <div class="module-desc" id="inspectorModsDesc">
-      Run declarative JSON record/entitlement inspector cards inside Hover Panels, Highlights Panels, and Right Panes without custom JS.
+      Display custom record and entitlement cards in Hover Panels, Highlights Panels, and Right Panes.
     </div>
 
     <div class="module-body is-disabled" id="inspectorModsBody">
       <div class="mod-list" id="installedModsList"></div>
 
       <div class="mod-toolbar">
-        <button type="button" class="btn btn-neutral" id="btnImportModFile" style="padding: 4px 8px; font-size: 11px;">📁 Import .json</button>
-        <button type="button" class="btn btn-neutral" id="btnToggleModPaste" style="padding: 4px 8px; font-size: 11px;">📋 Paste JSON</button>
-        <button type="button" class="btn btn-neutral" id="btnExportMods" style="padding: 4px 8px; font-size: 11px; display:none;">⬇ Export</button>
+        <button type="button" class="btn btn-neutral" id="btnImportModFile" style="padding: 5px 10px; font-size: 11px;">Manage / Import Mods…</button>
       </div>
-
-      <input type="file" id="modFileInput" accept=".json,application/json" style="display:none;">
-
-      <div class="mod-paste-drawer" id="modPasteDrawer">
-        <textarea id="txtModJson" placeholder="Paste a declarative .mod.json configuration here (or drag & drop a .mod.json file onto this card)..."></textarea>
-        <div style="display:flex; justify-content:flex-end; gap:6px;">
-          <button type="button" class="btn btn-neutral" id="btnCancelPasteMod" style="padding: 4px 10px; font-size: 11px;">Cancel</button>
-          <button type="button" class="btn btn-primary" id="btnInstallPastedMod" style="padding: 4px 10px; font-size: 11px;">Install Mod</button>
-        </div>
-      </div>
-
-      <div class="mod-status-msg" id="modStatusMsg"></div>
     </div>
   </div>
 
@@ -839,11 +825,8 @@
       <!-- Custom GIF Controls (Visible when Custom is active) -->
       <div class="custom-gif-controls" id="customGifControls">
         <div class="custom-gif-row">
-          <input type="text" id="txtCustomGifUrl" placeholder="Paste image/GIF URL or drop file below...">
-          <button type="button" class="btn btn-neutral" id="btnOpenUploader" style="padding: 4px 8px; font-size: 11px; white-space:nowrap;" title="Open uploader in dedicated window to prevent popup closing">📁 Browse...</button>
-        </div>
-        <div class="custom-gif-tip">
-          Tip: You can also drag & drop any .gif file directly onto this panel, or copy an image and press Cmd+V / Ctrl+V to paste.
+          <input type="text" id="txtCustomGifUrl" placeholder="Paste image/GIF URL...">
+          <button type="button" class="btn btn-neutral" id="btnOpenUploader" style="padding: 4px 8px; font-size: 11px; white-space:nowrap;">Upload Image…</button>
         </div>
       </div>
 

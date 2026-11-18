@@ -29,13 +29,99 @@
     body {
       width: 100%;
       min-height: 100vh;
-      background: var(--bg);
+      background: #f1f5f9;
       color: var(--text);
       font-size: 13px;
       line-height: 1.4;
-      padding: 20px 22px;
+      padding: 32px 16px;
+    }
+    .page-card {
+      max-width: 660px;
+      margin: 0 auto;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px 28px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
       display: flex;
       flex-direction: column;
+    }
+    .page-tabs {
+      display: flex;
+      gap: 6px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    .page-tab-btn {
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--subtext);
+      cursor: pointer;
+    }
+    .page-tab-btn.active {
+      background: var(--primary);
+      color: #ffffff;
+      border-color: var(--primary);
+    }
+    .mod-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .mod-item {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 11px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .mod-item-left {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      min-width: 0;
+      flex: 1;
+    }
+    .mod-item-left input[type="checkbox"] {
+      margin-top: 2px;
+      cursor: pointer;
+      accent-color: var(--primary);
+    }
+    .mod-item-title {
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .mod-item-tag {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #ffffff;
+      color: #475569;
+      border: 1px solid var(--border);
+    }
+    .mod-item-desc {
+      font-size: 11px;
+      color: var(--subtext);
+      margin-top: 2px;
+    }
+    .mod-item-actions {
+      display: flex;
+      gap: 5px;
+      flex-shrink: 0;
     }
     .header {
       display: flex;
@@ -278,65 +364,87 @@
   </style>
 </head>
 <body>
-  <div class="header">
-    <span class="header-icon">🎬</span>
-    <div>
-      <div class="header-title">Custom Loading Animation</div>
-      <div class="header-subtitle">Select an animated GIF or image to display during Salesforce load states.</div>
-    </div>
-  </div>
-
-  <div class="status-msg" id="statusMsg"></div>
-
-  <!-- Big Clickable & Draggable Dropzone -->
-  <div class="dropzone" id="dropzone" title="Click to choose file or drag & drop here">
-    <div class="dropzone-icon">📁</div>
-    <div class="dropzone-text">Click to choose a GIF / image or drag & drop here</div>
-    <div class="dropzone-subtext">Supports .gif, .png, .jpg, .webp, .svg (animated GIFs recommended)</div>
-  </div>
-  <input type="file" id="uploaderFileInput" accept="image/*" style="display:none;">
-
-  <div class="or-divider">
-    <span>OR ENTER URL</span>
-  </div>
-
-  <div class="url-row">
-    <input type="text" id="uploaderUrlInput" class="url-input" placeholder="https://example.com/animation.gif">
-    <button type="button" class="btn btn-neutral" id="btnLoadUrl">Load URL</button>
-  </div>
-
-  <!-- Live Preview Card -->
-  <div class="preview-card">
-    <div class="preview-header">
-      <span class="preview-title">Live Preview</span>
-      <span class="preview-file-info" id="previewFileInfo">No image selected</span>
-    </div>
-    <div class="preview-box" id="previewBox">
-      <span class="preview-box-empty" id="previewEmpty">No custom image loaded</span>
-      <img src="" id="previewImg" class="preview-img" style="display:none;" alt="Loading Preview">
+  <div class="page-card">
+    <div class="page-tabs">
+      <button type="button" class="page-tab-btn" id="tabBtnMods">🧩 Inspector Mods</button>
+      <button type="button" class="page-tab-btn" id="tabBtnGif">🎬 Loading Animation</button>
     </div>
 
-    <div class="options-row">
-      <div style="display:flex; align-items:center; gap:6px;">
-        <span style="font-size:11px; color:var(--subtext); font-weight:600;">SIZE:</span>
-        <div class="size-btn-group" id="sizeBtnGroup">
-          <button type="button" class="size-btn" data-size="48">48px</button>
-          <button type="button" class="size-btn active" data-size="64">64px</button>
-          <button type="button" class="size-btn" data-size="96">96px</button>
-          <button type="button" class="size-btn" data-size="128">128px</button>
-        </div>
+    <div class="header">
+      <span class="header-icon" id="headerIcon">🎬</span>
+      <div>
+        <div class="header-title" id="headerTitle">Custom Loading Animation</div>
+        <div class="header-subtitle" id="headerSubtitle">Select an animated GIF or image to display during Salesforce load states.</div>
+      </div>
+    </div>
+
+    <div class="status-msg" id="statusMsg"></div>
+
+    <!-- Big Clickable & Draggable Dropzone -->
+    <div class="dropzone" id="dropzone">
+      <div class="dropzone-icon">📁</div>
+      <div class="dropzone-text" id="dropzoneText">Click to choose a file or drag & drop here</div>
+      <div class="dropzone-subtext" id="dropzoneSubtext">Supports .gif, .png, .jpg, .webp, .svg</div>
+    </div>
+    <input type="file" id="uploaderFileInput" accept="image/*" style="display:none;">
+
+    <div id="gifControlsSection">
+      <div class="or-divider">
+        <span>OR ENTER URL</span>
       </div>
 
-      <label class="rotate-label">
-        <input type="checkbox" id="chkRotate">
-        <span>Spin while loading</span>
-      </label>
-    </div>
-  </div>
+      <div class="url-row">
+        <input type="text" id="uploaderUrlInput" class="url-input" placeholder="https://example.com/animation.gif">
+        <button type="button" class="btn btn-neutral" id="btnLoadUrl">Load URL</button>
+      </div>
 
-  <div class="actions">
-    <button type="button" class="btn btn-neutral" id="btnClose">Close</button>
-    <button type="button" class="btn btn-primary" id="btnSaveApply">Save & Apply</button>
+      <!-- Live Preview Card -->
+      <div class="preview-card">
+        <div class="preview-header">
+          <span class="preview-title">Live Preview</span>
+          <span class="preview-file-info" id="previewFileInfo">No image selected</span>
+        </div>
+        <div class="preview-box" id="previewBox">
+          <span class="preview-box-empty" id="previewEmpty">No custom image loaded</span>
+          <img src="" id="previewImg" class="preview-img" style="display:none;" alt="Loading Preview">
+        </div>
+
+        <div class="options-row">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="font-size:11px; color:var(--subtext); font-weight:600;">SIZE:</span>
+            <div class="size-btn-group" id="sizeBtnGroup">
+              <button type="button" class="size-btn" data-size="48">48px</button>
+              <button type="button" class="size-btn active" data-size="64">64px</button>
+              <button type="button" class="size-btn" data-size="96">96px</button>
+              <button type="button" class="size-btn" data-size="128">128px</button>
+            </div>
+          </div>
+
+          <label class="rotate-label">
+            <input type="checkbox" id="chkRotate">
+            <span>Spin while loading</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div id="modControlsSection" style="display:none; flex-direction:column;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+        <span class="preview-title">Installed Mods</span>
+        <button type="button" class="btn btn-neutral" id="btnExportAllMods" style="padding:4px 8px; font-size:11px; display:none;">Export All</button>
+      </div>
+      <div class="mod-list" id="pageInstalledModsList"></div>
+
+      <div class="or-divider">
+        <span>OR PASTE / EDIT MOD JSON</span>
+      </div>
+      <textarea id="modJsonTextarea" placeholder="Paste .mod.json content here..." style="width:100%; min-height:160px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; resize:vertical; margin-bottom:12px;"></textarea>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn btn-neutral" id="btnClose">Close Tab</button>
+      <button type="button" class="btn btn-primary" id="btnSaveApply">Save & Apply</button>
+    </div>
   </div>
 
   <script src="uploader.js"></script>
