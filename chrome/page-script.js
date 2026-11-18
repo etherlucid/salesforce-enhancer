@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salesforce Enhancer
 // @namespace    https://etherlucid.local/
-// @version      1.3.0-alpha.1
+// @version      1.3.0-alpha.2
 // @description  Salesforce productivity: subtabs & tab drag-and-drop, Quick Views list bookmarking, declarative Inspector Mods, developer themes, and custom animations.
 // @match        https://*.lightning.force.com/*
 // @match        https://*.salesforce.com/*
@@ -227,7 +227,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    version: '1.3.0-alpha.1',
+    version: '1.3.0-alpha.2',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -265,7 +265,7 @@
     const hideAppName = raw.hideAppName !== undefined ? !!raw.hideAppName : (raw.subtabs && raw.subtabs.hideAppName !== undefined ? !!raw.subtabs.hideAppName : false);
 
     const res = {
-      version: '1.3.0-alpha.1',
+      version: '1.3.0-alpha.2',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
@@ -10117,7 +10117,7 @@
 
     function getActiveInspectorMods() {
       const s = getEnhancerSettings();
-      if (!s || !s.modules || s.modules.inspectorMods !== true) return [];
+      if (!s) return [];
       const mods = (s.inspectorMods && Array.isArray(s.inspectorMods.mods)) ? s.inspectorMods.mods : [];
       return mods.filter((m) => m && m.enabled !== false && m.id && m.target && m.target.keyPrefix);
     }
@@ -10696,5 +10696,5 @@
     setInterval(refreshInspectorMods, 850);
     setTimeout(refreshInspectorMods, 400);
 
-  console.log('[Salesforce Enhancer v1.3.0-alpha.1] Ready — Modular shortcuts, Quick Views, declarative Inspector Mods, developer themes & loading animations.');
+  console.log('[Salesforce Enhancer v1.3.0-alpha.2] Ready — Modular shortcuts, Quick Views, declarative Inspector Mods, developer themes & loading animations.');
 })();

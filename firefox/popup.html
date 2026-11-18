@@ -68,13 +68,75 @@
       font-weight: 600;
     }
 
-    /* Section Cards */
+    /* Vencord / Slick / BetterDiscord Tab Bar & Plugin Cards */
+    .top-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      background: #f1f5f9;
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+    .top-tab-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--subtext);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .top-tab-btn:hover {
+      color: var(--text);
+    }
+    .top-tab-btn.active {
+      background: #ffffff;
+      color: var(--text);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+    }
+    .tab-count-pill {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: rgba(1, 118, 211, 0.12);
+      color: var(--primary);
+    }
+    .plugins-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .plugins-search {
+      flex: 1;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      font-size: 12px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    .plugins-search:focus {
+      border-color: var(--primary);
+      background: #ffffff;
+    }
     .module-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
       transition: border-color 0.15s ease;
     }
     .module-card:hover {
@@ -82,14 +144,46 @@
     }
     .module-header {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: space-between;
-      gap: 8px;
+      gap: 10px;
     }
     .module-title-group {
       display: flex;
       align-items: center;
-      gap: 7px;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .module-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .plugin-gear-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: var(--subtext);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      padding: 0;
+    }
+    .plugin-gear-btn:hover,
+    .plugin-gear-btn.active {
+      color: var(--text);
+      border-color: var(--border-dark);
+      background: #f1f5f9;
+    }
+    .plugin-gear-btn.danger:hover {
+      color: #b91c1c;
+      border-color: #fca5a5;
+      background: #fef2f2;
     }
     .module-icon {
       font-size: 16px;
@@ -593,258 +687,270 @@
       <img src="icons/icon-32.png" alt="Logo" class="header-logo">
       <span class="header-title">Salesforce Enhancer</span>
     </div>
-    <span class="header-badge">v1.3.0-alpha.1</span>
+    <span class="header-badge">v1.3.0-alpha.2</span>
   </div>
 
-  <!-- Module 1: Subtabs & Workspace Shortcuts -->
-  <div class="module-card">
-    <div class="module-header">
-      <div class="module-title-group">
-        <span class="module-icon">🗂️</span>
-        <span class="module-title">Subtabs & Shortcuts</span>
+  <!-- Top Navigation: Plugins | Themes -->
+  <div class="top-tabs">
+    <button type="button" class="top-tab-btn active" id="navTabPlugins">
+      <span>Plugins</span>
+      <span class="tab-count-pill" id="pluginsActiveCountPill">3</span>
+    </button>
+    <button type="button" class="top-tab-btn" id="navTabThemes">
+      <span>Themes</span>
+    </button>
+  </div>
+
+  <!-- VIEW 1: PLUGINS -->
+  <div id="viewPlugins">
+    <div class="plugins-toolbar">
+      <input type="text" class="plugins-search" id="txtSearchPlugins" placeholder="Search plugins...">
+      <button type="button" class="btn btn-neutral" id="btnImportModFile" style="padding: 6px 10px; font-size: 11px; white-space: nowrap;">+ Import</button>
+    </div>
+
+    <!-- Built-in Plugin 1: Subtabs & Shortcuts -->
+    <div class="module-card plugin-card" data-plugin-search="subtabs shortcuts tabs workspace">
+      <div class="module-header">
+        <div>
+          <div class="module-title-group">
+            <span class="module-title">Subtabs &amp; Shortcuts</span>
+            <span class="mod-item-tag">Built-in</span>
+          </div>
+          <div class="module-desc">
+            Alt+Click opens records as subtabs; Cmd/Ctrl+Click opens workspaces. Drag-and-drop tabs to convert between workspaces and subtabs.
+          </div>
+        </div>
+        <div class="module-controls">
+          <button type="button" class="plugin-gear-btn" id="btnGearSubtabs" title="Plugin Settings">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+          <label class="switch">
+            <input type="checkbox" id="chkModSubtabs" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
       </div>
-      <label class="switch">
-        <input type="checkbox" id="chkModSubtabs" checked>
-        <span class="slider"></span>
-      </label>
+      <div class="module-body is-disabled" id="subtabsHideAppNameRow">
+        <div class="sub-option-row">
+          <span>Hide "Service Console" app label</span>
+          <input type="checkbox" id="chkHideAppName">
+        </div>
+      </div>
     </div>
-    <div class="module-desc">
-      Alt+Click opens records as subtabs; Cmd/Ctrl+Click opens workspaces. Drag-and-drop tabs to convert workspaces to subtabs and vice versa.
+
+    <!-- Built-in Plugin 2: Link Interceptor -->
+    <div class="module-card plugin-card" data-plugin-search="link interceptor external urls tabs routing">
+      <div class="module-header">
+        <div>
+          <div class="module-title-group">
+            <span class="module-title">Link Interceptor</span>
+            <span class="mod-item-tag">Built-in</span>
+          </div>
+          <div class="module-desc">
+            Open external Salesforce links inside your active Salesforce Console tab instead of spawning duplicate browser tabs.
+          </div>
+        </div>
+        <div class="module-controls">
+          <label class="switch">
+            <input type="checkbox" id="chkModLinkInterceptor" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
     </div>
-    <div class="sub-option-row" id="subtabsHideAppNameRow" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);">
-      <span>Hide "Service Console" app label (more space for tabs)</span>
-      <input type="checkbox" id="chkHideAppName">
+
+    <!-- Built-in Plugin 3: Quick Views -->
+    <div class="module-card plugin-card" data-plugin-search="quick views pin list switcher">
+      <div class="module-header">
+        <div>
+          <div class="module-title-group">
+            <span class="module-title">Quick Views</span>
+            <span class="mod-item-tag">Built-in</span>
+          </div>
+          <div class="module-desc">
+            Pin favorite list views to the top of the List View Switcher dropdown with reordering and A–Z sorting.
+          </div>
+        </div>
+        <div class="module-controls">
+          <label class="switch">
+            <input type="checkbox" id="chkModQuickViews" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Built-in Plugin 4: Loading Animation -->
+    <div class="module-card plugin-card" data-plugin-search="loading animation spinner gif parrot nyan">
+      <div class="module-header">
+        <div>
+          <div class="module-title-group">
+            <span class="module-title">Loading Animation</span>
+            <span class="mod-item-tag">Built-in</span>
+          </div>
+          <div class="module-desc" id="loadingDesc">
+            Replace the default Salesforce spinner with an animated GIF or custom image.
+          </div>
+        </div>
+        <div class="module-controls">
+          <button type="button" class="plugin-gear-btn" id="btnGearLoading" title="Plugin Settings">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+          <label class="switch">
+            <input type="checkbox" id="chkModLoading">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="module-body is-disabled" id="loadingBody">
+        <div class="preset-gif-grid" id="presetGifGrid">
+          <div class="gif-card" data-preset="spinner" data-url="" title="Default Salesforce Spinner">
+            <div class="gif-card-thumb" style="display:flex; align-items:center; justify-content:center; font-size:20px; line-height:32px;">🔄</div>
+            <div class="gif-card-name">Default</div>
+          </div>
+          <div class="gif-card" data-preset="parrot" data-url="parrot.gif" title="Party Parrot">
+            <img src="parrot.gif" class="gif-card-thumb" alt="Party Parrot">
+            <div class="gif-card-name">Parrot</div>
+          </div>
+          <div class="gif-card" data-preset="nyan" data-url="nyan.gif" title="Nyan Cat">
+            <img src="nyan.gif" class="gif-card-thumb" alt="Nyan Cat">
+            <div class="gif-card-name">Nyan Cat</div>
+          </div>
+          <div class="gif-card" data-preset="custom" id="cardCustomGif" title="Custom Image / GIF">
+            <div class="gif-card-thumb" id="customCardIcon" style="display:flex; align-items:center; justify-content:center; font-size:24px; line-height:32px; font-weight:700; color:var(--primary);">+</div>
+            <img src="" id="customCardThumb" class="gif-card-thumb" style="display:none;" alt="Custom Image">
+            <div class="gif-card-name">Custom</div>
+          </div>
+        </div>
+
+        <div class="custom-gif-controls" id="customGifControls">
+          <div class="custom-gif-row">
+            <input type="text" id="txtCustomGifUrl" placeholder="Paste image/GIF URL...">
+            <button type="button" class="btn btn-neutral" id="btnOpenUploader" style="padding: 4px 8px; font-size: 11px; white-space:nowrap;">Upload Image…</button>
+          </div>
+        </div>
+
+        <input type="file" id="loadingFileInput" accept="image/*" style="display:none;">
+
+        <div class="preview-box" id="previewBox" style="display:none;">
+          <span class="preview-box-empty" id="previewEmpty">No custom image selected</span>
+          <img src="" id="previewImg" class="preview-img" style="display:none;" alt="Loading Preview">
+        </div>
+
+        <div class="sub-option-row">
+          <span>Rotate image while loading</span>
+          <input type="checkbox" id="chkRotate">
+        </div>
+      </div>
+    </div>
+
+    <!-- Custom Imported Plugins List -->
+    <div id="installedModsList"></div>
+  </div>
+
+  <!-- VIEW 2: THEMES -->
+  <div id="viewThemes" style="display: none;">
+    <div class="module-card">
+      <div class="module-header">
+        <div>
+          <div class="module-title-group">
+            <span class="module-title">Developer Themes</span>
+          </div>
+          <div class="module-desc" id="themingDesc">
+            Disabled. Native Salesforce theme active.
+          </div>
+        </div>
+        <div class="module-controls">
+          <label class="switch">
+            <input type="checkbox" id="chkModTheming">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="module-body" id="themingBody" style="display: block;">
+        <div class="themes-grid" id="themesGrid">
+          <div class="theme-chip" data-theme="gruvbox-dark" title="Gruvbox Dark">
+            <div class="theme-chip-dots">
+              <span class="dot-bg" style="background:#282828;"></span>
+              <span class="dot-accent" style="background:#fe8019;"></span>
+            </div>
+            <span class="theme-chip-name">Gruvbox Dark</span>
+          </div>
+          <div class="theme-chip" data-theme="gruvbox-light" title="Gruvbox Light">
+            <div class="theme-chip-dots">
+              <span class="dot-bg" style="background:#fbf1c7;"></span>
+              <span class="dot-accent" style="background:#af3a03;"></span>
+            </div>
+            <span class="theme-chip-name">Gruvbox Light</span>
+          </div>
+          <div class="theme-chip" data-theme="solarized-dark" title="Solarized Dark">
+            <div class="theme-chip-dots">
+              <span class="dot-bg" style="background:#002b36;"></span>
+              <span class="dot-accent" style="background:#268bd2;"></span>
+            </div>
+            <span class="theme-chip-name">Solarized Dark</span>
+          </div>
+          <div class="theme-chip" data-theme="solarized-light" title="Solarized Light">
+            <div class="theme-chip-dots">
+              <span class="dot-bg" style="background:#fdf6e3;"></span>
+              <span class="dot-accent" style="background:#2aa198;"></span>
+            </div>
+            <span class="theme-chip-name">Solarized Light</span>
+          </div>
+          <div class="theme-chip" data-theme="nord" title="Nord">
+            <div class="theme-chip-dots">
+              <span class="dot-bg" style="background:#2e3440;"></span>
+              <span class="dot-accent" style="background:#88c0d0;"></span>
+            </div>
+            <span class="theme-chip-name">Nord</span>
+          </div>
+          <div class="theme-chip" data-theme="dracula" title="Dracula">
+            <div class="theme-chip-dots">
+              <span class="dot-bg" style="background:#282a36;"></span>
+              <span class="dot-accent" style="background:#bd93f9;"></span>
+            </div>
+            <span class="theme-chip-name">Dracula</span>
+          </div>
+          <div class="theme-chip" data-theme="one-dark" title="One Dark">
+            <div class="theme-chip-dots">
+              <span class="dot-bg" style="background:#21252b;"></span>
+              <span class="dot-accent" style="background:#61afef;"></span>
+            </div>
+            <span class="theme-chip-name">One Dark</span>
+          </div>
+          <div class="theme-chip" data-theme="classic" title="Classic Salesforce Blue">
+            <div class="theme-chip-dots">
+              <span class="dot-bg" style="background:#ffffff;"></span>
+              <span class="dot-accent" style="background:#0176d3;"></span>
+            </div>
+            <span class="theme-chip-name">Classic SF</span>
+          </div>
+          <div class="theme-chip" data-theme="custom" title="Custom Accent Color">
+            <div class="theme-chip-dots">
+              <span class="dot-bg" style="background:#ffffff;"></span>
+              <span class="dot-accent" id="customChipDot" style="background:#8b5cf6;"></span>
+            </div>
+            <span class="theme-chip-name">Custom</span>
+          </div>
+        </div>
+
+        <div class="custom-color-row" id="customColorRow" style="display:none;">
+          <input type="color" id="customColorPicker" value="#8b5cf6">
+          <input type="text" id="customColorHex" value="#8b5cf6" placeholder="#8b5cf6">
+        </div>
+
+        <div class="sub-option-row">
+          <span>Apply accent bar to navigation &amp; workspace tabs</span>
+          <input type="checkbox" id="chkApplyNavigation" checked>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Module 2: Quick Views -->
-  <div class="module-card">
-    <div class="module-header">
-      <div class="module-title-group">
-        <span class="module-icon">📌</span>
-        <span class="module-title">Quick Views</span>
-      </div>
-      <label class="switch">
-        <input type="checkbox" id="chkModQuickViews" checked>
-        <span class="slider"></span>
-      </label>
-    </div>
-    <div class="module-desc">
-      Pin your favorite list views to the top of the List View Switcher dropdown with quick reordering and A-Z sorting.
-    </div>
-  </div>
-
-  <!-- Module 3: Link Interceptor -->
-  <div class="module-card">
-    <div class="module-header">
-      <div class="module-title-group">
-        <span class="module-icon">🧭</span>
-        <span class="module-title">Link Interceptor</span>
-      </div>
-      <label class="switch">
-        <input type="checkbox" id="chkModLinkInterceptor" checked>
-        <span class="slider"></span>
-      </label>
-    </div>
-    <div class="module-desc">
-      Intercept external Salesforce links and open them inside your active Salesforce browser tab instead of spawning duplicate tabs.
-    </div>
-  </div>
-
-  <!-- Module 4: Declarative Inspector Mods -->
-  <div class="module-card" id="cardInspectorMods">
-    <div class="module-header">
-      <div class="module-title-group">
-        <span class="module-icon">🧩</span>
-        <span class="module-title">Inspector Mods</span>
-        <span class="alpha-pill">Alpha</span>
-      </div>
-      <label class="switch">
-        <input type="checkbox" id="chkModInspectorMods">
-        <span class="slider"></span>
-      </label>
-    </div>
-    <div class="module-desc" id="inspectorModsDesc">
-      Display custom record and entitlement cards in Hover Panels, Highlights Panels, and Right Panes.
-    </div>
-
-    <div class="module-body is-disabled" id="inspectorModsBody">
-      <div class="mod-list" id="installedModsList"></div>
-
-      <div class="mod-toolbar">
-        <button type="button" class="btn btn-neutral" id="btnImportModFile" style="padding: 5px 10px; font-size: 11px;">Manage / Import Mods…</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Module 3: Developer Themes & Styling -->
-  <div class="module-card">
-    <div class="module-header">
-      <div class="module-title-group">
-        <span class="module-icon">🎨</span>
-        <span class="module-title">Developer Themes</span>
-      </div>
-      <label class="switch">
-        <input type="checkbox" id="chkModTheming">
-        <span class="slider"></span>
-      </label>
-    </div>
-    <div class="module-desc" id="themingDesc">
-      Disabled. Salesforce native look & feel is 100% untouched.
-    </div>
-
-    <div class="module-body is-disabled" id="themingBody">
-      <div class="themes-grid" id="themesGrid">
-        <!-- Gruvbox Dark -->
-        <div class="theme-chip" data-theme="gruvbox-dark" title="Gruvbox Dark">
-          <div class="theme-chip-dots">
-            <span class="dot-bg" style="background:#282828;"></span>
-            <span class="dot-accent" style="background:#fe8019;"></span>
-          </div>
-          <span class="theme-chip-name">Gruvbox Dark</span>
-        </div>
-        <!-- Gruvbox Light -->
-        <div class="theme-chip" data-theme="gruvbox-light" title="Gruvbox Light">
-          <div class="theme-chip-dots">
-            <span class="dot-bg" style="background:#fbf1c7;"></span>
-            <span class="dot-accent" style="background:#af3a03;"></span>
-          </div>
-          <span class="theme-chip-name">Gruvbox Light</span>
-        </div>
-        <!-- Solarized Dark -->
-        <div class="theme-chip" data-theme="solarized-dark" title="Solarized Dark">
-          <div class="theme-chip-dots">
-            <span class="dot-bg" style="background:#002b36;"></span>
-            <span class="dot-accent" style="background:#268bd2;"></span>
-          </div>
-          <span class="theme-chip-name">Solarized Dark</span>
-        </div>
-        <!-- Solarized Light -->
-        <div class="theme-chip" data-theme="solarized-light" title="Solarized Light">
-          <div class="theme-chip-dots">
-            <span class="dot-bg" style="background:#fdf6e3;"></span>
-            <span class="dot-accent" style="background:#2aa198;"></span>
-          </div>
-          <span class="theme-chip-name">Solarized Light</span>
-        </div>
-        <!-- Nord -->
-        <div class="theme-chip" data-theme="nord" title="Nord">
-          <div class="theme-chip-dots">
-            <span class="dot-bg" style="background:#2e3440;"></span>
-            <span class="dot-accent" style="background:#88c0d0;"></span>
-          </div>
-          <span class="theme-chip-name">Nord</span>
-        </div>
-        <!-- Dracula -->
-        <div class="theme-chip" data-theme="dracula" title="Dracula">
-          <div class="theme-chip-dots">
-            <span class="dot-bg" style="background:#282a36;"></span>
-            <span class="dot-accent" style="background:#bd93f9;"></span>
-          </div>
-          <span class="theme-chip-name">Dracula</span>
-        </div>
-        <!-- One Dark -->
-        <div class="theme-chip" data-theme="one-dark" title="One Dark">
-          <div class="theme-chip-dots">
-            <span class="dot-bg" style="background:#21252b;"></span>
-            <span class="dot-accent" style="background:#61afef;"></span>
-          </div>
-          <span class="theme-chip-name">One Dark</span>
-        </div>
-        <!-- Classic SF -->
-        <div class="theme-chip" data-theme="classic" title="Classic Salesforce Blue">
-          <div class="theme-chip-dots">
-            <span class="dot-bg" style="background:#ffffff;"></span>
-            <span class="dot-accent" style="background:#0176d3;"></span>
-          </div>
-          <span class="theme-chip-name">Classic SF</span>
-        </div>
-        <!-- Custom -->
-        <div class="theme-chip" data-theme="custom" title="Custom Accent Color">
-          <div class="theme-chip-dots">
-            <span class="dot-bg" style="background:#ffffff;"></span>
-            <span class="dot-accent" id="customChipDot" style="background:#8b5cf6;"></span>
-          </div>
-          <span class="theme-chip-name">Custom</span>
-        </div>
-      </div>
-
-      <div class="custom-color-row" id="customColorRow" style="display:none;">
-        <input type="color" id="customColorPicker" value="#8b5cf6">
-        <input type="text" id="customColorHex" value="#8b5cf6" placeholder="#8b5cf6">
-      </div>
-
-      <div class="sub-option-row">
-        <span>Apply accent bar to navigation & workspace tabs</span>
-        <input type="checkbox" id="chkApplyNavigation" checked>
-      </div>
-
-      <div class="notice-safe">
-        <span>🛡️ Case Progress Bar (New &rarr; Working &rarr; Waiting &rarr; Closed) is protected.</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Module 4: Loading Animation -->
-  <div class="module-card">
-    <div class="module-header">
-      <div class="module-title-group">
-        <span class="module-icon">🎬</span>
-        <span class="module-title">Loading Animation</span>
-      </div>
-      <label class="switch">
-        <input type="checkbox" id="chkModLoading">
-        <span class="slider"></span>
-      </label>
-    </div>
-    <div class="module-desc" id="loadingDesc">
-      Disabled. Native Salesforce mascot & spinner active.
-    </div>
-
-    <div class="module-body is-disabled" id="loadingBody">
-      <div class="preset-gif-grid" id="presetGifGrid">
-        <div class="gif-card" data-preset="spinner" data-url="" title="Default Salesforce Spinner">
-          <div class="gif-card-thumb" style="display:flex; align-items:center; justify-content:center; font-size:20px; line-height:32px;">🔄</div>
-          <div class="gif-card-name">Default</div>
-        </div>
-        <div class="gif-card" data-preset="parrot" data-url="parrot.gif" title="Party Parrot (Animated GIF)">
-          <img src="parrot.gif" class="gif-card-thumb" alt="Party Parrot">
-          <div class="gif-card-name">Parrot</div>
-        </div>
-        <div class="gif-card" data-preset="nyan" data-url="nyan.gif" title="Nyan Cat (Animated GIF)">
-          <img src="nyan.gif" class="gif-card-thumb" alt="Nyan Cat">
-          <div class="gif-card-name">Nyan Cat</div>
-        </div>
-        <div class="gif-card" data-preset="custom" id="cardCustomGif" title="Custom Image / GIF (Click to upload file or paste URL)">
-          <div class="gif-card-thumb" id="customCardIcon" style="display:flex; align-items:center; justify-content:center; font-size:24px; line-height:32px; font-weight:700; color:var(--primary);">+</div>
-          <img src="" id="customCardThumb" class="gif-card-thumb" style="display:none;" alt="Custom Image">
-          <div class="gif-card-name">Custom</div>
-        </div>
-      </div>
-
-      <!-- Custom GIF Controls (Visible when Custom is active) -->
-      <div class="custom-gif-controls" id="customGifControls">
-        <div class="custom-gif-row">
-          <input type="text" id="txtCustomGifUrl" placeholder="Paste image/GIF URL...">
-          <button type="button" class="btn btn-neutral" id="btnOpenUploader" style="padding: 4px 8px; font-size: 11px; white-space:nowrap;">Upload Image…</button>
-        </div>
-      </div>
-
-      <input type="file" id="loadingFileInput" accept="image/*" style="display:none;">
-
-      <div class="preview-box" id="previewBox">
-        <span class="preview-box-empty" id="previewEmpty">No custom image (Salesforce default spinner)</span>
-        <img src="" id="previewImg" class="preview-img" style="display:none;" alt="Loading Preview">
-      </div>
-
-      <div class="sub-option-row">
-        <span>Rotate image while loading (for static icons)</span>
-        <input type="checkbox" id="chkRotate">
-      </div>
-    </div>
-  </div>
-
-  <div class="footer-actions" style="justify-content: flex-end; padding-top: 8px;">
+  <div class="footer-actions" style="justify-content: space-between; padding-top: 8px; margin-top: 8px;">
+    <button type="button" class="btn btn-neutral" id="btnOpenExtensionPage" style="font-size: 11px; padding: 5px 10px;">Manage Plugins &amp; Uploads…</button>
     <button type="button" class="btn btn-neutral" id="btnReset" style="font-size: 11px; padding: 5px 12px;">Reset Defaults</button>
   </div>
 

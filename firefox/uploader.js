@@ -4,7 +4,7 @@
   const api = typeof browser !== 'undefined' ? browser : chrome;
 
   const DEFAULT_SETTINGS = {
-    version: '1.3.0-alpha.1',
+    version: '1.3.0-alpha.2',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -76,16 +76,16 @@
     if (tabBtnMods) tabBtnMods.classList.toggle('active', isModMode);
     if (tabBtnGif) tabBtnGif.classList.toggle('active', !isModMode);
     if (isModMode) {
-      document.title = 'Inspector Mods - Salesforce Enhancer';
+      document.title = 'Custom Plugins - Salesforce Enhancer';
       if (headerIcon) headerIcon.textContent = '🧩';
-      if (headerTitle) headerTitle.textContent = 'Inspector Mods';
-      if (headerSubtitle) headerSubtitle.textContent = 'Import, edit, or manage JSON mod configurations.';
+      if (headerTitle) headerTitle.textContent = 'Custom Plugins';
+      if (headerSubtitle) headerSubtitle.textContent = 'Import, edit, or manage JSON plugin configurations.';
       if (dropzoneText) dropzoneText.textContent = 'Click to choose a .mod.json file or drag & drop here';
       if (dropzoneSubtext) dropzoneSubtext.textContent = 'Supports .mod.json and .json files';
       if (fileInput) fileInput.setAttribute('accept', '.json,application/json');
       if (gifControlsSection) gifControlsSection.style.display = 'none';
       if (modControlsSection) modControlsSection.style.display = 'flex';
-      if (btnSaveApply) btnSaveApply.textContent = 'Save Mod';
+      if (btnSaveApply) btnSaveApply.textContent = 'Save Plugin';
       renderPageModsList();
     } else {
       document.title = 'Custom Loading Animation - Salesforce Enhancer';
