@@ -1,25 +1,35 @@
 # Salesforce Enhancer
 
-Salesforce Enhancer is a browser extension for Salesforce Lightning Experience and Service Cloud Console that adds workspace/subtab shortcuts and drag-and-drop management, customizable tab keybinds, Link Interceptor, Quick Views pinning, declarative Inspector Mods (`.mod.json`), developer themes, and custom loading animations.
+Salesforce Enhancer is a browser extension for Salesforce Lightning Experience with deep workspace and tab management for **Lightning Console apps** (such as Service Console, Sales Console, and custom Console apps) alongside Lightning-wide productivity tools like Quick Views pinning, declarative Inspector Mods (`.mod.json`), developer themes, and custom loading animations.
 
 ## Features
 
+### Lightning Console Apps
+
+These features activate automatically inside Lightning Console apps and stay out of the way in Standard Navigation apps and Setup:
+
 - **Subtabs & Shortcuts**:
-  - `Alt+Click` opens records as subtabs (`Alt+Shift+Click` in the background); `Cmd/Ctrl+Click` opens new primary workspace tabs (`Cmd/Ctrl+Shift+Click` in the background).
+  - `Alt+Click` opens records as subtabs (`Alt+Shift+Click` in the background); `Cmd/Ctrl+Click` opens new primary workspace tabs (`Cmd/Ctrl+Shift+Click` in the background). Outside Console apps, native browser `Cmd/Ctrl+Click` behavior is preserved.
   - Bidirectional tab drag-and-drop to convert workspaces into subtabs, promote subtabs into workspaces, or move subtabs between workspaces, with a confirmation prompt before merging a workspace that contains multiple tabs.
-  - Optional toggle to hide the `"Service Console"` app label.
+  - Optional toggle for a compact Console header that hides the Console app label and condenses the active Console navigation item into an icon button.
 - **Customizable Tab & Subtab Keybinds**: Navigate between workspaces and subtabs, reorder tabs/subtabs left or right (including pinned tabs within the pinned group), promote subtabs, move tabs across workspaces, and close active tabs via keyboard shortcuts. All shortcuts can be rebound or cleared on the Extension Site's **Keybinds** page.
-- **Link Interceptor**: Routes external Salesforce Lightning and Knowledge article links (`/lightning/...`, `/articles/...`, `/lightning/articles/...`) into your active Salesforce Console tab instead of spawning duplicate browser tabs.
+- **Link Interceptor**: Routes external Salesforce Lightning and Knowledge article links (`/lightning/...`, `/articles/...`, `/lightning/articles/...`) into an open Lightning Console tab instead of spawning duplicate browser tabs. Standard Navigation tabs are never overwritten.
+
+### All Salesforce Lightning Apps
+
 - **Quick Views**: Pin favorite list views to the top of the List View Switcher dropdown with manual reordering and A–Z sorting.
 - **Custom Plugins (Declarative Inspector Mods)**: Org-agnostic `.mod.json` engine that renders related record status cards across Hover Previews, Record Highlights Panels, and Right Panes without hardcoding org-specific schemas into the extension.
-- **Developer Themes**: Includes Classic SF, Gruvbox Dark/Light, Solarized Dark/Light, Nord, Dracula, One Dark, and Custom accent colors with optional navigation bar accent styling.
+- **Developer Themes**: Includes Classic SF, Gruvbox Dark/Light, Solarized Dark/Light, Nord, Dracula, One Dark, and Custom accent colors with optional navigation bar and Console tab accent styling.
 - **Loading Animation**: Built-in plugin to replace the default Salesforce spinner with bundled offline presets (`Parrot`, `Nyan Cat`) or a custom uploaded GIF/image/URL, with configurable display size (`48px`–`128px`) and rotation. Disabled by default.
+
+### Extension Experience
+
 - **Multi-Page Extension Site**: Full browser-tab settings site (`options_ui`) with dedicated pages for **Plugins**, **Keybinds**, **Themes**, **Custom Plugins** (`.mod.json` uploader and JSON editor), and **Loading Animation**.
 - **Offline and Private**: Runs locally with zero telemetry, zero analytics, and permissions scoped strictly to Salesforce domains.
 
 ## Default Keybinds
 
-Shortcuts match by layout-independent `event.code`, ignore keypresses inside inputs/textareas/rich-text editors, and can be customized or cleared under **Keybinds** on the extension page.
+Shortcuts are active in Lightning Console apps, match by layout-independent `event.code`, ignore keypresses inside inputs/textareas/rich-text editors, and can be customized or cleared under **Keybinds** on the extension page.
 
 | Action | Default Shortcut |
 | --- | --- |

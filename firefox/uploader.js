@@ -74,7 +74,7 @@
   }
 
   const DEFAULT_SETTINGS = {
-    version: '1.3.2',
+    version: '1.3.3',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -140,11 +140,11 @@
     },
     keybinds: {
       title: 'Keybinds',
-      subtitle: 'Configure keyboard shortcuts for navigating and moving tabs and subtabs.'
+      subtitle: 'Configure keyboard shortcuts for navigating and moving tabs and subtabs in Lightning Console apps.'
     },
     themes: {
       title: 'Themes',
-      subtitle: 'Customize console accent bars and developer color palettes.'
+      subtitle: 'Customize navigation accent bars and developer color palettes across Salesforce Lightning.'
     },
     'import-plugin': {
       title: 'Custom Plugins',

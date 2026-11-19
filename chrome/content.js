@@ -183,7 +183,7 @@
     const keybinds = normalizeKeybinds(raw && raw.subtabs && raw.subtabs.keybinds);
     if (!raw || typeof raw !== 'object') {
       return {
-        version: '1.3.2',
+        version: '1.3.3',
         modules: { subtabs: true, quickViews: true, linkInterceptor: true, inspectorMods: false, theming: false, loadingAnimation: false },
         subtabs: { hideAppName: false, keybinds: Object.assign({}, DEFAULT_KEYBINDS) },
         hideAppName: false,
@@ -194,7 +194,7 @@
     }
 
     const res = {
-      version: '1.3.2',
+      version: '1.3.3',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
@@ -1012,7 +1012,7 @@
           color: ${baseTheme.text} !important;
           border-color: ${baseTheme.border} !important;
         }
-        /* Service Console Workspace Tab Header shares surfaceHeader with the tab strip */
+        /* Lightning Console Workspace Tab Header shares surfaceHeader with the tab strip */
         .tabsetHeader.slds-context-bar,
         .slds-context-bar.slds-context-bar_tabs,
         .tabsetHeader.slds-context-bar > .slds-context-bar__primary,
@@ -2615,11 +2615,78 @@
     `;
   }
 
+  const CONSOLE_APP_SELECTOR =
+    '.oneConsoleNav, .navexConsoleNav, .navexWorkspaceManager, .navexConsoleTabContainer, .oneConsoleTabContainer, .oneWorkspaceNavigationTabs, .oneConsoleLayoutContainer, .tabsetHeader.slds-context-bar, .slds-context-bar.slds-context-bar_tabs';
+
+  function isConsoleAppInDocument(doc) {
+    try {
+      return !!(doc && doc.querySelector && doc.querySelector(CONSOLE_APP_SELECTOR));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function isConsoleAppActive() {
+    return isConsoleAppInDocument(document);
+  }
+
+  function isAllowedSalesforceOrigin(origin) {
+    if (!origin || typeof origin !== 'string') return false;
+    if (origin === window.location.origin) return true;
+    try {
+      const url = new URL(origin);
+      const host = url.hostname.toLowerCase();
+      return (
+        host === 'force.com' || host.endsWith('.force.com') ||
+        host === 'salesforce.com' || host.endsWith('.salesforce.com') ||
+        host === 'visualforce.com' || host.endsWith('.visualforce.com') ||
+        host === 'site.com' || host.endsWith('.site.com') ||
+        host === 'cloudforce.com' || host.endsWith('.cloudforce.com')
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
   // 1. Child Frame / iframe Handler
   if (!isTopWindow) {
     // Clean up any rogue preload styles that may have existed in iframes
     const rogue = document.getElementById('sf-preload-theme-style');
     if (rogue) rogue.remove();
+
+    let topConsoleState = { isConsole: false, subtabsEnabled: true };
+
+    function isHostConsoleActive() {
+      try {
+        if (window.top && window.top.document) {
+          return isConsoleAppInDocument(window.top.document);
+        }
+      } catch (_) {}
+      return !!topConsoleState.isConsole;
+    }
+
+    function requestTopConsoleState() {
+      try {
+        window.top.postMessage({ __sfEnhancerAction: 'queryConsoleState' }, '*');
+      } catch (_) {}
+    }
+
+    window.addEventListener('message', (event) => {
+      try {
+        if (event.source !== window.top) return;
+        if (!isAllowedSalesforceOrigin(event.origin)) return;
+        if (event.data && event.data.__sfEnhancerAction === 'consoleState') {
+          topConsoleState.isConsole = !!event.data.isConsole;
+          if (typeof event.data.subtabsEnabled === 'boolean') {
+            topConsoleState.subtabsEnabled = event.data.subtabsEnabled;
+          }
+        }
+      } catch (_) {}
+    });
+
+    requestTopConsoleState();
+    setTimeout(requestTopConsoleState, 1200);
+    setTimeout(requestTopConsoleState, 3000);
 
     const SF_ID_REGEX = /^[a-zA-Z0-9]{15,18}$/;
     const RECORD_URL_REGEX = /\/lightning\/r\/(?:[a-zA-Z0-9_]+\/)?([a-zA-Z0-9]{15,18})(?:\/view|$|\?|#)/;
@@ -2720,6 +2787,7 @@
       'click',
       (e) => {
         if (e.button !== 0) return;
+        if (!topConsoleState.subtabsEnabled || !isHostConsoleActive()) return;
         const isCmdOrCtrl = e.metaKey || e.ctrlKey;
         const isAlt = e.altKey;
         if (!isAlt && !isCmdOrCtrl) return;
@@ -2772,6 +2840,7 @@
   // -------------------------------------------------------------
 
   let activeEarlyMascotObs = null;
+  let latestSubtabsEnabled = true;
 
   function getTabIconColor(rawSettings) {
     try {
@@ -2833,14 +2902,12 @@
       const addIfValid = (el) => {
         if (el && !isHomeCandidateInPopupMenu(el)) elements.add(el);
       };
-      document.querySelectorAll('.oneConsoleNav > .appNavItems > .selectedListItem > a, .slds-context-bar__object-switcher > a').forEach(addIfValid);
-      document.querySelectorAll('a[href*="/lightning/o/Case/list"], a[href*="/lightning/o/Case"]').forEach(addIfValid);
-      document.querySelectorAll('.slds-context-bar__primary .slds-context-bar__item:not(:first-child) a').forEach(addIfValid);
-      document.querySelectorAll('.slds-context-bar [title="Cases"] a, .slds-context-bar [data-id="Case"] a, .slds-context-bar [data-id="home"] a').forEach(addIfValid);
-      const firstTab = document.querySelector('.tabBarItems > li:first-child a, one-app-nav-bar-item-root:first-child a');
-      if (firstTab && (firstTab.href?.includes('/lightning/o/Case') || firstTab.getAttribute('title') === 'Cases')) {
-        addIfValid(firstTab);
-      }
+      document.querySelectorAll(
+        '.oneConsoleNav > .appNavItems > .selectedListItem > a, ' +
+        '.navexConsoleNav > .appNavItems > .selectedListItem > a, ' +
+        '.tabsetHeader.slds-context-bar .slds-context-bar__object-switcher > a, ' +
+        '.slds-context-bar.slds-context-bar_tabs .slds-context-bar__object-switcher > a'
+      ).forEach(addIfValid);
     } catch (_) {}
     return Array.from(elements);
   }
@@ -2952,7 +3019,7 @@
         target.style.setProperty('opacity', '1', 'important');
 
         if (appNavItems) {
-          // Salesforce Service Console splits Home link (.selectedListItem) and dropdown (.navMenu) as siblings inside .appNavItems
+          // Lightning Console splits the active nav link (.selectedListItem) and object switcher dropdown (.navMenu) as siblings inside .appNavItems
           appNavItems.classList.add('sf-home-unified-tab');
           appNavItems.style.setProperty('display', 'inline-flex', 'important');
           appNavItems.style.setProperty('align-items', 'stretch', 'important');
@@ -3072,11 +3139,21 @@
           }
         }
 
-        if (!target.getAttribute('title') || target.getAttribute('title') === 'Cases') {
-          target.setAttribute('title', 'Cases (Home)');
+        const origLabel = (
+          target.dataset.sfOrigLabel ||
+          target.getAttribute('title') ||
+          target.getAttribute('aria-label') ||
+          (target.textContent || '').trim() ||
+          'Console Navigation'
+        ).trim();
+        if (origLabel && !target.dataset.sfOrigLabel) {
+          target.dataset.sfOrigLabel = origLabel;
+        }
+        if (!target.getAttribute('title')) {
+          target.setAttribute('title', origLabel);
         }
         if (!target.getAttribute('aria-label')) {
-          target.setAttribute('aria-label', 'Cases (Home)');
+          target.setAttribute('aria-label', origLabel);
         }
 
         // Clean up any old span icons
@@ -3200,7 +3277,9 @@
       themingStyle.remove();
     }
 
-    // 3. Hide App Name (Service Console label) & convert navigation tab into Home icon button
+    latestSubtabsEnabled = settings.modules?.subtabs !== false;
+
+    // 3. Compact Console Header: hide Console app label & convert Console nav item into compact icon button
     const hideAppNameStyle = document.getElementById('sf-hide-app-name-style');
     const shouldHideAppName = (settings.modules?.subtabs !== false) && !!(settings.hideAppName || settings.subtabs?.hideAppName);
     if (shouldHideAppName) {
@@ -3213,39 +3292,43 @@
       }
       if (el) {
         el.textContent = `
-          /* Hide ONLY the App Name text ("Service Console") next to App Launcher - NEVER anchor links or buttons! */
-          span.slds-context-bar__app-name,
-          span.appName,
-          .slds-context-bar__primary span.appName,
-          .slds-context-bar__primary span.slds-context-bar__app-name,
-          .appName:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
-          .slds-context-bar__app-name:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
-          one-app-nav-bar .slds-context-bar__app-name:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
-          one-appnav .slds-context-bar__app-name:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
-          span[title="Service Console"],
-          .slds-truncate[title="Service Console"] {
+          /* Hide ONLY the App Name text next to App Launcher inside Lightning Console headers */
+          .tabsetHeader.slds-context-bar span.slds-context-bar__app-name,
+          .tabsetHeader.slds-context-bar span.appName,
+          .slds-context-bar.slds-context-bar_tabs span.slds-context-bar__app-name,
+          .slds-context-bar.slds-context-bar_tabs span.appName,
+          .oneConsoleNav span.slds-context-bar__app-name,
+          .oneConsoleNav span.appName,
+          .navexConsoleNav span.slds-context-bar__app-name,
+          .navexConsoleNav span.appName,
+          .tabsetHeader.slds-context-bar .appName:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
+          .tabsetHeader.slds-context-bar .slds-context-bar__app-name:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
+          .slds-context-bar.slds-context-bar_tabs .appName:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
+          .slds-context-bar.slds-context-bar_tabs .slds-context-bar__app-name:not(a):not(button):not(:has(.appLauncher)):not(:has(button)) {
             display: none !important;
           }
 
-          /* Ensure App Launcher (waffle button) and its container remain completely visible */
-          .appLauncher,
-          .slds-icon-waffle_container,
+          /* Ensure App Launcher (waffle button) and its container remain completely visible in Console headers */
+          .oneConsoleNav .appLauncher,
+          .oneConsoleNav .slds-icon-waffle_container,
           .oneConsoleNav > .slds-context-bar__item:first-child,
-          .slds-context-bar__primary > .slds-context-bar__item:first-child,
-          .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) {
+          .tabsetHeader.slds-context-bar .slds-context-bar__primary > .slds-context-bar__item:first-child,
+          .tabsetHeader.slds-context-bar .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher),
+          .slds-context-bar.slds-context-bar_tabs .slds-context-bar__primary > .slds-context-bar__item:first-child,
+          .slds-context-bar.slds-context-bar_tabs .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) {
             display: inline-flex !important;
             visibility: visible !important;
             opacity: 1 !important;
           }
 
-          /* Compact left spacing before App Launcher and restore crisp separation after App Launcher */
-          .slds-context-bar,
-          one-appnav .slds-context-bar,
-          one-app-nav-bar .slds-context-bar {
+          /* Compact left spacing before App Launcher and restore crisp separation after App Launcher (Console only) */
+          .tabsetHeader.slds-context-bar,
+          .slds-context-bar.slds-context-bar_tabs {
             padding-left: 0 !important;
           }
 
-          .slds-context-bar__primary {
+          .tabsetHeader.slds-context-bar > .slds-context-bar__primary,
+          .slds-context-bar.slds-context-bar_tabs > .slds-context-bar__primary {
             display: inline-flex !important;
             align-items: stretch !important;
             height: 100% !important;
@@ -3266,9 +3349,10 @@
             margin: 0 !important;
           }
 
-          /* App Launcher item (ONLY direct child of .oneConsoleNav or containing .appLauncher) */
+          /* App Launcher item inside Lightning Console header */
           .oneConsoleNav > .slds-context-bar__item:first-child,
-          .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) {
+          .tabsetHeader.slds-context-bar .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher),
+          .slds-context-bar.slds-context-bar_tabs .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) {
             display: inline-flex !important;
             align-items: center !important;
             justify-content: center !important;
@@ -3283,7 +3367,8 @@
           }
 
           .oneConsoleNav > .slds-context-bar__item:first-child .appLauncher,
-          .slds-context-bar__primary .appLauncher {
+          .tabsetHeader.slds-context-bar .slds-context-bar__primary .appLauncher,
+          .slds-context-bar.slds-context-bar_tabs .slds-context-bar__primary .appLauncher {
             padding: 0 !important;
             margin: 0 auto !important;
             height: 100% !important;
@@ -3292,10 +3377,10 @@
             justify-content: center !important;
           }
 
-          .slds-context-bar__primary .slds-icon-waffle_container,
-          .slds-context-bar__primary button.slds-icon-waffle_container,
-          .appLauncher button.slds-button,
-          .appLauncher .slds-context-bar__button {
+          .tabsetHeader.slds-context-bar .slds-context-bar__primary .slds-icon-waffle_container,
+          .tabsetHeader.slds-context-bar .slds-context-bar__primary button.slds-icon-waffle_container,
+          .oneConsoleNav .appLauncher button.slds-button,
+          .oneConsoleNav .appLauncher .slds-context-bar__button {
             padding: 0 !important;
             margin: 0 auto !important;
             display: inline-flex !important;
@@ -3303,11 +3388,12 @@
             justify-content: center !important;
           }
 
-          .slds-icon-waffle {
+          .oneConsoleNav .slds-icon-waffle,
+          .tabsetHeader.slds-context-bar .slds-icon-waffle {
             margin: 0 auto !important;
           }
 
-          /* Service Console unified Home tab wrapper (.oneConsoleNav > .appNavItems) */
+          /* Lightning Console unified navigation tab wrapper (.oneConsoleNav > .appNavItems) */
           .oneConsoleNav > .appNavItems,
           .sf-home-unified-tab {
             display: inline-flex !important;
@@ -3469,7 +3555,7 @@
             margin: 0 !important;
           }
 
-          /* Standard nav Home Tab container fallback (when not inside .oneConsoleNav > .appNavItems) */
+          /* Console object-switcher fallback (when not inside .oneConsoleNav > .appNavItems) */
           .sf-home-tab-item:not(.selectedListItem),
           .slds-context-bar__object-switcher:not(.selectedListItem) {
             display: inline-flex !important;
@@ -3893,6 +3979,10 @@
         if (sendResponse) sendResponse({ ok: true });
       } else if (message.action === 'linkInterceptorOpen' && message.target) {
         if (!isTopWindow) return;
+        if (!isConsoleAppActive()) {
+          if (sendResponse) sendResponse({ ok: false, reason: 'not-console' });
+          return;
+        }
         window.postMessage(
           {
             __sfEnhancerAction: 'linkInterceptorOpen',
@@ -3907,6 +3997,27 @@
 
   window.addEventListener('message', (event) => {
     try {
+      // Respond to Console-state queries from Salesforce child frames (e.g. Visualforce / Reports)
+      if (
+        event.data &&
+        event.data.__sfEnhancerAction === 'queryConsoleState' &&
+        event.source &&
+        event.source !== window &&
+        isAllowedSalesforceOrigin(event.origin)
+      ) {
+        try {
+          event.source.postMessage(
+            {
+              __sfEnhancerAction: 'consoleState',
+              isConsole: isConsoleAppActive(),
+              subtabsEnabled: latestSubtabsEnabled
+            },
+            event.origin || '*'
+          );
+        } catch (_) {}
+        return;
+      }
+
       // Security: Only accept internal configuration messages from the exact same window context
       if (event.source !== window || (event.origin && event.origin !== window.location.origin)) {
         return;

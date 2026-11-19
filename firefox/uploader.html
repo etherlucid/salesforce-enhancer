@@ -964,7 +964,7 @@
       <img src="icons/icon-48.png" alt="Salesforce Enhancer" class="brand-logo">
       <div class="brand-meta">
         <div class="brand-title">Salesforce Enhancer</div>
-        <span class="brand-version">v1.3.2</span>
+        <span class="brand-version">v1.3.3</span>
       </div>
     </div>
 
@@ -1036,15 +1036,16 @@
 
       <div class="plugins-grid" id="pluginsGrid">
         <!-- Subtabs & Shortcuts -->
-        <div class="plugin-card" data-plugin-kind="builtin" data-plugin-search="subtabs shortcuts tabs workspace service console">
+        <div class="plugin-card" data-plugin-kind="builtin" data-plugin-search="subtabs shortcuts tabs workspace console">
           <div class="plugin-card-head">
             <div>
               <div class="plugin-title-row">
                 <span class="plugin-name">Subtabs &amp; Shortcuts</span>
                 <span class="tag-pill">Built-in</span>
+                <span class="tag-pill">Console</span>
               </div>
               <div class="plugin-desc">
-                Alt+Click opens records as subtabs; Cmd/Ctrl+Click opens workspaces. Drag-and-drop tabs to convert between workspaces and subtabs.
+                In Lightning Console apps, Alt+Click opens records as subtabs and Cmd/Ctrl+Click opens workspaces. Drag-and-drop tabs to organize.
               </div>
             </div>
             <label class="switch">
@@ -1055,22 +1056,23 @@
           <div class="plugin-card-footer">
             <label class="sub-check-label">
               <input type="checkbox" id="chkHideAppName">
-              <span>Hide "Service Console" app label</span>
+              <span>Compact Console header (hide app label)</span>
             </label>
             <button type="button" class="btn btn-neutral btn-sm" id="btnOpenKeybindsPage">Keybinds →</button>
           </div>
         </div>
 
         <!-- Link Interceptor -->
-        <div class="plugin-card" data-plugin-kind="builtin" data-plugin-search="link interceptor external urls tabs routing">
+        <div class="plugin-card" data-plugin-kind="builtin" data-plugin-search="link interceptor external urls tabs routing console">
           <div class="plugin-card-head">
             <div>
               <div class="plugin-title-row">
                 <span class="plugin-name">Link Interceptor</span>
                 <span class="tag-pill">Built-in</span>
+                <span class="tag-pill">Console</span>
               </div>
               <div class="plugin-desc">
-                Open external Salesforce links inside your active Salesforce Console tab instead of spawning duplicate browser tabs.
+                Route external Salesforce links into your active Lightning Console tab instead of opening duplicate browser tabs.
               </div>
             </div>
             <label class="switch">
@@ -1148,14 +1150,14 @@
 
         <div class="theme-preview-banner" id="themePreviewBanner">
           <div class="theme-preview-topbar" id="themePreviewTopbar">
-            <span>Salesforce Lightning Console Preview</span>
+            <span>Salesforce Lightning Preview</span>
             <div class="theme-preview-tabs">
-              <span class="theme-preview-tab" id="themePreviewActiveTab">Active Record Tab</span>
-              <span class="theme-preview-tab">Related Case</span>
+              <span class="theme-preview-tab" id="themePreviewActiveTab">Active Record</span>
+              <span class="theme-preview-tab">Related Record</span>
             </div>
           </div>
           <div class="theme-preview-body" id="themePreviewBody">
-            <span id="themePreviewLabel">Theme color preview across headers and console navigation bars.</span>
+            <span id="themePreviewLabel">Theme color preview across Lightning headers and navigation bars.</span>
             <span id="themePreviewBadge" style="padding:3px 9px; border-radius:999px; font-size:11px; font-weight:700;">Accent</span>
           </div>
         </div>
@@ -1252,7 +1254,7 @@
 
         <label class="sub-check-label">
           <input type="checkbox" id="chkApplyNavigation" checked>
-          <span>Apply accent bar to navigation &amp; workspace tabs</span>
+          <span>Apply accent bar to navigation &amp; Console tabs</span>
         </label>
       </div>
     </section>
@@ -1404,8 +1406,8 @@
       <div class="panel-card">
         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px;">
           <div>
-            <div class="panel-card-title">Tab &amp; Subtab Keybinds</div>
-            <div class="panel-card-desc" style="margin-bottom:0;">Shortcuts work when Subtabs &amp; Shortcuts is enabled and focus is outside text inputs.</div>
+            <div class="panel-card-title">Console Tab &amp; Subtab Keybinds</div>
+            <div class="panel-card-desc" style="margin-bottom:0;">Shortcuts work in Lightning Console apps when Subtabs &amp; Shortcuts is enabled and focus is outside text inputs.</div>
           </div>
           <div style="display:flex; align-items:center; gap:10px;">
             <button type="button" class="btn btn-neutral btn-sm" id="btnResetKeybinds">Reset Keybinds</button>

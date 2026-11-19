@@ -1,8 +1,8 @@
 /**
  * Salesforce Enhancer — Background Service Worker / Script
  * Implements Link Interceptor: intercepts external Salesforce Lightning links
- * and routes them into the active Salesforce browser tab instead of spawning
- * duplicate Salesforce Console tabs.
+ * and routes them into an open Lightning Console tab instead of spawning
+ * duplicate browser tabs. Standard Navigation tabs are never overwritten.
  */
 (() => {
   'use strict';
@@ -218,7 +218,7 @@
     return null;
   }
 
-  async function findExistingSalesforceTab(orgKey, excludeTabId) {
+  async function findExistingSalesforceTabs(orgKey, excludeTabId) {
     const tabs = await queryTabs({ url: ['https://*.lightning.force.com/*'] });
     const candidates = tabs.filter((tab) => {
       if (!tab || tab.id === excludeTabId || !tab.url || tab.discarded) return false;
@@ -233,7 +233,7 @@
       }
     });
 
-    if (candidates.length === 0) return null;
+    if (candidates.length === 0) return [];
 
     // Prefer an active tab in its window, then most recently accessed / first matching tab
     candidates.sort((a, b) => {
@@ -244,7 +244,7 @@
       return 0;
     });
 
-    return candidates[0];
+    return candidates;
   }
 
   function markTabInFlight(tabId) {
@@ -268,7 +268,7 @@
       try {
         if (!tabId || tabId < 0) return;
 
-        // Track tabs that have already loaded a Lightning Console workspace so in-tab SPA
+        // Track tabs that have already loaded a Lightning page so in-tab SPA
         // navigation (history.pushState) or reloads in a second window are never hijacked.
         const currentUrl = changeInfo.url || (tab && tab.url) || '';
         if (changeInfo.status === 'complete' && currentUrl.includes('.lightning.force.com/lightning/')) {
@@ -289,23 +289,26 @@
         const enabled = await isLinkInterceptorEnabled();
         if (!enabled) return;
 
-        const targetTab = await findExistingSalesforceTab(parsedTarget.orgKey, tabId);
-        if (!targetTab) return;
+        const candidateTabs = await findExistingSalesforceTabs(parsedTarget.orgKey, tabId);
+        if (!candidateTabs.length) return;
 
         markTabInFlight(tabId);
 
-        const response = await sendMessageToTab(targetTab.id, {
-          action: 'linkInterceptorOpen',
-          target: {
-            recordId: parsedTarget.recordId,
-            url: parsedTarget.url
-          }
-        });
+        for (const targetTab of candidateTabs) {
+          const response = await sendMessageToTab(targetTab.id, {
+            action: 'linkInterceptorOpen',
+            target: {
+              recordId: parsedTarget.recordId,
+              url: parsedTarget.url
+            }
+          });
 
-        if (response && response.ok) {
-          await updateWindow(targetTab.windowId, { focused: true });
-          await updateTab(targetTab.id, { active: true });
-          await removeTab(tabId);
+          if (response && response.ok) {
+            await updateWindow(targetTab.windowId, { focused: true });
+            await updateTab(targetTab.id, { active: true });
+            await removeTab(tabId);
+            return;
+          }
         }
       } catch (_) {}
     });

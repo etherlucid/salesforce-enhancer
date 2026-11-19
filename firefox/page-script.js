@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salesforce Enhancer
 // @namespace    https://etherlucid.local/
-// @version      1.3.2
+// @version      1.3.3
 // @description  Salesforce productivity: subtabs & tab drag-and-drop, Quick Views list bookmarking, declarative Inspector Mods, developer themes, and custom animations.
 // @match        https://*.lightning.force.com/*
 // @match        https://*.salesforce.com/*
@@ -263,7 +263,7 @@
   }
 
   const DEFAULT_SETTINGS = {
-    version: '1.3.2',
+    version: '1.3.3',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -303,7 +303,7 @@
     const keybinds = normalizeKeybinds(raw.subtabs && raw.subtabs.keybinds);
 
     const res = {
-      version: '1.3.2',
+      version: '1.3.3',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
@@ -534,6 +534,64 @@
     );
   }
 
+  const CONSOLE_APP_SELECTOR =
+    '.oneConsoleNav, .navexConsoleNav, .navexWorkspaceManager, .navexConsoleTabContainer, .oneConsoleTabContainer, .oneWorkspaceNavigationTabs, .oneConsoleLayoutContainer, .tabsetHeader.slds-context-bar, .slds-context-bar.slds-context-bar_tabs';
+
+  let hostFrameIsConsole = false;
+
+  if (!isTopWindow) {
+    const queryHostConsoleState = () => {
+      try {
+        window.top.postMessage({ __sfEnhancerAction: 'queryConsoleState' }, '*');
+      } catch (_) {}
+    };
+    window.addEventListener('message', (event) => {
+      try {
+        if (event.source !== window.top) return;
+        if (!isAllowedSalesforceOrigin(event.origin)) return;
+        if (event.data && event.data.__sfEnhancerAction === 'consoleState') {
+          hostFrameIsConsole = !!event.data.isConsole;
+        }
+      } catch (_) {}
+    });
+    queryHostConsoleState();
+    setTimeout(queryHostConsoleState, 1200);
+    setTimeout(queryHostConsoleState, 3000);
+  }
+
+  /**
+   * Synchronously detect whether the active Salesforce Lightning app uses Console navigation.
+   */
+  function isConsoleAppActive() {
+    try {
+      if (isTopWindow) {
+        return !!document.querySelector(CONSOLE_APP_SELECTOR);
+      }
+      try {
+        if (window.top && window.top.document) {
+          return !!window.top.document.querySelector(CONSOLE_APP_SELECTOR);
+        }
+      } catch (_) {}
+      return hostFrameIsConsole;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Authoritatively check Console navigation via lightning:workspaceAPI when available.
+   */
+  async function isConsoleNavigationActive(ws) {
+    try {
+      const api = ws || (await getWorkspaceAPI());
+      if (api && typeof api.isConsoleNavigation === 'function') {
+        const res = await api.isConsoleNavigation();
+        if (typeof res === 'boolean') return res;
+      }
+    } catch (_) {}
+    return isConsoleAppActive();
+  }
+
   /**
    * Obtain (and cache) the Aura lightning:workspaceAPI component instance
    */
@@ -561,9 +619,10 @@
    * both the active tab and the last non-Search workspace tab.
    */
   async function snapshotTabState() {
-    if (!isTopWindow) return;
+    if (!isTopWindow || !isConsoleAppActive()) return;
     try {
       const ws = await getWorkspaceAPI();
+      if (!(await isConsoleNavigationActive(ws))) return;
       const [focused, allTabs] = await Promise.all([
         ws.getFocusedTabInfo().catch(() => null),
         ws.getAllTabInfo ? ws.getAllTabInfo().catch(() => []) : Promise.resolve([])
@@ -588,8 +647,8 @@
    * Determine the best parent workspace tab ID for opening the subtab:
    * - Normal Option+Click (⌥+Click): Opens inside the currently selected tab.
    *   If the current tab is Search or Home that cannot host subtabs,
-   *   routes into a pinned tab, last active record tab, or returns null so Salesforce
-   *   can open the record under its proper Account per Console Navigation Rules.
+   *   routes into the last active record tab, a pinned tab, or returns null so Salesforce
+   *   can open the record under its configured parent workspace per Console Navigation Rules.
    */
   async function findTargetParentTabId(ws, preferPinnedOrPrevious = false) {
     let focused = null;
@@ -607,13 +666,6 @@
     if (preferPinnedOrPrevious || !currentParentId || focusedIsNonRecord) {
       try {
         const allTabs = (await ws.getAllTabInfo()) || [];
-        const pinnedKnowledge = allTabs.find(
-          (t) =>
-            t.pinned &&
-            ((t.title && t.title.toLowerCase().includes('knowledge')) ||
-              (t.url && t.url.toLowerCase().includes('knowledge')))
-        );
-        if (pinnedKnowledge) return pinnedKnowledge.tabId;
 
         if (lastNonSearchParentTabId && allTabs.some((t) => t.tabId === lastNonSearchParentTabId)) {
           return lastNonSearchParentTabId;
@@ -681,9 +733,9 @@
       } catch (_) {}
 
       if (!parentTabId) {
-        // If there is no parent tab capable of hosting subtabs (e.g. currently viewing a List View or Search),
-        // route directly into ws.openTab(). Salesforce Console Navigation Manager will automatically open or locate
-        // the parent Account workspace tab and open the Case subtab inside it!
+        // If there is no parent tab capable of hosting subtabs (e.g. currently viewing Search or Home),
+        // route directly into ws.openTab(). Salesforce Console Navigation Rules will open the record
+        // as a workspace tab or under its configured parent workspace tab.
         return await openTargetAsPrimaryTab(target, { focus: !openInBackground });
       }
 
@@ -772,10 +824,10 @@
           }
         }
 
-        // Essential Fallback: Records governed by Console Navigation Rules (such as Cases configured
-        // to open as subtabs of Accounts) cannot be forced under an arbitrary parent workspace tab.
-        // Calling ws.openTab() triggers Salesforce's Console Navigation Manager to automatically
-        // locate or open the parent Account workspace tab and place the Case subtab inside it!
+        // Essential Fallback: Records governed by Console Navigation Rules (such as child objects configured
+        // to open as subtabs of a parent record) cannot be forced under an arbitrary parent workspace tab.
+        // Calling ws.openTab() lets Salesforce's Console Navigation Manager locate or open the parent
+        // workspace tab and place the subtab inside it.
         try {
           const primaryParams = { focus: !openInBackground };
           if (target.recordId) primaryParams.recordId = target.recordId;
@@ -793,7 +845,7 @@
               }
             } else if (!openInBackground && ws.focusTab) {
               await ws.focusTab({ tabId: newTabId }).catch(() => {});
-              // If Salesforce opened the Account workspace tab, ensure the Case subtab inside it is created and focused!
+              // If Salesforce opened a parent workspace tab, ensure the target subtab inside it is created and focused
               setTimeout(async () => {
                 try {
                   const info = await ws.getTabInfo({ tabId: newTabId });
@@ -806,7 +858,7 @@
                       await ws.focusTab({ tabId: matchingSubtab.tabId }).catch(() => {});
                     }
                   } else if (target.recordId) {
-                    // If the Account workspace tab opened but the Case subtab isn't created yet, open it directly!
+                    // If the parent workspace tab opened without creating the subtab yet, open it directly
                     const subParams = { parentTabId: newTabId, recordId: target.recordId, focus: true };
                     const createdSubtabId = await ws.openSubtab(subParams).catch(() => null);
                     if (createdSubtabId && ws.focusTab) {
@@ -816,7 +868,7 @@
                 } catch (_) {}
               }, 80);
             }
-            showToast(openInBackground ? '↳ Opened in background workspace' : '↳ Opened Case under Account workspace');
+            showToast(openInBackground ? '↳ Opened in background workspace' : '↳ Opened in parent workspace');
             return true;
           }
         } catch (tabErr) {
@@ -827,7 +879,7 @@
               if (navEvt) {
                 navEvt.setParams({ recordId: target.recordId, slideDevName: 'detail' });
                 navEvt.fire();
-                showToast(openInBackground ? '↳ Opened in background' : '↳ Opened Case under Account workspace');
+                showToast(openInBackground ? '↳ Opened in background' : '↳ Opened in parent workspace');
                 return true;
               }
             }
@@ -836,7 +888,7 @@
               if (urlEvt) {
                 urlEvt.setParams({ url: target.url });
                 urlEvt.fire();
-                showToast(openInBackground ? '↳ Opened in background' : '↳ Opened Case under Account workspace');
+                showToast(openInBackground ? '↳ Opened in background' : '↳ Opened in parent workspace');
                 return true;
               }
             }
@@ -1127,14 +1179,15 @@
         );
 
         if (newPrimaryTab) {
-          // Check if this new primary tab already has subtabs (e.g. Salesforce opened an Account
-          // workspace tab and automatically placed a Case subtab inside it per Console Navigation Rules)
+          // Check if this new primary tab already has subtabs (e.g. Salesforce opened a parent
+          // workspace tab and automatically placed the record subtab inside it per Console Navigation Rules)
           const tabInfo = await ws.getTabInfo({ tabId: newPrimaryTab.tabId }).catch(() => newPrimaryTab);
           let hasSubtabs = tabInfo && Array.isArray(tabInfo.subtabs) && tabInfo.subtabs.length > 0;
+          let freshInfo = null;
           if (!hasSubtabs) {
             // Give Salesforce 100ms in case the subtab is being actively created
             await new Promise((r) => setTimeout(r, 100));
-            const freshInfo = await ws.getTabInfo({ tabId: newPrimaryTab.tabId }).catch(() => null);
+            freshInfo = await ws.getTabInfo({ tabId: newPrimaryTab.tabId }).catch(() => null);
             hasSubtabs = freshInfo && Array.isArray(freshInfo.subtabs) && freshInfo.subtabs.length > 0;
           }
 
@@ -1149,7 +1202,7 @@
                 await ws.focusTab({ tabId: lastSub.tabId }).catch(() => {});
               }
             }
-            showToast(state.openInBackground ? '↳ Opened in background workspace' : '↳ Opened Case under Account workspace');
+            showToast(state.openInBackground ? '↳ Opened in background workspace' : '↳ Opened in parent workspace');
             return;
           }
 
@@ -1172,7 +1225,7 @@
           });
 
           // ONLY close the new primary tab if it was successfully attached as a subtab under parentTabId!
-          // NEVER close it if it's the parent Account workspace tab that opened for this record.
+          // NEVER close it if it's the parent workspace tab that opened for this record.
           if (success && state.parentTabId && newPrimaryTab.tabId !== state.parentTabId) {
             await new Promise((r) => setTimeout(r, 100));
             const parentInfo = await ws.getTabInfo({ tabId: state.parentTabId }).catch(() => null);
@@ -1259,12 +1312,13 @@
     }, 500);
   }
 
-  // Prevent browser text selection on modifier clicks
+  // Prevent browser text selection on modifier clicks (Lightning Console apps only)
   window.addEventListener(
     'selectstart',
     (event) => {
       const _modSettings = getEnhancerSettings();
       if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
+      if (!isConsoleAppActive()) return;
       if (event.altKey || event.metaKey || event.ctrlKey) {
         event.preventDefault();
       }
@@ -1287,6 +1341,7 @@
     (event) => {
       const _modSettings = getEnhancerSettings();
       if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
+      if (!isConsoleAppActive()) return;
       const isCmdOrCtrl = event.metaKey || event.ctrlKey;
       const isAlt = event.altKey;
 
@@ -1314,6 +1369,7 @@
       if (event.button !== 0) return;
       const _modSettings = getEnhancerSettings();
       if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
+      if (!isConsoleAppActive()) return;
 
       const isCmdOrCtrl = event.metaKey || event.ctrlKey;
       const isAlt = event.altKey;
@@ -1384,6 +1440,7 @@
       if (event.key !== 'Enter') return;
       const _modSettings = getEnhancerSettings();
       if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
+      if (!isConsoleAppActive()) return;
       const isCmdOrCtrl = event.metaKey || event.ctrlKey;
       const isAlt = event.altKey;
 
@@ -1655,10 +1712,11 @@
 
   async function executeTabKeybindCommand(command) {
     if (!isTopWindow || !command || isKeybindCommandRunning) return;
+    if (!isConsoleAppActive()) return;
     isKeybindCommandRunning = true;
     try {
       const ws = await getWorkspaceAPI();
-      if (!ws) return;
+      if (!ws || !(await isConsoleNavigationActive(ws))) return;
 
       if (command === 'prevWorkspace') {
         await cycleWorkspaceTab(ws, -1);
@@ -1714,6 +1772,7 @@
         if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
         const keybinds = _modSettings.subtabs && _modSettings.subtabs.keybinds;
         if (!keybinds || keybinds.enabled === false) return;
+        if (!isConsoleAppActive()) return;
         if (isEditableKeyboardEvent(event)) return;
 
         const combo = normalizeKeyComboFromEvent(event);
@@ -2673,6 +2732,7 @@
     const ensureDraggableTab = (e) => {
       const _modSettings = getEnhancerSettings();
       if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
+      if (!isConsoleAppActive()) return;
 
       const el = getElementFromTarget(e.target);
       if (!el || !el.closest) return;
@@ -2713,6 +2773,7 @@
         if (isSyntheticTabReorder) return;
         const _modSettings = getEnhancerSettings();
         if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
+        if (!isConsoleAppActive()) return;
 
         const el = getElementFromTarget(e.target);
         if (!el || !el.closest) return;
@@ -3471,7 +3532,7 @@
     const loadingUrl = getEffectiveLoadingUrl(settings);
     const shouldHideAppName = (settings.modules?.subtabs !== false) && !!(settings.hideAppName || settings.subtabs?.hideAppName);
 
-    // Apply or remove Hide App Name style (independent of theming/loading modules)
+    // Apply or remove Compact Console Header style (Lightning Console apps only, independent of theming/loading modules)
     if (shouldHideAppName) {
       if (!hideAppNameStyle) {
         hideAppNameStyle = document.createElement('style');
@@ -3479,39 +3540,43 @@
         (document.head || document.documentElement).appendChild(hideAppNameStyle);
       }
       hideAppNameStyle.textContent = `
-        /* Hide ONLY the App Name text ("Service Console") next to App Launcher - NEVER anchor links or buttons! */
-        span.slds-context-bar__app-name,
-        span.appName,
-        .slds-context-bar__primary span.appName,
-        .slds-context-bar__primary span.slds-context-bar__app-name,
-        .appName:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
-        .slds-context-bar__app-name:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
-        one-app-nav-bar .slds-context-bar__app-name:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
-        one-appnav .slds-context-bar__app-name:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
-        span[title="Service Console"],
-        .slds-truncate[title="Service Console"] {
+        /* Hide ONLY the App Name text next to App Launcher inside Lightning Console headers */
+        .tabsetHeader.slds-context-bar span.slds-context-bar__app-name,
+        .tabsetHeader.slds-context-bar span.appName,
+        .slds-context-bar.slds-context-bar_tabs span.slds-context-bar__app-name,
+        .slds-context-bar.slds-context-bar_tabs span.appName,
+        .oneConsoleNav span.slds-context-bar__app-name,
+        .oneConsoleNav span.appName,
+        .navexConsoleNav span.slds-context-bar__app-name,
+        .navexConsoleNav span.appName,
+        .tabsetHeader.slds-context-bar .appName:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
+        .tabsetHeader.slds-context-bar .slds-context-bar__app-name:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
+        .slds-context-bar.slds-context-bar_tabs .appName:not(a):not(button):not(:has(.appLauncher)):not(:has(button)),
+        .slds-context-bar.slds-context-bar_tabs .slds-context-bar__app-name:not(a):not(button):not(:has(.appLauncher)):not(:has(button)) {
           display: none !important;
         }
 
-        /* Ensure App Launcher (waffle button) and its container remain completely visible */
-        .appLauncher,
-        .slds-icon-waffle_container,
+        /* Ensure App Launcher (waffle button) and its container remain completely visible in Console headers */
+        .oneConsoleNav .appLauncher,
+        .oneConsoleNav .slds-icon-waffle_container,
         .oneConsoleNav > .slds-context-bar__item:first-child,
-        .slds-context-bar__primary > .slds-context-bar__item:first-child,
-        .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) {
+        .tabsetHeader.slds-context-bar .slds-context-bar__primary > .slds-context-bar__item:first-child,
+        .tabsetHeader.slds-context-bar .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher),
+        .slds-context-bar.slds-context-bar_tabs .slds-context-bar__primary > .slds-context-bar__item:first-child,
+        .slds-context-bar.slds-context-bar_tabs .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) {
           display: inline-flex !important;
           visibility: visible !important;
           opacity: 1 !important;
         }
 
-        /* Compact left spacing before App Launcher and restore crisp separation after App Launcher */
-        .slds-context-bar,
-        one-appnav .slds-context-bar,
-        one-app-nav-bar .slds-context-bar {
+        /* Compact left spacing before App Launcher and restore crisp separation after App Launcher (Console only) */
+        .tabsetHeader.slds-context-bar,
+        .slds-context-bar.slds-context-bar_tabs {
           padding-left: 0 !important;
         }
 
-        .slds-context-bar__primary {
+        .tabsetHeader.slds-context-bar > .slds-context-bar__primary,
+        .slds-context-bar.slds-context-bar_tabs > .slds-context-bar__primary {
           display: inline-flex !important;
           align-items: stretch !important;
           height: 100% !important;
@@ -3532,9 +3597,10 @@
           margin: 0 !important;
         }
 
-        /* App Launcher item (ONLY direct child of .oneConsoleNav or containing .appLauncher) */
+        /* App Launcher item inside Lightning Console header */
         .oneConsoleNav > .slds-context-bar__item:first-child,
-        .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) {
+        .tabsetHeader.slds-context-bar .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher),
+        .slds-context-bar.slds-context-bar_tabs .slds-context-bar__primary .slds-context-bar__item:has(.appLauncher) {
           display: inline-flex !important;
           align-items: center !important;
           justify-content: center !important;
@@ -3549,7 +3615,8 @@
         }
 
         .oneConsoleNav > .slds-context-bar__item:first-child .appLauncher,
-        .slds-context-bar__primary .appLauncher {
+        .tabsetHeader.slds-context-bar .slds-context-bar__primary .appLauncher,
+        .slds-context-bar.slds-context-bar_tabs .slds-context-bar__primary .appLauncher {
           padding: 0 !important;
           margin: 0 auto !important;
           height: 100% !important;
@@ -3558,10 +3625,10 @@
           justify-content: center !important;
         }
 
-        .slds-context-bar__primary .slds-icon-waffle_container,
-        .slds-context-bar__primary button.slds-icon-waffle_container,
-        .appLauncher button.slds-button,
-        .appLauncher .slds-context-bar__button {
+        .tabsetHeader.slds-context-bar .slds-context-bar__primary .slds-icon-waffle_container,
+        .tabsetHeader.slds-context-bar .slds-context-bar__primary button.slds-icon-waffle_container,
+        .oneConsoleNav .appLauncher button.slds-button,
+        .oneConsoleNav .appLauncher .slds-context-bar__button {
           padding: 0 !important;
           margin: 0 auto !important;
           display: inline-flex !important;
@@ -3569,11 +3636,12 @@
           justify-content: center !important;
         }
 
-        .slds-icon-waffle {
+        .oneConsoleNav .slds-icon-waffle,
+        .tabsetHeader.slds-context-bar .slds-icon-waffle {
           margin: 0 auto !important;
         }
 
-        /* Service Console unified Home tab wrapper (.oneConsoleNav > .appNavItems) */
+        /* Lightning Console unified navigation tab wrapper (.oneConsoleNav > .appNavItems) */
         .oneConsoleNav > .appNavItems,
         .sf-home-unified-tab {
           display: inline-flex !important;
@@ -3735,7 +3803,7 @@
           margin: 0 !important;
         }
 
-        /* Standard nav Home Tab container fallback (when not inside .oneConsoleNav > .appNavItems) */
+        /* Console object-switcher fallback (when not inside .oneConsoleNav > .appNavItems) */
         .sf-home-tab-item:not(.selectedListItem),
         .slds-context-bar__object-switcher:not(.selectedListItem) {
           display: inline-flex !important;
@@ -4335,7 +4403,7 @@
             color: ${baseTheme.text} !important;
             border-color: ${baseTheme.border} !important;
           }
-          /* Service Console Workspace Tab Header shares surfaceHeader with the tab strip */
+          /* Lightning Console Workspace Tab Header shares surfaceHeader with the tab strip */
           .tabsetHeader.slds-context-bar,
           .slds-context-bar.slds-context-bar_tabs,
           .tabsetHeader.slds-context-bar > .slds-context-bar__primary,
@@ -7017,6 +7085,11 @@
         return rMatch[1];
       }
 
+      const objHome = document.querySelector('lst-object-home, force-object-home');
+      if (objHome && objHome.objectApiName && typeof objHome.objectApiName === 'string') {
+        return objHome.objectApiName;
+      }
+
       const entityEl = document.querySelector(
         '.slds-breadcrumb .entityName, .entityName, [data-aura-class="forceEntityIcon"]'
       );
@@ -7025,10 +7098,11 @@
         if (text) return text;
       }
 
-      return 'Case';
+      return null;
     }
 
     function getQuickViews(objectName) {
+      if (!objectName) return [];
       try {
         const oldKey = `sf_pinned_views_${objectName}`;
         const newKey = `sf_quick_views_${objectName}`;
@@ -7059,6 +7133,7 @@
 
     function toggleBookmarkView(viewData) {
       const objectName = viewData.objectName || getCurrentObjectName();
+      if (!objectName) return;
       let views = getQuickViews(objectName);
       const existingIdx = views.findIndex(
         (v) => v.name === viewData.name || (viewData.id && v.id === viewData.id)
@@ -7354,29 +7429,34 @@
         }
       }
 
-      // Modifier Clicks (Cmd/Ctrl = new workspace tab, Alt = subtab)
+      // Modifier Clicks (Console: Cmd/Ctrl = new workspace tab, Alt = subtab; Standard Nav: Cmd/Ctrl = new browser tab)
       if (isCmdOrCtrl || isAlt) {
-        event.preventDefault();
-        event.stopPropagation();
-        doClose();
+        const inConsole = isConsoleAppActive();
+        if (inConsole || (isCmdOrCtrl && !isAlt)) {
+          event.preventDefault();
+          event.stopPropagation();
+          doClose();
 
-        // Ensure we only navigate to valid IDs or safe URLs
-        let targetUrl = view.url;
-        if (!targetUrl || targetUrl.includes('%20') || (view.id && view.id.includes(' '))) {
-          if (view.id && (view.id.startsWith('00B') || /^[a-zA-Z0-9_]{3,40}$/.test(view.id))) {
-            targetUrl = `/lightning/o/${objectName}/list?filterName=${encodeURIComponent(view.id)}`;
-          } else {
-            showToast(`Could not determine list view ID for '${view.name}'`);
-            return;
+          // Ensure we only navigate to valid IDs or safe URLs
+          let targetUrl = view.url;
+          if (!targetUrl || targetUrl.includes('%20') || (view.id && view.id.includes(' '))) {
+            if (view.id && (view.id.startsWith('00B') || /^[a-zA-Z0-9_]{3,40}$/.test(view.id))) {
+              targetUrl = `/lightning/o/${objectName}/list?filterName=${encodeURIComponent(view.id)}`;
+            } else {
+              showToast(`Could not determine list view ID for '${view.name}'`);
+              return;
+            }
           }
-        }
 
-        if (isCmdOrCtrl && !isAlt) {
-          openTargetAsPrimaryTab({ url: targetUrl }, { focus: !event.shiftKey });
-        } else if (isAlt && !isCmdOrCtrl) {
-          openTargetAsSubtab({ url: targetUrl }, { openInBackground: event.shiftKey });
+          if (!inConsole) {
+            window.open(targetUrl, '_blank', 'noopener');
+          } else if (isCmdOrCtrl && !isAlt) {
+            openTargetAsPrimaryTab({ url: targetUrl }, { focus: !event.shiftKey });
+          } else if (isAlt && !isCmdOrCtrl) {
+            openTargetAsSubtab({ url: targetUrl }, { openInBackground: event.shiftKey });
+          }
+          return;
         }
-        return;
       }
 
       // Immediately reflect selection in Quick Views UI
@@ -8680,6 +8760,7 @@
      * Complete synchronization & reconciliation for List View renames and ID migrations
      */
     function syncAndReconcileQuickViews(objectName, popover, rowsWithLabels = []) {
+      if (!objectName) return false;
       const quickViews = getQuickViews(objectName);
       if (quickViews.length === 0) return false;
 
@@ -8827,6 +8908,7 @@
 
           const newName = nameInput.value.trim();
           const objectName = getCurrentObjectName();
+          if (!objectName) return;
           const active = getCurrentActiveListView(objectName);
           const oldName = active.label;
 
@@ -9177,6 +9259,7 @@
           event.data.target &&
           (event.source === window || (event.origin && isAllowedSalesforceOrigin(event.origin)))
         ) {
+          if (!isConsoleAppActive()) return;
           openTargetAsPrimaryTab(event.data.target, { focus: true });
           return;
         }
@@ -9276,14 +9359,12 @@
         const addIfValid = (el) => {
           if (el && !isHomeCandidateInPopupMenu(el)) elements.add(el);
         };
-        document.querySelectorAll('.oneConsoleNav > .appNavItems > .selectedListItem > a, .slds-context-bar__object-switcher > a').forEach(addIfValid);
-        document.querySelectorAll('a[href*="/lightning/o/Case/list"], a[href*="/lightning/o/Case"]').forEach(addIfValid);
-        document.querySelectorAll('.slds-context-bar__primary .slds-context-bar__item:not(:first-child) a').forEach(addIfValid);
-        document.querySelectorAll('.slds-context-bar [title="Cases"] a, .slds-context-bar [data-id="Case"] a, .slds-context-bar [data-id="home"] a').forEach(addIfValid);
-        const firstTab = document.querySelector('.tabBarItems > li:first-child a, one-app-nav-bar-item-root:first-child a');
-        if (firstTab && (firstTab.href?.includes('/lightning/o/Case') || firstTab.getAttribute('title') === 'Cases')) {
-          addIfValid(firstTab);
-        }
+        document.querySelectorAll(
+          '.oneConsoleNav > .appNavItems > .selectedListItem > a, ' +
+          '.navexConsoleNav > .appNavItems > .selectedListItem > a, ' +
+          '.tabsetHeader.slds-context-bar .slds-context-bar__object-switcher > a, ' +
+          '.slds-context-bar.slds-context-bar_tabs .slds-context-bar__object-switcher > a'
+        ).forEach(addIfValid);
       } catch (_) {}
       return Array.from(elements);
     }
@@ -9514,11 +9595,21 @@
             }
           }
 
-          if (!target.getAttribute('title') || target.getAttribute('title') === 'Cases') {
-            target.setAttribute('title', 'Cases (Home)');
+          const origLabel = (
+            target.dataset.sfOrigLabel ||
+            target.getAttribute('title') ||
+            target.getAttribute('aria-label') ||
+            (target.textContent || '').trim() ||
+            'Console Navigation'
+          ).trim();
+          if (origLabel && !target.dataset.sfOrigLabel) {
+            target.dataset.sfOrigLabel = origLabel;
+          }
+          if (!target.getAttribute('title')) {
+            target.setAttribute('title', origLabel);
           }
           if (!target.getAttribute('aria-label')) {
-            target.setAttribute('aria-label', 'Cases (Home)');
+            target.setAttribute('aria-label', origLabel);
           }
 
           // Clean up any old span icons
@@ -9570,7 +9661,9 @@
       try {
         syncHomeIconNavContext();
         const objectName = getCurrentObjectName();
-        syncAndReconcileQuickViews(objectName, null, []);
+        if (objectName) {
+          syncAndReconcileQuickViews(objectName, null, []);
+        }
       } catch (_) {}
     }
 
@@ -11393,5 +11486,5 @@
     setInterval(refreshInspectorMods, 850);
     setTimeout(refreshInspectorMods, 400);
 
-  console.log('[Salesforce Enhancer v1.3.2] Ready — Modular shortcuts, Quick Views, declarative Inspector Mods, developer themes & loading animations.');
+  console.log('[Salesforce Enhancer v1.3.3] Ready — Modular shortcuts, Quick Views, declarative Inspector Mods, developer themes & loading animations.');
 })();

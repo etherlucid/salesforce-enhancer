@@ -687,7 +687,7 @@
       <img src="icons/icon-32.png" alt="Logo" class="header-logo">
       <span class="header-title">Salesforce Enhancer</span>
     </div>
-    <span class="header-badge">v1.3.2</span>
+    <span class="header-badge">v1.3.3</span>
   </div>
 
   <!-- Top Navigation: Plugins | Themes -->
@@ -709,15 +709,16 @@
     </div>
 
     <!-- Built-in Plugin 1: Subtabs & Shortcuts -->
-    <div class="module-card plugin-card" data-plugin-search="subtabs shortcuts tabs workspace">
+    <div class="module-card plugin-card" data-plugin-search="subtabs shortcuts tabs workspace console">
       <div class="module-header">
         <div>
           <div class="module-title-group">
             <span class="module-title">Subtabs &amp; Shortcuts</span>
             <span class="mod-item-tag">Built-in</span>
+            <span class="mod-item-tag">Console</span>
           </div>
           <div class="module-desc">
-            Alt+Click opens records as subtabs; Cmd/Ctrl+Click opens workspaces. Drag-and-drop tabs to convert between workspaces and subtabs.
+            In Lightning Console apps, Alt+Click opens records as subtabs and Cmd/Ctrl+Click opens workspaces. Drag-and-drop tabs to organize.
           </div>
         </div>
         <div class="module-controls">
@@ -732,7 +733,7 @@
       </div>
       <div class="module-body is-disabled" id="subtabsHideAppNameRow">
         <div class="sub-option-row">
-          <span>Hide "Service Console" app label</span>
+          <span>Compact Console header (hide app label)</span>
           <input type="checkbox" id="chkHideAppName">
         </div>
         <div class="sub-option-row">
@@ -740,22 +741,23 @@
           <input type="checkbox" id="chkKeybindsEnabled" checked>
         </div>
         <div class="sub-option-row" style="padding-top: 6px;">
-          <span style="color: var(--subtext); font-size: 11px;">Customize tab &amp; subtab shortcuts</span>
+          <span style="color: var(--subtext); font-size: 11px;">Customize Console tab &amp; subtab shortcuts</span>
           <button type="button" class="btn btn-neutral" id="btnOpenKeybinds" style="padding: 3px 8px; font-size: 11px;">Keybinds →</button>
         </div>
       </div>
     </div>
 
     <!-- Built-in Plugin 2: Link Interceptor -->
-    <div class="module-card plugin-card" data-plugin-search="link interceptor external urls tabs routing">
+    <div class="module-card plugin-card" data-plugin-search="link interceptor external urls tabs routing console">
       <div class="module-header">
         <div>
           <div class="module-title-group">
             <span class="module-title">Link Interceptor</span>
             <span class="mod-item-tag">Built-in</span>
+            <span class="mod-item-tag">Console</span>
           </div>
           <div class="module-desc">
-            Open external Salesforce links inside your active Salesforce Console tab instead of spawning duplicate browser tabs.
+            Route external Salesforce links into your active Lightning Console tab instead of opening duplicate browser tabs.
           </div>
         </div>
         <div class="module-controls">
@@ -950,7 +952,7 @@
         </div>
 
         <div class="sub-option-row">
-          <span>Apply accent bar to navigation &amp; workspace tabs</span>
+          <span>Apply accent bar to navigation &amp; Console tabs</span>
           <input type="checkbox" id="chkApplyNavigation" checked>
         </div>
       </div>
