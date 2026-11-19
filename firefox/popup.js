@@ -115,7 +115,7 @@
   }
 
   const DEFAULT_SETTINGS = {
-    version: '1.3.3',
+    version: '1.4.0',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -404,7 +404,7 @@
       const mods = (currentSettings.inspectorMods && Array.isArray(currentSettings.inspectorMods.mods))
         ? currentSettings.inspectorMods.mods
         : [];
-      const activeCustomCount = mods.filter((m) => m && m.enabled !== false).length;
+      const activeCustomCount = mods.filter((m) => m && m.enabled !== false && m.schemaVersion === 2).length;
       const activeBuiltInCount =
         (currentSettings.modules.subtabs !== false ? 1 : 0) +
         (currentSettings.modules.linkInterceptor !== false ? 1 : 0) +
@@ -626,20 +626,30 @@
 
   function validateAndNormalizeModObject(rawMod) {
     if (!rawMod || typeof rawMod !== 'object' || Array.isArray(rawMod)) {
-      throw new Error('Mod must be a JSON object.');
+      throw new Error('Plugin must be a JSON object.');
+    }
+    if (rawMod.schemaVersion === 1 || (!rawMod.schemaVersion && rawMod.pipeline)) {
+      throw new Error('Legacy schemaVersion 1 (.mod.json) is not supported in v1.4.0. Migrate to schemaVersion 2 (.sfe.json).');
+    }
+    if (rawMod.schemaVersion !== 2) {
+      throw new Error('Plugin JSON requires "schemaVersion": 2.');
     }
     const id = String(rawMod.id || '').trim();
     const name = String(rawMod.name || '').trim();
     if (!id || !name) {
-      throw new Error('Mod JSON requires "id" and "name".');
+      throw new Error('Plugin JSON requires "id" and "name".');
     }
     if (!rawMod.target || typeof rawMod.target !== 'object' || !rawMod.target.keyPrefix || !rawMod.target.objectApiName) {
-      throw new Error('Mod JSON requires "target.objectApiName" and "target.keyPrefix".');
+      throw new Error('Plugin JSON requires "target.objectApiName" and "target.keyPrefix".');
     }
-    if (!rawMod.pipeline || typeof rawMod.pipeline !== 'object' || !rawMod.pipeline.childRecords) {
-      throw new Error('Mod JSON requires "pipeline.childRecords".');
+    if (!Array.isArray(rawMod.data) || rawMod.data.length === 0) {
+      throw new Error('Plugin JSON requires a non-empty "data" array.');
+    }
+    if (!rawMod.view || typeof rawMod.view !== 'object') {
+      throw new Error('Plugin JSON requires a "view" object.');
     }
     return Object.assign({}, rawMod, {
+      schemaVersion: 2,
       id,
       name,
       version: String(rawMod.version || '1.0.0'),
@@ -693,7 +703,7 @@
       ? currentSettings.inspectorMods.mods
       : [];
 
-    currentSettings.modules.inspectorMods = mods.some((m) => m && m.enabled !== false);
+    currentSettings.modules.inspectorMods = mods.some((m) => m && m.enabled !== false && m.schemaVersion === 2);
 
     if (!mods.length) {
       installedModsList.innerHTML = '';
@@ -705,7 +715,8 @@
       .map((mod) => {
         const targetObj = (mod.target && mod.target.objectApiName) || 'Record';
         const keyPrefix = (mod.target && mod.target.keyPrefix) || '';
-        const isEnabled = mod.enabled !== false;
+        const isV2 = mod.schemaVersion === 2;
+        const isEnabled = isV2 && mod.enabled !== false;
         return `
           <div class="module-card plugin-card" data-mod-id="${escapePopupHtml(mod.id)}" data-plugin-search="${escapePopupHtml(
           `${mod.name} ${targetObj} ${keyPrefix} ${mod.description || ''}`
@@ -717,6 +728,7 @@
                   <span class="mod-item-tag">${escapePopupHtml(targetObj)}${
           keyPrefix ? ` (${escapePopupHtml(keyPrefix)})` : ''
         }</span>
+                  ${!isV2 ? `<span class="mod-item-tag" style="background:#fef3c7; color:#92400e; border-color:#f59e0b;">Legacy v1</span>` : ''}
                 </div>
                 ${
                   mod.description
@@ -736,7 +748,7 @@
                 <label class="switch">
                   <input type="checkbox" class="mod-item-toggle" data-mod-id="${escapePopupHtml(mod.id)}" ${
           isEnabled ? 'checked' : ''
-        }>
+        } ${!isV2 ? 'disabled' : ''}>
                   <span class="slider"></span>
                 </label>
               </div>

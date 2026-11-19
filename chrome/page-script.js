@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salesforce Enhancer
 // @namespace    https://etherlucid.local/
-// @version      1.3.3
+// @version      1.4.0
 // @description  Salesforce productivity: subtabs & tab drag-and-drop, Quick Views list bookmarking, declarative Inspector Mods, developer themes, and custom animations.
 // @match        https://*.lightning.force.com/*
 // @match        https://*.salesforce.com/*
@@ -263,7 +263,7 @@
   }
 
   const DEFAULT_SETTINGS = {
-    version: '1.3.3',
+    version: '1.4.0',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -303,7 +303,7 @@
     const keybinds = normalizeKeybinds(raw.subtabs && raw.subtabs.keybinds);
 
     const res = {
-      version: '1.3.3',
+      version: '1.4.0',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
@@ -630,6 +630,9 @@
 
       if (Array.isArray(allTabs) && allTabs.length > 0) {
         preClickPrimaryTabIds = new Set(allTabs.map((t) => t.tabId));
+        if (typeof getStableTabOrder === 'function') {
+          getStableTabOrder(allTabs, false, 'workspaces');
+        }
       }
 
       if (focused && focused.tabId) {
@@ -1491,6 +1494,7 @@
 
   let isKeybindCommandRunning = false;
   let isSyntheticTabReorder = false;
+  const logicalTabOrderCache = new Map(); // scopeKey -> string[] (tabIds)
 
   function getTabBarItemsInDom(isSubtab) {
     const selector = isSubtab
@@ -1502,6 +1506,7 @@
       const nodes = document.querySelectorAll(selector);
       for (const li of nodes) {
         if (!li || seen.has(li)) continue;
+        if (li.classList && li.classList.contains('hidden')) continue;
         if (!isSubtab && isSubtabElement(li)) continue;
         const rect = li.getBoundingClientRect ? li.getBoundingClientRect() : null;
         if (rect && rect.width <= 0 && rect.height <= 0) continue;
@@ -1514,22 +1519,99 @@
     return out;
   }
 
-  function sortTabsByVisualDomOrder(tabs, isSubtab) {
-    if (!Array.isArray(tabs) || tabs.length <= 1) return tabs;
-    const domItems = getTabBarItemsInDom(isSubtab);
-    if (!domItems.length) return tabs;
-    const orderMap = new Map();
-    domItems.forEach((item, idx) => {
-      if (!orderMap.has(item.tabId)) orderMap.set(item.tabId, idx);
-    });
-    return tabs
-      .map((t, origIdx) => ({
-        t,
-        origIdx,
-        domIdx: t && t.tabId && orderMap.has(t.tabId) ? orderMap.get(t.tabId) : 100000 + origIdx
-      }))
-      .sort((a, b) => a.domIdx - b.domIdx || a.origIdx - b.origIdx)
-      .map((x) => x.t);
+  function moveLogicalTabRelative(scopeKey, sourceId, targetId, delta) {
+    if (!scopeKey || !sourceId || !targetId || sourceId === targetId) return;
+    const order = logicalTabOrderCache.get(scopeKey);
+    if (!Array.isArray(order)) return;
+    const srcIdx = order.indexOf(sourceId);
+    if (srcIdx < 0 || order.indexOf(targetId) < 0) return;
+    const next = order.slice();
+    next.splice(srcIdx, 1);
+    const dstIdx = next.indexOf(targetId);
+    if (dstIdx < 0) return;
+    next.splice(delta < 0 ? dstIdx : dstIdx + 1, 0, sourceId);
+    logicalTabOrderCache.set(scopeKey, next);
+  }
+
+  /**
+   * Maintain a stable logical tab order across visible tabs and "More" overflow tabs.
+   * When Salesforce focuses a tab from the "More" dropdown, Salesforce mutates both the DOM
+   * and ws.getAllTabInfo() by promoting that tab into the last visible slot and pushing the
+   * previous slot occupant to the top of "More". Preserving logical order makes cycling
+   * through "More" tabs seamless in both directions while still respecting genuine drag reorders.
+   */
+  function getStableTabOrder(rawTabs, isSubtab, scopeKey = isSubtab ? 'subtabs' : 'workspaces') {
+    if (!Array.isArray(rawTabs) || rawTabs.length <= 1) return rawTabs || [];
+
+    const byId = new Map();
+    const pinnedApi = [];
+    const unpinnedApi = [];
+    for (const t of rawTabs) {
+      if (!t || !t.tabId || byId.has(t.tabId)) continue;
+      byId.set(t.tabId, t);
+      if (t.pinned) pinnedApi.push(t.tabId);
+      else unpinnedApi.push(t.tabId);
+    }
+
+    const visibleDomIds = getTabBarItemsInDom(isSubtab)
+      .map((item) => item.tabId)
+      .filter((id) => byId.has(id));
+
+    const visiblePinned = visibleDomIds.filter((id) => byId.get(id).pinned);
+    const visibleUnpinned = visibleDomIds.filter((id) => !byId.get(id).pinned);
+
+    // Pinned tabs do not overflow into "More"; always honor their live visual order
+    const pinnedOrder = [
+      ...visiblePinned,
+      ...pinnedApi.filter((id) => !visiblePinned.includes(id))
+    ];
+
+    const prevOrder = logicalTabOrderCache.get(scopeKey);
+    let unpinnedOrder;
+
+    if (!Array.isArray(prevOrder) || prevOrder.length === 0) {
+      // Initial snapshot: visible unpinned tabs left-to-right, then overflow ("More") tabs
+      unpinnedOrder = [
+        ...visibleUnpinned,
+        ...unpinnedApi.filter((id) => !visibleUnpinned.includes(id))
+      ];
+    } else {
+      const prevUnpinned = prevOrder.filter((id) => byId.has(id) && !byId.get(id).pinned);
+      const prevSet = new Set(prevUnpinned);
+
+      // Append newly opened unpinned tabs in their current visual/API order
+      const addedUnpinned = [
+        ...visibleUnpinned.filter((id) => !prevSet.has(id)),
+        ...unpinnedApi.filter((id) => !prevSet.has(id) && !visibleUnpinned.includes(id))
+      ];
+      unpinnedOrder = [...prevUnpinned, ...addedUnpinned];
+
+      // Under Salesforce "More" overflow swaps, visibleUnpinned always remains a strictly
+      // increasing subsequence of unpinnedOrder. If not, a genuine visual reorder occurred.
+      if (visibleUnpinned.length > 1) {
+        let lastPos = -1;
+        let isSubsequence = true;
+        for (const id of visibleUnpinned) {
+          const pos = unpinnedOrder.indexOf(id);
+          if (pos <= lastPos) {
+            isSubsequence = false;
+            break;
+          }
+          lastPos = pos;
+        }
+        if (!isSubsequence) {
+          const visSet = new Set(visibleUnpinned);
+          unpinnedOrder = [
+            ...visibleUnpinned,
+            ...unpinnedOrder.filter((id) => !visSet.has(id))
+          ];
+        }
+      }
+    }
+
+    const fullOrder = [...pinnedOrder, ...unpinnedOrder];
+    logicalTabOrderCache.set(scopeKey, fullOrder);
+    return fullOrder.map((id) => byId.get(id)).filter(Boolean);
   }
 
   async function cycleWorkspaceTab(ws, delta) {
@@ -1537,7 +1619,7 @@
       ws.getAllTabInfo().catch(() => []),
       ws.getFocusedTabInfo().catch(() => null)
     ]);
-    const allTabs = sortTabsByVisualDomOrder(rawAllTabs, false);
+    const allTabs = getStableTabOrder(rawAllTabs, false, 'workspaces');
     if (!Array.isArray(allTabs) || allTabs.length === 0) return;
     if (allTabs.length === 1) {
       showToast('Only one workspace tab open');
@@ -1548,7 +1630,7 @@
     if (idx < 0) idx = 0;
     const nextTab = allTabs[(idx + delta + allTabs.length) % allTabs.length];
     if (nextTab && nextTab.tabId) {
-      await activateWorkspaceAndSubtab(ws, nextTab.tabId, null);
+      await activateWorkspaceAndSubtab(ws, nextTab.tabId, null, { preserveActiveSubtab: true });
     }
   }
 
@@ -1559,7 +1641,7 @@
     const parentInfo = await ws.getTabInfo({ tabId: parentId }).catch(() => null);
     if (!parentInfo) return;
     const rawSubList = Array.isArray(parentInfo.subtabs) ? parentInfo.subtabs : [];
-    const subList = sortTabsByVisualDomOrder(rawSubList, true);
+    const subList = getStableTabOrder(rawSubList, true, `subtabs:${parentId}`);
     const cycle = [parentInfo, ...subList];
     if (cycle.length <= 1) {
       showToast('No subtabs in active workspace');
@@ -1613,6 +1695,9 @@
     const parentUl = sourceLi.parentNode;
     const siblings = Array.from(parentUl.children).filter((child) => {
       if (!child || child.nodeType !== 1) return false;
+      if (child.classList && child.classList.contains('hidden')) return false;
+      const rect = child.getBoundingClientRect ? child.getBoundingClientRect() : null;
+      if (rect && rect.width <= 0 && rect.height <= 0) return false;
       const tid = getTabIdFromElement(child);
       if (!tid) return false;
       return isNodePinned(child, tid) === isSourcePinned;
@@ -1631,6 +1716,7 @@
     }
 
     const targetLi = siblings[targetIdx];
+    const targetTabId = getTabIdFromElement(targetLi);
     const beforeDomIndex = Array.from(parentUl.children).indexOf(sourceLi);
 
     // 1. Try native Salesforce Console reorder via synthetic HTML5 DragEvent on neighbor's outer edge
@@ -1680,6 +1766,9 @@
       }
     }
 
+    const reorderScopeKey = isSubtab ? `subtabs:${focused.parentTabId || ''}` : 'workspaces';
+    moveLogicalTabRelative(reorderScopeKey, focused.tabId, targetTabId, delta);
+
     showToast(
       delta < 0
         ? (isSubtab ? '← Moved subtab left' : '← Moved tab left')
@@ -1692,7 +1781,7 @@
       ws.getAllTabInfo().catch(() => []),
       ws.getFocusedTabInfo().catch(() => null)
     ]);
-    const allTabs = sortTabsByVisualDomOrder(rawAllTabs, false);
+    const allTabs = getStableTabOrder(rawAllTabs, false, 'workspaces');
     if (!focused || !focused.tabId || !Array.isArray(allTabs) || allTabs.length < 2) {
       showToast('Need at least 2 workspace tabs to move');
       return;
@@ -2134,7 +2223,10 @@
     }
   }
 
-  async function activateWorkspaceAndSubtab(ws, parentTabId, subtabId = null) {
+  let activeFocusRequestSeq = 0;
+
+  async function activateWorkspaceAndSubtab(ws, parentTabId, subtabId = null, { preserveActiveSubtab = false } = {}) {
+    const mySeq = ++activeFocusRequestSeq;
     if (!ws) {
       try {
         ws = await getWorkspaceAPI();
@@ -2142,23 +2234,32 @@
     }
 
     const ensureFocus = async () => {
+      if (mySeq !== activeFocusRequestSeq) return;
       try {
         if (ws && ws.focusTab) {
           const focused = ws.getFocusedTabInfo ? await ws.getFocusedTabInfo().catch(() => null) : null;
+          if (mySeq !== activeFocusRequestSeq) return;
           if (subtabId) {
             if (focused && focused.tabId === subtabId) return;
             if (parentTabId && (!focused || (focused.tabId !== parentTabId && focused.parentTabId !== parentTabId))) {
               await ws.focusTab({ tabId: parentTabId }).catch(() => {});
             }
+            if (mySeq !== activeFocusRequestSeq) return;
             await ws.focusTab({ tabId: subtabId }).catch(() => {});
           } else if (parentTabId) {
-            if (focused && focused.tabId === parentTabId) return;
+            if (
+              focused &&
+              (focused.tabId === parentTabId || (preserveActiveSubtab && focused.parentTabId === parentTabId))
+            ) {
+              return;
+            }
             await ws.focusTab({ tabId: parentTabId }).catch(() => {});
           }
           return;
         }
       } catch (_) {}
 
+      if (mySeq !== activeFocusRequestSeq) return;
       // Fallback only if Workspace API is unavailable
       const targetId = subtabId || parentTabId;
       if (targetId) {
@@ -9677,21 +9778,24 @@
     setTimeout(syncPageContextPeriodically, 1800);
 
     // =========================================================================
-    // DECLARATIVE INSPECTOR MODS ENGINE (v1.3.0-alpha.1)
-    // Executes declarative JSON mod definitions with zero eval() or dynamic JS.
+    // COMPOSABLE DECLARATIVE PLUGIN ENGINE v2 (.sfe.json, schemaVersion: 2)
+    // Executes declarative JSON plugin definitions with zero eval() or dynamic JS.
     // =========================================================================
     const modAuraCapture = { token: null, context: null };
-    const modTargetCaches = new Map(); // modId -> Map<recordId, summary>
-    const modParentCaches = new Map(); // modId -> Map<parentId, { targetId, cachedAt }>
-    const modInFlight = new Map(); // `${modId}:${recordId}` -> Promise
-    const modParentInFlight = new Map(); // `${modId}:${parentId}` -> Promise
-    const modErrorMap = new Map(); // `${modId}:${id}` -> Error
+    const modTargetCaches = new Map(); // pluginId -> Map<recordId, ctx>
+    const modParentCaches = new Map(); // pluginId -> Map<contextId, { targetId, cachedAt }>
+    const modInFlight = new Map(); // `${pluginId}:${recordId}` -> Promise
+    const modParentInFlight = new Map(); // `${pluginId}:${contextId}` -> Promise
+    const modErrorMap = new Map(); // `${pluginId}:${id}` -> Error
     const modExpandedScopes = new Set();
-    const modMountedNodes = new WeakMap(); // hostEl -> Map<modId, el>
     const modPendingQueue = [];
     let modActiveFetches = 0;
     const MOD_MAX_CONCURRENT = 3;
     const MOD_CACHE_TTL_MS = 10 * 60 * 1000;
+    const SFE_CACHE_VERSION = 'v2';
+
+    const SFE_DEFAULT_ICON_SVG =
+      'M832 160H168c-40 0-72 32-72 72v536c0 40 32 72 72 72h664c40 0 72-32 72-72V232c0-40-32-72-72-72zM300 320h400c18 0 32 14 32 32s-14 32-32 32H300c-18 0-32-14-32-32s14-32 32-32zm0 148h400c18 0 32 14 32 32s-14 32-32 32H300c-18 0-32-14-32-32s14-32 32-32zm0 148h260c18 0 32 14 32 32s-14 32-32 32H300c-18 0-32-14-32-32s14-32 32-32z';
 
     function extractModAuraAuthFromBody(rawBody) {
       if (typeof rawBody !== 'string' || !rawBody.includes('aura.token=')) return;
@@ -9830,7 +9934,7 @@
       return action.returnValue;
     }
 
-    async function modFetchRelatedRecords(parentRecordId, relatedListId, fields) {
+    async function modFetchRelatedRecords(parentRecordId, relatedListId, fields, pageSize = 100) {
       const res = await modAuraCall('aura://RelatedListUiController/ACTION$postRelatedListRecords', {
         parentRecordId,
         relatedListId,
@@ -9838,7 +9942,7 @@
           fields: Array.isArray(fields) ? fields : [],
           includeColumnLabels: false,
           optionalFields: [],
-          pageSize: 100,
+          pageSize,
           sortBy: [],
           where: ''
         }
@@ -9848,9 +9952,9 @@
 
     function readAuraFieldPath(fieldsObj, path, useDisplayValue = false) {
       if (!fieldsObj || !path) return null;
-      if (fieldsObj[path]) {
+      if (fieldsObj[path] && typeof fieldsObj[path] === 'object' && ('value' in fieldsObj[path] || 'displayValue' in fieldsObj[path])) {
         return useDisplayValue
-          ? fieldsObj[path].displayValue || fieldsObj[path].value
+          ? fieldsObj[path].displayValue ?? fieldsObj[path].value
           : fieldsObj[path].value ?? fieldsObj[path].displayValue;
       }
       const parts = String(path).split('.');
@@ -9860,13 +9964,91 @@
         const entry = cur[parts[i]];
         if (!entry) return null;
         if (i === parts.length - 1) {
-          return useDisplayValue ? entry.displayValue || entry.value : entry.value ?? entry.displayValue;
+          if (typeof entry === 'object' && ('value' in entry || 'displayValue' in entry)) {
+            return useDisplayValue ? entry.displayValue ?? entry.value : entry.value ?? entry.displayValue;
+          }
+          return entry;
         }
-        cur = (entry.value && entry.value.fields) || entry.fields || null;
+        cur = (entry.value && entry.value.fields) || entry.fields || entry;
       }
       return null;
     }
 
+    function flattenAuraFields(fieldsObj) {
+      const out = {};
+      if (!fieldsObj || typeof fieldsObj !== 'object') return out;
+      for (const [key, entry] of Object.entries(fieldsObj)) {
+        if (!entry || typeof entry !== 'object') {
+          out[key] = entry;
+          continue;
+        }
+        if (entry.value && typeof entry.value === 'object' && entry.value.fields) {
+          out[key] = flattenAuraFields(entry.value.fields);
+          if (entry.value.id) out[key].id = entry.value.id;
+          if (entry.displayValue != null) out[`${key}__display`] = entry.displayValue;
+        } else {
+          out[key] = entry.value !== undefined ? entry.value : entry.displayValue ?? null;
+          if (entry.displayValue != null) out[`${key}__display`] = entry.displayValue;
+        }
+      }
+      return out;
+    }
+
+    function flattenAuraRecord(rec, fieldMap) {
+      const rawFields = (rec && rec.fields) || {};
+      const flat = flattenAuraFields(rawFields);
+      if (rec && rec.id && !flat.id) flat.id = rec.id;
+      if (rec && rec.id && !flat.Id) flat.Id = rec.id;
+      if (fieldMap && typeof fieldMap === 'object') {
+        for (const [alias, spec] of Object.entries(fieldMap)) {
+          if (typeof spec === 'string') {
+            flat[alias] = readAuraFieldPath(rawFields, spec, false);
+          } else if (spec && typeof spec === 'object') {
+            let val = null;
+            if (Array.isArray(spec.paths)) {
+              for (const p of spec.paths) {
+                const candidate = readAuraFieldPath(rawFields, p, !!spec.display);
+                if (candidate !== null && candidate !== undefined && candidate !== '') {
+                  val = candidate;
+                  break;
+                }
+              }
+            } else if (spec.path) {
+              val = readAuraFieldPath(rawFields, spec.path, !!spec.display);
+            }
+            if ((val === null || val === undefined || val === '') && spec.fallbackPath) {
+              val = readAuraFieldPath(rawFields, spec.fallbackPath, spec.fallbackDisplay !== false);
+            }
+            if ((val === null || val === undefined || val === '') && spec.default !== undefined) {
+              val = spec.default;
+            }
+            flat[alias] = val;
+          }
+        }
+      }
+      return flat;
+    }
+
+    function qualifyAuraFields(objectApiName, fields) {
+      if (!Array.isArray(fields)) return [];
+      const seen = new Set();
+      const out = [];
+      for (const raw of fields) {
+        if (typeof raw !== 'string') continue;
+        const f = raw.trim();
+        if (!f) continue;
+        const qualified = objectApiName && !f.startsWith(`${objectApiName}.`) ? `${objectApiName}.${f}` : f;
+        if (!seen.has(qualified)) {
+          seen.add(qualified);
+          out.push(qualified);
+        }
+      }
+      return out;
+    }
+
+    // -------------------------------------------------------------------------
+    // Safe Path Resolution, Formatting, Interpolation & Condition Engine
+    // -------------------------------------------------------------------------
     function getModLocalTodayIso() {
       const d = new Date();
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -9874,461 +10056,764 @@
 
     function diffModDaysIso(laterIso, earlierIso) {
       if (!laterIso || !earlierIso) return null;
-      const a = new Date(`${laterIso}T00:00:00`);
-      const b = new Date(`${earlierIso}T00:00:00`);
+      const s1 = String(laterIso).slice(0, 10);
+      const s2 = String(earlierIso).slice(0, 10);
+      const a = new Date(`${s1}T00:00:00`);
+      const b = new Date(`${s2}T00:00:00`);
+      if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return null;
       return Math.round((a.getTime() - b.getTime()) / 86400000);
     }
 
-    function classifyModBucket(ent, today) {
-      const st = String(ent.status || '').toLowerCase();
-      const inWindow = ent.startDate && ent.endDate && ent.startDate <= today && ent.endDate >= today;
-      if (st === 'active' || (inWindow && st !== 'expired')) return 'ACTIVE';
-      if (ent.startDate && ent.startDate > today && st !== 'expired') return 'UPCOMING';
-      return 'EXPIRED';
+    function sfeResolvePath(scope, path) {
+      if (!scope || !path || typeof path !== 'string') return undefined;
+      const trimmed = path.trim();
+      if (!trimmed) return undefined;
+      if (trimmed in scope) return scope[trimmed];
+      const parts = trimmed.split('.');
+      let cur = scope;
+      for (let i = 0; i < parts.length; i++) {
+        if (cur === null || cur === undefined) return undefined;
+        const seg = parts[i];
+        if (seg === '__proto__' || seg === 'constructor' || seg === 'prototype') return undefined;
+        cur = cur[seg];
+      }
+      return cur;
     }
 
-    function evaluateModLineItemCategories(item, mod) {
-      const categories = (mod.classification && Array.isArray(mod.classification.categories))
-        ? mod.classification.categories
-        : [];
-      const family = String(item.family || '').trim();
-      const code = String(item.code || '').trim();
-      const name = String(item.name || '').trim();
-      const hay = `${family} ${code} ${name}`.toLowerCase();
-      const matchedKeys = [];
-      let primaryTag = null;
+    function sfeFormatValue(val, fmtExpr) {
+      if (!fmtExpr) {
+        if (val === null || val === undefined) return '';
+        if (Array.isArray(val)) return val.join(', ');
+        return String(val);
+      }
+      const colonIdx = fmtExpr.indexOf(':');
+      const fmt = (colonIdx >= 0 ? fmtExpr.slice(0, colonIdx) : fmtExpr).trim().toLowerCase();
+      const arg = colonIdx >= 0 ? fmtExpr.slice(colonIdx + 1) : '';
 
-      for (const cat of categories) {
-        if (!cat || !cat.key) continue;
-        let hit = false;
-        if (Array.isArray(cat.families) && cat.families.includes(family)) hit = true;
-        if (!hit && Array.isArray(cat.codePatterns)) {
-          hit = cat.codePatterns.some((p) => {
-            try { return new RegExp(p, 'i').test(code); } catch (_) { return false; }
-          });
-        }
-        if (!hit && Array.isArray(cat.namePatterns)) {
-          hit = cat.namePatterns.some((p) => {
-            try { return new RegExp(p, 'i').test(name); } catch (_) { return false; }
-          });
-        }
-        if (!hit && Array.isArray(cat.textPatterns)) {
-          hit = cat.textPatterns.some((p) => {
-            try { return new RegExp(p, 'i').test(hay); } catch (_) { return false; }
-          });
-        }
-        if (hit) {
-          matchedKeys.push(cat.key);
-          if (!primaryTag) {
-            primaryTag = { key: cat.key, tag: cat.tag || cat.key.toUpperCase(), tone: cat.tone || 'neutral' };
+      if (fmt === 'default') {
+        return val === null || val === undefined || val === '' ? arg : String(val);
+      }
+      if (val === null || val === undefined || val === '') return '';
+      if (fmt === 'currency') {
+        const n = Number(val);
+        if (Number.isFinite(n)) {
+          try {
+            return new Intl.NumberFormat(undefined, {
+              style: 'currency',
+              currency: arg.trim() || 'USD',
+              maximumFractionDigits: 0
+            }).format(n);
+          } catch (_) {
+            return `$${n.toLocaleString()}`;
           }
         }
+        return String(val);
       }
-      return {
-        matchedKeys,
-        primaryTag: primaryTag || { key: 'other', tag: 'SUP', tone: 'neutral' }
-      };
+      if (fmt === 'number') {
+        const n = Number(val);
+        return Number.isFinite(n) ? n.toLocaleString() : String(val);
+      }
+      if (fmt === 'upper') return String(val).toUpperCase();
+      if (fmt === 'lower') return String(val).toLowerCase();
+      if (fmt === 'date') return String(val).slice(0, 10);
+      if (fmt === 'join') {
+        return Array.isArray(val) ? val.filter(Boolean).join(arg || ', ') : String(val);
+      }
+      return String(val);
     }
 
-    function evaluateModCoverage(presentKeysSet, mod) {
-      const rules = (mod.classification && Array.isArray(mod.classification.coverageLabels))
-        ? mod.classification.coverageLabels
-        : [];
-      for (const rule of rules) {
-        if (
-          rule &&
-          Array.isArray(rule.requireAll) &&
-          rule.requireAll.length > 0 &&
-          rule.requireAll.every((k) => presentKeysSet.has(k))
-        ) {
-          return {
-            label: rule.label || 'Covered',
-            tone: rule.tone || 'success',
-            icon: rule.icon || '✔'
-          };
+    function sfeInterpolate(template, scope) {
+      if (template === null || template === undefined) return '';
+      const str = String(template);
+      if (!str.includes('{{')) return str;
+      return str.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, rawExpr) => {
+        // Split format pipe (single `|`, not `||`)
+        let exprPart = rawExpr;
+        let fmtPart = '';
+        const pipeMatch = rawExpr.match(/(?<!\|)\|(?!\|)/);
+        if (pipeMatch && typeof pipeMatch.index === 'number') {
+          exprPart = rawExpr.slice(0, pipeMatch.index).trim();
+          fmtPart = rawExpr.slice(pipeMatch.index + 1).trim();
         }
-      }
-      const def = (mod.classification && mod.classification.defaultCoverage) || {};
-      return {
-        label: def.label || 'Unknown Coverage',
-        tone: def.tone || 'neutral',
-        icon: def.icon || '•'
-      };
-    }
-
-    function sortModChildSummaries(children, problemsFirst) {
-      const rank = problemsFirst
-        ? { EXPIRED: 0, NONE: 1, UPCOMING: 2, ACTIVE: 3 }
-        : { ACTIVE: 0, UPCOMING: 1, EXPIRED: 2, NONE: 3 };
-      return children.slice().sort((a, b) => {
-        const ra = rank[a.status] ?? 9;
-        const rb = rank[b.status] ?? 9;
-        if (ra !== rb) return ra - rb;
-        const da = a.endDate || '9999-99-99';
-        const db = b.endDate || '9999-99-99';
-        if (da !== db) return da.localeCompare(db);
-        return String(a.name || '').localeCompare(String(b.name || ''));
+        const candidates = exprPart.split('||').map((s) => s.trim()).filter(Boolean);
+        let val = undefined;
+        for (const p of candidates) {
+          const v = sfeResolvePath(scope, p);
+          if (v !== null && v !== undefined && v !== '') {
+            val = v;
+            break;
+          }
+        }
+        return sfeFormatValue(val, fmtPart);
       });
     }
 
-    async function executeModPipelineUncached(mod, targetId) {
+    function sfeInterpolateDeep(obj, scope) {
+      if (typeof obj === 'string') return sfeInterpolate(obj, scope);
+      if (Array.isArray(obj)) return obj.map((v) => sfeInterpolateDeep(v, scope));
+      if (obj && typeof obj === 'object') {
+        const out = {};
+        for (const [k, v] of Object.entries(obj)) {
+          out[k] = sfeInterpolateDeep(v, scope);
+        }
+        return out;
+      }
+      return obj;
+    }
+
+    function sfeIsPresent(val) {
+      if (val === null || val === undefined || val === '') return false;
+      if (Array.isArray(val)) return val.length > 0;
+      return true;
+    }
+
+    function sfeEvalCondition(cond, scope) {
+      if (cond === null || cond === undefined) return true;
+      if (typeof cond === 'boolean') return cond;
+      if (typeof cond !== 'object') return !!cond;
+      if (Array.isArray(cond.all)) return cond.all.every((c) => sfeEvalCondition(c, scope));
+      if (Array.isArray(cond.any)) return cond.any.some((c) => sfeEvalCondition(c, scope));
+      if (cond.not !== undefined) return !sfeEvalCondition(cond.not, scope);
+
+      const actual = sfeResolvePath(scope, cond.path);
+      const expected = cond.valuePath !== undefined ? sfeResolvePath(scope, cond.valuePath) : cond.value;
+      const op = String(cond.op || 'exists').toLowerCase();
+
+      if (op === 'exists') return sfeIsPresent(actual);
+      if (op === 'empty') return !sfeIsPresent(actual);
+      if (op === 'istrue') return actual === true;
+      if (op === 'isfalse') return !actual;
+      if (op === 'eq' || op === 'neq') {
+        let equal;
+        if (cond.ignoreCase && typeof actual === 'string' && typeof expected === 'string') {
+          equal = actual.toLowerCase() === expected.toLowerCase();
+        } else {
+          equal = actual === expected;
+        }
+        return op === 'eq' ? equal : !equal;
+      }
+      if (op === 'gt' || op === 'gte' || op === 'lt' || op === 'lte') {
+        if (actual === null || actual === undefined || expected === null || expected === undefined || actual === '' || expected === '') {
+          return false;
+        }
+        const na = Number(actual);
+        const nb = Number(expected);
+        const cmp =
+          typeof actual !== 'boolean' && typeof expected !== 'boolean' && Number.isFinite(na) && Number.isFinite(nb)
+            ? na - nb
+            : String(actual).localeCompare(String(expected));
+        if (op === 'gt') return cmp > 0;
+        if (op === 'gte') return cmp >= 0;
+        if (op === 'lt') return cmp < 0;
+        return cmp <= 0;
+      }
+      if (op === 'in' || op === 'notin') {
+        const list = Array.isArray(expected) ? expected : [];
+        const hit = cond.ignoreCase && typeof actual === 'string'
+          ? list.some((v) => typeof v === 'string' && v.toLowerCase() === actual.toLowerCase())
+          : list.includes(actual);
+        return op === 'in' ? hit : !hit;
+      }
+      if (op === 'contains' || op === 'notcontains') {
+        let hit = false;
+        if (Array.isArray(actual)) {
+          hit = actual.includes(expected);
+        } else if (actual !== null && actual !== undefined && expected !== null && expected !== undefined) {
+          const aStr = String(actual);
+          const eStr = String(expected);
+          hit = cond.caseSensitive ? aStr.includes(eStr) : aStr.toLowerCase().includes(eStr.toLowerCase());
+        }
+        return op === 'contains' ? hit : !hit;
+      }
+      if (op === 'regex') {
+        if (actual === null || actual === undefined || !expected) return false;
+        try {
+          return new RegExp(String(expected), cond.caseSensitive ? '' : 'i').test(String(actual));
+        } catch (_) {
+          return false;
+        }
+      }
+      if (op === 'hasall') {
+        const arr = Array.isArray(actual) ? actual : [];
+        const req = Array.isArray(expected) ? expected : [];
+        return req.length > 0 && req.every((k) => arr.includes(k));
+      }
+      if (op === 'hasany') {
+        const arr = Array.isArray(actual) ? actual : [];
+        const req = Array.isArray(expected) ? expected : [];
+        return req.some((k) => arr.includes(k));
+      }
+      return false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Composable Data Pipeline Executor
+    // -------------------------------------------------------------------------
+    function sfeClassifyDateBucket(item, cfg, today) {
+      const startDate = sfeResolvePath(item, cfg.startDateField || 'StartDate') || null;
+      const endDate = sfeResolvePath(item, cfg.endDateField || 'EndDate') || null;
+      const st = String(sfeResolvePath(item, cfg.statusField || 'Status') || '').toLowerCase();
+      const sNorm = startDate ? String(startDate).slice(0, 10) : null;
+      const eNorm = endDate ? String(endDate).slice(0, 10) : null;
+      const inWindow = !!(sNorm && eNorm && sNorm <= today && eNorm >= today);
+      let bucket = 'EXPIRED';
+      if (st === 'active' || (inWindow && st !== 'expired')) bucket = 'ACTIVE';
+      else if (sNorm && sNorm > today && st !== 'expired') bucket = 'UPCOMING';
+      const refDate = bucket === 'UPCOMING' ? sNorm : eNorm;
+      const daysRemaining = refDate ? diffModDaysIso(refDate, today) : null;
+      const soonDays = typeof cfg.soonDays === 'number' ? cfg.soonDays : 30;
+      const isExpiringSoon = bucket === 'ACTIVE' && typeof daysRemaining === 'number' && daysRemaining >= 0 && daysRemaining <= soonDays;
+      return { dateBucket: bucket, startDate: sNorm, endDate: eNorm, daysRemaining, isExpiringSoon };
+    }
+
+    function sfeSortArray(arr, sortSpec, scope) {
+      if (!Array.isArray(arr) || !Array.isArray(sortSpec) || !sortSpec.length) return arr;
+      return arr.slice().sort((a, b) => {
+        for (const s of sortSpec) {
+          if (!s) continue;
+          let rankMap = s.rankMap || null;
+          if (!rankMap && Array.isArray(s.conditionalRankMaps)) {
+            for (const crm of s.conditionalRankMaps) {
+              if (!crm.when || sfeEvalCondition(crm.when, scope)) {
+                rankMap = crm.rankMap || null;
+                break;
+              }
+            }
+          }
+          const va = sfeResolvePath(a, s.field);
+          const vb = sfeResolvePath(b, s.field);
+          let cmp = 0;
+          if (rankMap) {
+            const ra = rankMap[va] ?? 999;
+            const rb = rankMap[vb] ?? 999;
+            cmp = ra - rb;
+          } else {
+            const missingA = va === null || va === undefined || va === '';
+            const missingB = vb === null || vb === undefined || vb === '';
+            if (missingA && missingB) cmp = 0;
+            else if (missingA) cmp = 1;
+            else if (missingB) cmp = -1;
+            else {
+              const na = Number(va);
+              const nb = Number(vb);
+              if (typeof va !== 'boolean' && typeof vb !== 'boolean' && Number.isFinite(na) && Number.isFinite(nb)) {
+                cmp = na - nb;
+              } else {
+                cmp = String(va).localeCompare(String(vb));
+              }
+            }
+          }
+          if (cmp !== 0) {
+            return String(s.dir || 'asc').toLowerCase() === 'desc' ? -cmp : cmp;
+          }
+        }
+        return 0;
+      });
+    }
+
+    function sfeEvalComputeOp(spec, ctx, currentObj) {
+      const scope = Object.assign({}, ctx, currentObj ? { _self: currentObj } : null);
+      if (!spec || typeof spec !== 'object') return spec;
+      const op = spec.op;
+
+      const getFilteredList = () => {
+        const raw = sfeResolvePath(scope, spec.from);
+        if (!Array.isArray(raw)) return [];
+        if (!spec.where) return raw;
+        return raw.filter((item) => sfeEvalCondition(spec.where, Object.assign({}, scope, { item })));
+      };
+
+      if (op === 'count') {
+        return getFilteredList().length;
+      }
+      if (op === 'sum' || op === 'min' || op === 'max' || op === 'first' || op === 'last') {
+        const list = getFilteredList();
+        const vals = spec.field
+          ? list.map((item) => sfeResolvePath(item, spec.field)).filter((v) => v !== null && v !== undefined && v !== '')
+          : list.filter((v) => v !== null && v !== undefined && v !== '');
+        if (!vals.length) return spec.default !== undefined ? spec.default : null;
+        if (op === 'first') return vals[0];
+        if (op === 'last') return vals[vals.length - 1];
+        if (op === 'sum') return vals.reduce((acc, v) => acc + (Number(v) || 0), 0);
+        const allNum = vals.every((v) => typeof v !== 'boolean' && Number.isFinite(Number(v)));
+        if (allNum) {
+          const nums = vals.map(Number);
+          return op === 'min' ? Math.min(...nums) : Math.max(...nums);
+        }
+        const sorted = vals.map(String).sort();
+        return op === 'min' ? sorted[0] : sorted[sorted.length - 1];
+      }
+      if (op === 'unique' || op === 'uniqueJoin') {
+        const list = getFilteredList();
+        const set = new Set();
+        for (const item of list) {
+          const v = spec.field ? sfeResolvePath(item, spec.field) : item;
+          if (spec.flatten && Array.isArray(v)) {
+            for (const sub of v) {
+              if (sub !== null && sub !== undefined && sub !== '') set.add(sub);
+            }
+          } else if (v !== null && v !== undefined && v !== '') {
+            set.add(v);
+          }
+        }
+        const arr = Array.from(set);
+        return op === 'unique' ? arr : arr.join(spec.sep !== undefined ? spec.sep : ', ');
+      }
+      if (op === 'daysFromToday') {
+        const rawDate = sfeResolvePath(scope, spec.path);
+        return rawDate ? diffModDaysIso(rawDate, ctx.$today) : null;
+      }
+      if (op === 'coalesce') {
+        const paths = Array.isArray(spec.paths) ? spec.paths : [];
+        for (const p of paths) {
+          const v = sfeResolvePath(scope, p);
+          if (sfeIsPresent(v)) return v;
+        }
+        return spec.default !== undefined ? spec.default : null;
+      }
+      if (op === 'diff') {
+        const l = Number(sfeResolvePath(scope, spec.leftPath)) || 0;
+        const r = Number(sfeResolvePath(scope, spec.rightPath)) || 0;
+        return l - r;
+      }
+      if (op === 'cond') {
+        return sfeEvalCondition(spec.when, scope);
+      }
+      if (op === 'template') {
+        return sfeInterpolate(spec.text || '', scope);
+      }
+      if (op === 'joinParts') {
+        const parts = Array.isArray(spec.parts) ? spec.parts : [];
+        const out = [];
+        for (const p of parts) {
+          if (!p) continue;
+          if (typeof p === 'string') {
+            const txt = sfeInterpolate(p, scope).trim();
+            if (txt) out.push(txt);
+          } else if (!p.when || sfeEvalCondition(p.when, scope)) {
+            const txt = sfeInterpolate(p.text || '', scope).trim();
+            if (txt) out.push(txt);
+          }
+        }
+        return out.join(spec.sep !== undefined ? spec.sep : ' · ');
+      }
+      if (op === 'cases') {
+        const cases = Array.isArray(spec.cases) ? spec.cases : [];
+        for (const c of cases) {
+          if (c && (!c.when || sfeEvalCondition(c.when, scope))) {
+            return sfeInterpolateDeep(c.value, scope);
+          }
+        }
+        return spec.default !== undefined ? sfeInterpolateDeep(spec.default, scope) : null;
+      }
+      return null;
+    }
+
+    async function executePluginPipelineUncached(plugin, targetId) {
       const today = getModLocalTodayIso();
-      const targetCfg = mod.target || {};
-      const childCfg = (mod.pipeline && mod.pipeline.childRecords) || {};
-      const entCfg = (mod.pipeline && mod.pipeline.entitlements) || {};
-      const scCfg = (mod.pipeline && mod.pipeline.contracts) || {};
-      const cliCfg = scCfg.lineItems || {};
-
-      const targetOptFields = [`${targetCfg.objectApiName}.Id`];
-      if (targetCfg.nameField) targetOptFields.push(`${targetCfg.objectApiName}.${targetCfg.nameField}`);
-      if (targetCfg.expectedCountField) targetOptFields.push(`${targetCfg.objectApiName}.${targetCfg.expectedCountField}`);
-
-      const [targetRec, childRecs] = await Promise.all([
-        modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
-          recordId: targetId,
-          optionalFields: targetOptFields
-        }).catch(() => null),
-        modFetchRelatedRecords(targetId, childCfg.relatedListId, childCfg.fields || [])
-      ]);
-
-      const targetFields = (targetRec && targetRec.fields) || {};
-      const targetName =
-        (targetCfg.nameField && readAuraFieldPath(targetFields, targetCfg.nameField)) || targetId;
-      const expectedCount =
-        targetCfg.expectedCountField ? readAuraFieldPath(targetFields, targetCfg.expectedCountField) : null;
-
-      if (!childRecs.length) {
-        return {
+      const targetCfg = plugin.target || {};
+      const ctx = {
+        $targetId: targetId,
+        $targetObject: targetCfg.objectApiName || '',
+        $today: today,
+        _meta: {
           targetId,
-          targetName,
-          expectedCount,
-          childCount: 0,
-          activeChildCount: 0,
-          upcomingChildCount: 0,
-          expiredChildCount: 0,
-          noneChildCount: 0,
-          uncoveredChildCount: 0,
-          isMixedPartial: false,
-          hasStaleChildren: false,
-          hasMismatchedDates: false,
-          children: [],
-          status: 'NO_CHILDREN',
-          beforeExpiry: false,
-          coverage: { label: `No ${childCfg.labelPlural || 'Records'} Found`, tone: 'error', icon: '✖' },
-          items: [],
+          targetName: targetId,
           cachedAt: Date.now()
-        };
-      }
+        }
+      };
 
-      const childMetas = childRecs.map((r) => {
-        const f = r.fields || {};
-        return {
-          id: r.id,
-          name: readAuraFieldPath(f, childCfg.nameField || 'Name') || r.id,
-          serialNumber: childCfg.serialField ? (readAuraFieldPath(f, childCfg.serialField) || '') : '',
-          code: childCfg.codeFieldPath ? (readAuraFieldPath(f, childCfg.codeFieldPath) || '') : ''
-        };
-      });
+      const steps = Array.isArray(plugin.data) ? plugin.data : [];
+      const categoryRegistry = new Map(); // stepId -> categories[]
 
-      const entLists = await Promise.all(
-        childMetas.map((cm) => modFetchRelatedRecords(cm.id, entCfg.relatedListId, entCfg.fields || []))
-      );
+      for (const step of steps) {
+        if (!step || !step.type) continue;
+        if (step.when && !sfeEvalCondition(step.when, ctx)) continue;
 
-      const allEntitlements = [];
-      const rawChildren = [];
+        if (step.type === 'record') {
+          const objName = step.objectApiName || targetCfg.objectApiName;
+          const optFields = qualifyAuraFields(objName, step.fields || ['Id', 'Name']);
+          if (step.forEach) {
+            const srcList = sfeResolvePath(ctx, step.forEach);
+            const idList = Array.isArray(srcList)
+              ? Array.from(new Set(srcList.map((it) => sfeResolvePath(it, step.idField || 'id')).filter(Boolean)))
+              : [];
+            const fetched = await Promise.all(
+              idList.map((recId) =>
+                modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
+                  recordId: recId,
+                  optionalFields: optFields
+                })
+                  .then((r) => (r ? flattenAuraRecord(r, step.map) : { id: recId, Id: recId }))
+                  .catch(() => ({ id: recId, Id: recId }))
+              )
+            );
+            ctx[step.id] = fetched;
+            const byId = {};
+            for (const rec of fetched) {
+              if (rec && rec.id) byId[rec.id] = rec;
+            }
+            ctx[`${step.id}ById`] = byId;
+          } else {
+            const recId = step.recordIdPath ? sfeResolvePath(ctx, step.recordIdPath) : targetId;
+            if (!recId) {
+              ctx[step.id] = null;
+              continue;
+            }
+            const raw = await modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
+              recordId: recId,
+              optionalFields: optFields
+            }).catch(() => null);
+            const flat = raw ? flattenAuraRecord(raw, step.map) : { id: recId, Id: recId };
+            ctx[step.id] = flat;
+            if (step.id === 'target' || step.isTarget) {
+              const nameField = targetCfg.nameField || 'Name';
+              const resolvedName = sfeResolvePath(flat, nameField);
+              if (resolvedName) ctx._meta.targetName = String(resolvedName);
+            }
+          }
+          continue;
+        }
 
-      entLists.forEach((recs, idx) => {
-        const meta = childMetas[idx];
-        const childEnts = [];
-        for (const r of recs) {
-          const f = r.fields || {};
-          const tiers = Array.isArray(entCfg.tierFields)
-            ? entCfg.tierFields.map((tf) => readAuraFieldPath(f, tf)).filter(Boolean)
-            : [];
-          const entObj = {
-            id: r.id,
-            childId: meta.id,
-            childName: meta.name,
-            startDate: readAuraFieldPath(f, entCfg.startDateField || 'StartDate') || null,
-            endDate: readAuraFieldPath(f, entCfg.endDateField || 'EndDate') || null,
-            status: readAuraFieldPath(f, entCfg.statusField || 'Status') || '',
-            contractId: readAuraFieldPath(f, entCfg.contractIdField || 'ServiceContractId') || null,
-            contractName: readAuraFieldPath(f, entCfg.contractNameField || 'ServiceContract', true) || '',
-            tiers
+        if (step.type === 'relatedList') {
+          const relFields = step.objectApiName
+            ? qualifyAuraFields(step.objectApiName, step.fields || [])
+            : step.fields || [];
+          const pageSize = typeof step.pageSize === 'number' ? step.pageSize : 100;
+
+          const processRows = (rawRecs, parentMeta) => {
+            let rows = rawRecs.map((r) => {
+              const flat = flattenAuraRecord(r, step.map);
+              if (parentMeta) {
+                flat._parentId = parentMeta.id;
+                flat._parentName = parentMeta.Name || parentMeta.name || parentMeta.id;
+              }
+              return flat;
+            });
+            if (step.where) {
+              rows = rows.filter((item) => sfeEvalCondition(step.where, Object.assign({}, ctx, { item })));
+            }
+            if (step.sort) {
+              rows = sfeSortArray(rows, step.sort, ctx);
+            }
+            if (typeof step.limit === 'number' && step.limit > 0) {
+              rows = rows.slice(0, step.limit);
+            }
+            return rows;
           };
-          childEnts.push(entObj);
-          allEntitlements.push(entObj);
+
+          if (step.forEach) {
+            const parents = sfeResolvePath(ctx, step.forEach);
+            const parentArr = Array.isArray(parents) ? parents : [];
+            const allRows = [];
+            const results = await Promise.all(
+              parentArr.map((p) => {
+                const pid = sfeResolvePath(p, step.parentIdField || 'id');
+                if (!pid) return Promise.resolve([]);
+                return modFetchRelatedRecords(pid, step.relatedListId, relFields, pageSize).catch(() => []);
+              })
+            );
+            results.forEach((rawRecs, idx) => {
+              const parentObj = parentArr[idx];
+              const rows = processRows(rawRecs, parentObj);
+              if (step.attachAs && parentObj && typeof parentObj === 'object') {
+                parentObj[step.attachAs] = rows;
+              }
+              allRows.push(...rows);
+            });
+            ctx[step.id] = allRows;
+          } else {
+            const parentId = step.parentIdPath ? sfeResolvePath(ctx, step.parentIdPath) : targetId;
+            if (!parentId) {
+              ctx[step.id] = [];
+              continue;
+            }
+            const rawRecs = await modFetchRelatedRecords(parentId, step.relatedListId, relFields, pageSize).catch(() => []);
+            ctx[step.id] = processRows(rawRecs, null);
+          }
+          continue;
         }
 
-        const active = [];
-        const upcoming = [];
-        const expired = [];
-        for (const e of childEnts) {
-          const b = classifyModBucket(e, today);
-          if (b === 'ACTIVE') active.push(e);
-          else if (b === 'UPCOMING') upcoming.push(e);
-          else expired.push(e);
-        }
+        if (step.type === 'dateStatus') {
+          const src = sfeResolvePath(ctx, step.from);
+          const arr = Array.isArray(src) ? src : [];
+          const active = [];
+          const upcoming = [];
+          const expired = [];
+          for (const item of arr) {
+            const res = sfeClassifyDateBucket(item, step, today);
+            Object.assign(item, res);
+            if (res.dateBucket === 'ACTIVE') active.push(item);
+            else if (res.dateBucket === 'UPCOMING') upcoming.push(item);
+            else expired.push(item);
+          }
+          if (step.id) ctx[step.id] = arr;
 
-        let status = 'NONE';
-        let chosen = [];
-        if (active.length) {
-          status = 'ACTIVE';
-          active.sort((a, b) => (b.endDate || '').localeCompare(a.endDate || ''));
-          chosen = active;
-        } else if (upcoming.length) {
-          status = 'UPCOMING';
-          upcoming.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
-          chosen = upcoming;
-        } else if (expired.length) {
-          status = 'EXPIRED';
-          expired.sort((a, b) => (b.endDate || '').localeCompare(a.endDate || ''));
-          chosen = expired;
-        }
-        const primary = chosen[0] || null;
-        const endDates = chosen.map((e) => e.endDate).filter(Boolean).sort();
-        rawChildren.push({
-          id: meta.id,
-          name: meta.name,
-          serialNumber: meta.serialNumber,
-          code: meta.code,
-          status,
-          startDate: primary ? primary.startDate : null,
-          endDate: status === 'UPCOMING' ? primary.endDate : endDates[endDates.length - 1] || null,
-          scIds: Array.from(new Set(chosen.map((e) => e.contractId).filter(Boolean))),
-          contractNames: Array.from(new Set(chosen.map((e) => e.contractName).filter(Boolean))),
-          tags: []
-        });
-      });
-
-      if (!allEntitlements.length) {
-        return {
-          targetId,
-          targetName,
-          expectedCount,
-          childCount: childRecs.length,
-          activeChildCount: 0,
-          upcomingChildCount: 0,
-          expiredChildCount: 0,
-          noneChildCount: childRecs.length,
-          uncoveredChildCount: childRecs.length,
-          isMixedPartial: false,
-          hasStaleChildren: false,
-          hasMismatchedDates: false,
-          children: sortModChildSummaries(rawChildren, false),
-          status: 'NO_ENTITLEMENTS',
-          beforeExpiry: false,
-          coverage: { label: 'No Entitlements Found', tone: 'error', icon: '✖' },
-          items: [],
-          cachedAt: Date.now()
-        };
-      }
-
-      const activeEnts = [];
-      const upcomingEnts = [];
-      const expiredEnts = [];
-      for (const e of allEntitlements) {
-        const b = classifyModBucket(e, today);
-        if (b === 'ACTIVE') activeEnts.push(e);
-        else if (b === 'UPCOMING') upcomingEnts.push(e);
-        else expiredEnts.push(e);
-      }
-
-      let primaryBucket = 'ACTIVE';
-      let chosenEnts = activeEnts;
-      if (!chosenEnts.length && upcomingEnts.length) {
-        primaryBucket = 'UPCOMING';
-        upcomingEnts.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
-        const earliestStart = upcomingEnts[0].startDate;
-        chosenEnts = upcomingEnts.filter((e) => e.startDate === earliestStart);
-      } else if (!chosenEnts.length) {
-        primaryBucket = 'EXPIRED';
-        expiredEnts.sort((a, b) => (b.endDate || '').localeCompare(a.endDate || ''));
-        const latestEnd = expiredEnts[0].endDate;
-        chosenEnts = expiredEnts.filter((e) => e.endDate === latestEnd);
-      }
-
-      const chosenScIds = Array.from(new Set(chosenEnts.map((e) => e.contractId).filter(Boolean)));
-      const upcomingScIds = Array.from(new Set(upcomingEnts.map((e) => e.contractId).filter(Boolean)));
-
-      const scDataMap = new Map();
-      await Promise.all(
-        chosenScIds.map(async (scId) => {
-          const [scRec, cliRecs] = await Promise.all([
-            modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
-              recordId: scId,
-              optionalFields: scCfg.fields || ['ServiceContract.Id', 'ServiceContract.Name']
-            }).catch(() => null),
-            modFetchRelatedRecords(scId, cliCfg.relatedListId || 'ContractLineItems', cliCfg.fields || [])
-          ]);
-          const scFields = (scRec && scRec.fields) || {};
-          const parsedItems = cliRecs.map((r) => {
-            const f = r.fields || {};
-            const pPath = cliCfg.productPath || 'PricebookEntry.Product2';
-            const item = {
-              id: r.id,
-              status: readAuraFieldPath(f, cliCfg.statusField || 'Status') || '',
-              startDate: readAuraFieldPath(f, cliCfg.startDateField || 'StartDate') || null,
-              endDate: readAuraFieldPath(f, cliCfg.endDateField || 'EndDate') || null,
-              qty: readAuraFieldPath(f, cliCfg.quantityField || 'Quantity') || null,
-              name:
-                readAuraFieldPath(f, `${pPath}.Name`) ||
-                readAuraFieldPath(f, cliCfg.fallbackDisplayField || 'PricebookEntry', true) ||
-                'Unknown Product',
-              code: readAuraFieldPath(f, `${pPath}.ProductCode`) || '',
-              family: readAuraFieldPath(f, `${pPath}.Family`) || ''
+          if (step.pickPrimaryBucketAs) {
+            let bucket = 'NONE';
+            let chosen = [];
+            if (active.length) {
+              bucket = 'ACTIVE';
+              chosen = active.slice();
+            } else if (upcoming.length) {
+              bucket = 'UPCOMING';
+              upcoming.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+              const earliestStart = upcoming[0].startDate;
+              chosen = upcoming.filter((e) => e.startDate === earliestStart);
+            } else if (expired.length) {
+              bucket = 'EXPIRED';
+              expired.sort((a, b) => (b.endDate || '').localeCompare(a.endDate || ''));
+              const latestEnd = expired[0].endDate;
+              chosen = expired.filter((e) => e.endDate === latestEnd);
+            }
+            const sortedUpcoming = upcoming.slice().sort((a, b) => (b.endDate || '').localeCompare(a.endDate || ''));
+            ctx[step.pickPrimaryBucketAs] = {
+              bucket,
+              items: chosen,
+              activeItems: active,
+              upcomingItems: sortedUpcoming,
+              expiredItems: expired,
+              nextUpcoming: sortedUpcoming[0] || null
             };
-            return Object.assign(item, evaluateModLineItemCategories(item, mod));
-          });
-
-          scDataMap.set(scId, {
-            id: scId,
-            name: readAuraFieldPath(scFields, scCfg.nameField || 'Name') || '',
-            status: readAuraFieldPath(scFields, scCfg.statusField || 'Status') || '',
-            startDate: readAuraFieldPath(scFields, scCfg.startDateField || 'StartDate') || null,
-            endDate: readAuraFieldPath(scFields, scCfg.endDateField || 'EndDate') || null,
-            items: parsedItems
-          });
-        })
-      );
-
-      const filterItems = (items) => {
-        if (primaryBucket !== 'ACTIVE') return items;
-        const active = items.filter((it) => {
-          const st = String(it.status || '').toLowerCase();
-          if (st === 'active') return true;
-          if (st === 'expired' || st === 'inactive') return false;
-          return !it.endDate || it.endDate >= today;
-        });
-        return active.length ? active : items;
-      };
-
-      const relevantItems = [];
-      for (const sc of scDataMap.values()) {
-        relevantItems.push(...filterItems(sc.items));
-      }
-
-      const categoriesCfg = (mod.classification && Array.isArray(mod.classification.categories))
-        ? mod.classification.categories
-        : [];
-      for (const child of rawChildren) {
-        const cItems = [];
-        for (const scId of child.scIds) {
-          const sc = scDataMap.get(scId);
-          if (sc) cItems.push(...filterItems(sc.items));
+          }
+          continue;
         }
-        const childCatSet = new Set();
-        for (const it of cItems) {
-          for (const k of it.matchedKeys || []) childCatSet.add(k);
+
+        if (step.type === 'classify') {
+          const src = sfeResolvePath(ctx, step.from);
+          const arr = Array.isArray(src) ? src : [];
+          const categories = Array.isArray(step.categories) ? step.categories : [];
+          if (step.id) categoryRegistry.set(step.id, categories);
+          const textFields = Array.isArray(step.textFields) ? step.textFields : ['name', 'code', 'family'];
+          const defaultTag = step.defaultTag || { key: 'other', tag: 'ITEM', tone: 'neutral' };
+
+          for (const item of arr) {
+            const hay = textFields
+              .map((tf) => String(sfeResolvePath(item, tf) || '').trim())
+              .filter(Boolean)
+              .join(' ')
+              .toLowerCase();
+            const matchedKeys = [];
+            const matchedTags = [];
+            let primaryTag = null;
+
+            for (const cat of categories) {
+              if (!cat || !cat.key) continue;
+              let hit = false;
+              if (cat.fieldEquals && typeof cat.fieldEquals === 'object') {
+                for (const [fPath, expectedVals] of Object.entries(cat.fieldEquals)) {
+                  const val = String(sfeResolvePath(item, fPath) || '').trim();
+                  if (Array.isArray(expectedVals) && expectedVals.includes(val)) {
+                    hit = true;
+                    break;
+                  }
+                }
+              }
+              if (!hit && cat.fieldPatterns && typeof cat.fieldPatterns === 'object') {
+                for (const [fPath, patterns] of Object.entries(cat.fieldPatterns)) {
+                  const val = String(sfeResolvePath(item, fPath) || '').trim();
+                  if (
+                    Array.isArray(patterns) &&
+                    patterns.some((p) => {
+                      try { return new RegExp(p, 'i').test(val); } catch (_) { return false; }
+                    })
+                  ) {
+                    hit = true;
+                    break;
+                  }
+                }
+              }
+              if (!hit && Array.isArray(cat.textPatterns)) {
+                hit = cat.textPatterns.some((p) => {
+                  try { return new RegExp(p, 'i').test(hay); } catch (_) { return false; }
+                });
+              }
+              if (hit) {
+                matchedKeys.push(cat.key);
+                const tagObj = {
+                  key: cat.key,
+                  tag: cat.tag || cat.key.toUpperCase(),
+                  tone: cat.tone || 'neutral',
+                  showInRollup: cat.showInRollup !== false
+                };
+                matchedTags.push(tagObj);
+                if (!primaryTag) primaryTag = tagObj;
+              }
+            }
+            item.matchedKeys = matchedKeys;
+            item.matchedTags = matchedTags;
+            item.primaryTag = primaryTag || defaultTag;
+          }
+          if (step.id) ctx[step.id] = arr;
+          continue;
         }
-        child.tags = categoriesCfg
-          .filter((c) => c && childCatSet.has(c.key) && c.tag && c.key !== 'premium')
-          .map((c) => ({ tag: c.tag, tone: c.tone || 'neutral' }));
+
+        if (step.type === 'filter') {
+          const src = sfeResolvePath(ctx, step.from);
+          const arr = Array.isArray(src) ? src : [];
+          let filtered = step.where
+            ? arr.filter((item) => sfeEvalCondition(step.where, Object.assign({}, ctx, { item })))
+            : arr.slice();
+          if (!filtered.length && step.fallbackToAll) {
+            filtered = arr.slice();
+          }
+          ctx[step.id] = filtered;
+          continue;
+        }
+
+        if (step.type === 'dedupe') {
+          const src = sfeResolvePath(ctx, step.from);
+          const arr = Array.isArray(src) ? src : [];
+          const fields = Array.isArray(step.by) ? step.by : ['id'];
+          const seen = new Set();
+          const out = [];
+          for (const item of arr) {
+            const key = fields.map((f) => String(sfeResolvePath(item, f) ?? '')).join('|');
+            if (!seen.has(key)) {
+              seen.add(key);
+              out.push(item);
+            }
+          }
+          ctx[step.id] = out;
+          continue;
+        }
+
+        if (step.type === 'rollup') {
+          const parents = sfeResolvePath(ctx, step.from);
+          const arr = Array.isArray(parents) ? parents : [];
+          const soonDays = typeof step.soonDays === 'number' ? step.soonDays : 30;
+          const joinCfg = step.joinTags || null;
+          const cats = (joinCfg && joinCfg.classifyStep && categoryRegistry.get(joinCfg.classifyStep)) || null;
+
+          for (const parent of arr) {
+            const rawChildren = Array.isArray(parent[step.childrenField]) ? parent[step.childrenField] : [];
+            const active = rawChildren.filter((c) => c.dateBucket === 'ACTIVE');
+            const upcoming = rawChildren.filter((c) => c.dateBucket === 'UPCOMING');
+            const expired = rawChildren.filter((c) => c.dateBucket === 'EXPIRED');
+
+            let status = 'NONE';
+            let chosen = [];
+            if (active.length) {
+              status = 'ACTIVE';
+              active.sort((a, b) => (b.endDate || '').localeCompare(a.endDate || ''));
+              chosen = active;
+            } else if (upcoming.length) {
+              status = 'UPCOMING';
+              upcoming.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+              chosen = upcoming;
+            } else if (expired.length) {
+              status = 'EXPIRED';
+              expired.sort((a, b) => (b.endDate || '').localeCompare(a.endDate || ''));
+              chosen = expired;
+            }
+
+            const primary = chosen[0] || null;
+            const endDates = chosen.map((c) => c.endDate).filter(Boolean).sort();
+            const resolvedEnd = status === 'UPCOMING' ? (primary ? primary.endDate : null) : endDates[endDates.length - 1] || null;
+            const resolvedStart = primary ? primary.startDate : null;
+            const daysRemaining = resolvedEnd ? diffModDaysIso(resolvedEnd, today) : null;
+            const isExpiringSoon = status === 'ACTIVE' && typeof daysRemaining === 'number' && daysRemaining >= 0 && daysRemaining <= soonDays;
+
+            parent.status = status;
+            parent.startDate = resolvedStart;
+            parent.endDate = resolvedEnd;
+            parent.daysRemaining = daysRemaining;
+            parent.isExpiringSoon = isExpiringSoon;
+
+            if (step.collect && typeof step.collect === 'object') {
+              for (const [outKey, childField] of Object.entries(step.collect)) {
+                parent[outKey] = Array.from(
+                  new Set(chosen.map((c) => sfeResolvePath(c, childField)).filter(Boolean))
+                );
+              }
+            }
+
+            if (joinCfg) {
+              const mapObj = sfeResolvePath(ctx, joinCfg.fromMap) || {};
+              const ids = Array.isArray(parent[joinCfg.idListField]) ? parent[joinCfg.idListField] : [];
+              const tagKeys = new Set();
+              const tagMap = new Map();
+              for (const jid of ids) {
+                const linked = mapObj[jid];
+                if (!linked) continue;
+                let linkedItems = Array.isArray(linked[joinCfg.itemsField]) ? linked[joinCfg.itemsField] : [];
+                if (joinCfg.itemWhere && (!joinCfg.applyItemWhereWhen || sfeEvalCondition(joinCfg.applyItemWhereWhen, ctx))) {
+                  const filtered = linkedItems.filter((item) =>
+                    sfeEvalCondition(joinCfg.itemWhere, Object.assign({}, ctx, { item }))
+                  );
+                  if (filtered.length) linkedItems = filtered;
+                }
+                for (const li of linkedItems) {
+                  for (const t of li.matchedTags || []) {
+                    if (t && t.showInRollup !== false && !tagKeys.has(t.key)) {
+                      tagKeys.add(t.key);
+                      tagMap.set(t.key, { tag: t.tag, tone: t.tone || 'neutral' });
+                    }
+                  }
+                }
+              }
+              if (cats) {
+                parent.tags = cats
+                  .filter((c) => c && c.showInRollup !== false && tagKeys.has(c.key) && c.tag)
+                  .map((c) => ({ tag: c.tag, tone: c.tone || 'neutral' }));
+              } else {
+                parent.tags = Array.from(tagMap.values());
+              }
+            }
+
+            if (Array.isArray(step.statusBadgeCases)) {
+              const itemScope = Object.assign({}, ctx, { item: parent });
+              let chosenBadge = null;
+              for (const c of step.statusBadgeCases) {
+                if (c && (!c.when || sfeEvalCondition(c.when, itemScope))) {
+                  chosenBadge = sfeInterpolateDeep(c.value, itemScope);
+                  break;
+                }
+              }
+              parent.statusBadge = chosenBadge || { text: status, tone: 'neutral' };
+            }
+          }
+          if (step.id) ctx[step.id] = arr;
+          continue;
+        }
+
+        if (step.type === 'sort') {
+          const src = sfeResolvePath(ctx, step.from);
+          if (Array.isArray(src)) {
+            ctx[step.id || step.from] = sfeSortArray(src, step.by || step.sort, ctx);
+          }
+          continue;
+        }
+
+        if (step.type === 'compute') {
+          const out = {};
+          ctx[step.id] = out;
+          if (step.fields && typeof step.fields === 'object') {
+            for (const [k, spec] of Object.entries(step.fields)) {
+              out[k] = sfeEvalComputeOp(spec, ctx, out);
+            }
+          }
+          continue;
+        }
       }
 
-      const presentKeysSet = new Set();
-      for (const it of relevantItems) {
-        for (const k of it.matchedKeys || []) presentKeysSet.add(k);
-      }
-
-      const activeChildCount = rawChildren.filter((c) => c.status === 'ACTIVE').length;
-      const upcomingChildCount = rawChildren.filter((c) => c.status === 'UPCOMING').length;
-      const expiredChildCount = rawChildren.filter((c) => c.status === 'EXPIRED').length;
-      const noneChildCount = rawChildren.filter((c) => c.status === 'NONE').length;
-      const uncoveredChildCount = rawChildren.length - activeChildCount;
-
-      const hasExpectedCount = typeof expectedCount === 'number' && expectedCount > 0;
-      const isMixedPartial =
-        primaryBucket === 'ACTIVE' &&
-        uncoveredChildCount > 0 &&
-        (hasExpectedCount ? activeChildCount < expectedCount : true);
-      const hasStaleChildren =
-        primaryBucket === 'ACTIVE' &&
-        hasExpectedCount &&
-        activeChildCount >= expectedCount &&
-        uncoveredChildCount > 0;
-
-      const activeChildDates = rawChildren
-        .filter((c) => c.status === 'ACTIVE' && c.endDate)
-        .map((c) => c.endDate)
-        .sort();
-      const earliestChildEndDate = activeChildDates[0] || null;
-      const latestChildEndDate = activeChildDates[activeChildDates.length - 1] || null;
-      const hasMismatchedDates = Boolean(
-        earliestChildEndDate && latestChildEndDate && earliestChildEndDate !== latestChildEndDate
-      );
-
-      const endDates = [
-        ...chosenEnts.map((e) => e.endDate),
-        ...relevantItems.map((i) => i.endDate),
-        ...Array.from(scDataMap.values()).map((sc) => sc.endDate)
-      ].filter(Boolean).sort();
-      const earliestEndDate = endDates[0] || null;
-      const latestEndDate = endDates[endDates.length - 1] || null;
-      const effectiveEndDate = latestEndDate || earliestEndDate;
-      const daysRefDate = (primaryBucket === 'ACTIVE' && earliestChildEndDate) || effectiveEndDate;
-      const daysRemaining = daysRefDate ? diffModDaysIso(daysRefDate, today) : null;
-      const beforeExpiry = primaryBucket === 'ACTIVE' && Boolean(effectiveEndDate && effectiveEndDate >= today);
-
-      let nextRenewal = null;
-      if (primaryBucket === 'ACTIVE' && upcomingEnts.length && upcomingScIds.length) {
-        upcomingEnts.sort((a, b) => (b.endDate || '').localeCompare(a.endDate || ''));
-        nextRenewal = {
-          startDate: upcomingEnts[0].startDate,
-          endDate: upcomingEnts[0].endDate,
-          contractName: upcomingEnts[0].contractName
-        };
-      }
-
-      const firstEnt = chosenEnts[0] || {};
-      const contracts = Array.from(scDataMap.values()).map((sc) => ({
-        id: sc.id,
-        name: sc.name,
-        status: sc.status,
-        startDate: sc.startDate,
-        endDate: sc.endDate
-      }));
-
-      return {
-        targetId,
-        targetName,
-        expectedCount,
-        childCount: childRecs.length,
-        activeChildCount,
-        upcomingChildCount,
-        expiredChildCount,
-        noneChildCount,
-        uncoveredChildCount,
-        isMixedPartial,
-        hasStaleChildren,
-        hasMismatchedDates,
-        earliestChildEndDate,
-        latestChildEndDate,
-        children: sortModChildSummaries(rawChildren, isMixedPartial),
-        status: primaryBucket,
-        beforeExpiry,
-        effectiveEndDate,
-        earliestEndDate,
-        daysRemaining,
-        coverage: evaluateModCoverage(presentKeysSet, mod),
-        tierSummary: Array.from(new Set(firstEnt.tiers || [])).join(' · '),
-        contracts,
-        nextRenewal,
-        items: relevantItems,
-        cachedAt: Date.now()
-      };
+      ctx._meta.cachedAt = Date.now();
+      return ctx;
     }
 
+    // -------------------------------------------------------------------------
+    // Cache & Concurrency Queue
+    // -------------------------------------------------------------------------
     function getModTargetCache(modId) {
       if (!modTargetCaches.has(modId)) {
         const map = new Map();
         try {
-          const raw = sessionStorage.getItem(`sfe_mod_cache_v1_${modId}`);
+          const raw = sessionStorage.getItem(`sfe_plugin_cache_${SFE_CACHE_VERSION}_${modId}`);
           if (raw) {
             const parsed = JSON.parse(raw);
             const now = Date.now();
             for (const [k, v] of Object.entries(parsed)) {
-              if (v && typeof v.cachedAt === 'number' && now - v.cachedAt < MOD_CACHE_TTL_MS && Array.isArray(v.children)) {
+              if (v && v._meta && typeof v._meta.cachedAt === 'number' && now - v._meta.cachedAt < MOD_CACHE_TTL_MS) {
                 map.set(k, v);
               }
             }
@@ -10346,31 +10831,31 @@
         const now = Date.now();
         const obj = {};
         for (const [k, v] of map.entries()) {
-          if (v && now - v.cachedAt < MOD_CACHE_TTL_MS) obj[k] = v;
+          if (v && v._meta && now - v._meta.cachedAt < MOD_CACHE_TTL_MS) obj[k] = v;
         }
-        sessionStorage.setItem(`sfe_mod_cache_v1_${modId}`, JSON.stringify(obj));
+        sessionStorage.setItem(`sfe_plugin_cache_${SFE_CACHE_VERSION}_${modId}`, JSON.stringify(obj));
       } catch (_) {}
     }
 
     function getCachedModTarget(modId, targetId) {
       const map = getModTargetCache(modId);
       const entry = map.get(targetId);
-      if (!entry) return null;
-      if (Date.now() - entry.cachedAt >= MOD_CACHE_TTL_MS) {
+      if (!entry || !entry._meta) return null;
+      if (Date.now() - entry._meta.cachedAt >= MOD_CACHE_TTL_MS) {
         map.delete(targetId);
         return null;
       }
       return entry;
     }
 
-    function fetchModTargetData(mod, targetId) {
-      const cached = getCachedModTarget(mod.id, targetId);
+    function fetchModTargetData(plugin, targetId) {
+      const cached = getCachedModTarget(plugin.id, targetId);
       if (cached) return Promise.resolve(cached);
-      const key = `${mod.id}:${targetId}`;
+      const key = `${plugin.id}:${targetId}`;
       if (modInFlight.has(key)) return modInFlight.get(key);
 
       const p = new Promise((resolve, reject) => {
-        modPendingQueue.push({ mod, targetId, key, resolve, reject });
+        modPendingQueue.push({ plugin, targetId, key, resolve, reject });
         drainModQueue();
       });
       modInFlight.set(key, p);
@@ -10380,17 +10865,17 @@
     function drainModQueue() {
       while (modActiveFetches < MOD_MAX_CONCURRENT && modPendingQueue.length > 0) {
         const job = modPendingQueue.shift();
-        const cached = getCachedModTarget(job.mod.id, job.targetId);
+        const cached = getCachedModTarget(job.plugin.id, job.targetId);
         if (cached) {
           modInFlight.delete(job.key);
           job.resolve(cached);
           continue;
         }
         modActiveFetches++;
-        executeModPipelineUncached(job.mod, job.targetId)
+        executePluginPipelineUncached(job.plugin, job.targetId)
           .then((data) => {
-            getModTargetCache(job.mod.id).set(job.targetId, data);
-            saveModTargetCache(job.mod.id);
+            getModTargetCache(job.plugin.id).set(job.targetId, data);
+            saveModTargetCache(job.plugin.id);
             modErrorMap.delete(job.key);
             job.resolve(data);
             scheduleModDomScan(30);
@@ -10408,7 +10893,9 @@
       }
     }
 
-    // SLDS-native tone palette
+    // -------------------------------------------------------------------------
+    // Declarative SLDS View Renderer
+    // -------------------------------------------------------------------------
     function getSldsToneColors(tone) {
       switch (tone) {
         case 'success':
@@ -10430,68 +10917,6 @@
       }
     }
 
-    function getModStatusBadgeInfo(mod, data) {
-      const soonDays = (mod.classification && mod.classification.expiringSoonDays) || 30;
-      const childCfg = (mod.pipeline && mod.pipeline.childRecords) || {};
-      if (data.status === 'ACTIVE') {
-        if (data.beforeExpiry) {
-          const soon = typeof data.daysRemaining === 'number' && data.daysRemaining <= soonDays;
-          const daysLabel =
-            typeof data.daysRemaining === 'number'
-              ? data.daysRemaining === 0
-                ? 'expires today'
-                : `${data.daysRemaining}d left`
-              : '';
-          if (data.isMixedPartial) {
-            const denom = data.expectedCount || data.childCount;
-            const unit = data.expectedCount
-              ? childCfg.expectedCountLabel || 'Nodes'
-              : childCfg.labelPlural || 'Assets';
-            const ratio = `${data.activeChildCount}/${denom} ${unit} Active`;
-            const dateSuffix = data.hasMismatchedDates
-              ? ` · ${data.earliestChildEndDate}–${data.latestChildEndDate}`
-              : data.effectiveEndDate
-              ? ` · Ends ${data.effectiveEndDate}`
-              : '';
-            return Object.assign(getSldsToneColors('orange'), {
-              text: `Mixed / Partial · ${ratio}${dateSuffix}`
-            });
-          }
-          const stateLabel = soon ? 'Expiring Soon' : 'Active';
-          const dateSuffix = data.hasMismatchedDates
-            ? `${data.earliestChildEndDate}–${data.latestChildEndDate}`
-            : `Ends ${data.effectiveEndDate}`;
-          return Object.assign(getSldsToneColors(soon ? 'warning' : 'success'), {
-            text: `${stateLabel}${daysLabel ? ` · ${daysLabel}` : ''} · ${dateSuffix}`
-          });
-        }
-        return Object.assign(getSldsToneColors('error'), {
-          text: `Expired${data.effectiveEndDate ? ` · Ended ${data.effectiveEndDate}` : ''}`
-        });
-      }
-      if (data.status === 'UPCOMING') {
-        return Object.assign(getSldsToneColors('info'), {
-          text: `Upcoming Renewal · Ends ${data.effectiveEndDate || '?'}`
-        });
-      }
-      if (data.status === 'EXPIRED') {
-        return Object.assign(getSldsToneColors('error'), {
-          text: `Expired${data.effectiveEndDate ? ` · Ended ${data.effectiveEndDate}` : ''}`
-        });
-      }
-      if (data.status === 'NO_CHILDREN') {
-        return Object.assign(getSldsToneColors('neutral'), {
-          text: `No ${childCfg.labelPlural || 'Records'}`
-        });
-      }
-      if (data.status === 'NO_ENTITLEMENTS') {
-        return Object.assign(getSldsToneColors('error'), {
-          text: 'No Entitlements'
-        });
-      }
-      return Object.assign(getSldsToneColors('neutral'), { text: 'Unknown Status' });
-    }
-
     function escapeModHtml(str) {
       return String(str == null ? '' : str)
         .replace(/&/g, '&amp;')
@@ -10500,100 +10925,129 @@
         .replace(/"/g, '&quot;');
     }
 
-    function renderModChildrenToggleAndDrawer(mod, data, mode, scopeKey) {
-      const children = Array.isArray(data.children) ? data.children : [];
-      const childCfg = (mod.pipeline && mod.pipeline.childRecords) || {};
-      const plural = childCfg.labelPlural || 'Assets';
-      const expLabel = childCfg.expectedCountLabel || 'Nodes';
-      const soonDays = (mod.classification && mod.classification.expiringSoonDays) || 30;
-      const total = children.length || data.childCount || 0;
-      const active = data.activeChildCount || 0;
-      const expired = data.expiredChildCount || 0;
-      const none = data.noneChildCount || 0;
-      const upcoming = data.upcomingChildCount || 0;
+    function sfeBadgeStyle(tone) {
+      const c = getSldsToneColors(tone);
+      return `display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:15rem; font-size:0.75rem; font-weight:700; line-height:1.25; background:${c.bg}; color:${c.fg}; border:1px solid ${c.border};`;
+    }
 
-      const parts = [`${active}/${total} ${plural} Active`];
-      if (data.expectedCount) parts.push(`${data.expectedCount} ${expLabel}`);
-      const exceptions = [];
-      if (expired > 0) exceptions.push(`${expired} expired`);
-      if (none > 0) exceptions.push(`${none} no ent.`);
-      if (upcoming > 0) exceptions.push(`${upcoming} upcoming`);
-      if (exceptions.length) parts.push(exceptions.join(', '));
+    function sfeSmallTagHtml(tagText, tone) {
+      const tc = getSldsToneColors(tone);
+      return `<span style="flex:0 0 auto; font-size:10px; font-weight:700; padding:0 5px; border-radius:0.125rem; background:${tc.bg}; color:${tc.fg}; border:1px solid ${tc.border};">${escapeModHtml(
+        tagText
+      )}</span>`;
+    }
 
-      const label = parts.join(' · ');
-      const expanded = modExpandedScopes.has(scopeKey);
+    function sfeResolveTone(spec, scope, fallback = 'neutral') {
+      if (!spec) return fallback;
+      if (spec.tonePath) {
+        const dyn = sfeResolvePath(scope, spec.tonePath);
+        if (dyn) return String(dyn);
+      }
+      return spec.tone || fallback;
+    }
+
+    function sfeBuildDrawerParts(block, scope, mode, scopeKey) {
+      const rawItems = sfeResolvePath(scope, block.itemsPath);
+      const items = Array.isArray(rawItems) ? rawItems : [];
+      const drawerScopeKey = `${scopeKey}:${block.id || 'drawer'}`;
+      const expanded = modExpandedScopes.has(drawerScopeKey);
       const chevron = expanded ? '▾' : '▸';
 
-      const btnColors = data.isMixedPartial
-        ? getSldsToneColors('orange')
-        : data.hasStaleChildren && expired > 0
-        ? getSldsToneColors('warning')
+      const toggleLabel = sfeInterpolate(
+        block.toggleLabel || `${items.length} Items`,
+        Object.assign({}, scope, { _count: items.length })
+      );
+      const toggleTone = sfeResolveTone(block, scope, '');
+      const btnColors = toggleTone
+        ? getSldsToneColors(toggleTone)
         : {
             bg: 'var(--lwc-buttonColorBackgroundPrimary, var(--lwc-colorBackgroundAlt, #ffffff))',
             fg: 'var(--lwc-colorTextLink, #0176d3)',
             border: 'var(--lwc-buttonColorBorderPrimary, var(--lwc-colorBorder, #dddbda))'
           };
+      const isEmphasized = toggleTone === 'orange' || toggleTone === 'error' || toggleTone === 'warning';
 
-      const toggleHtml = `
-        <button type="button" class="sfe-mod-nodes-toggle" data-sfe-scope="${escapeModHtml(
-          scopeKey
-        )}" aria-expanded="${expanded ? 'true' : 'false'}" style="display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:var(--lwc-borderRadiusMedium, 0.25rem); font-family:var(--lwc-fontFamily, inherit); font-size:0.75rem; font-weight:${
-        data.isMixedPartial ? '600' : '400'
-      }; line-height:1.35; cursor:pointer; background:${btnColors.bg}; color:${btnColors.fg}; border:1px solid ${
-        btnColors.border
-      }; text-align:left;">
-          <span class="sfe-mod-chevron" style="font-size:10px;">${chevron}</span>
-          <span>${escapeModHtml(label)}</span>
-        </button>
-      `;
+      const toggleHtml = items.length > 0
+        ? `<button type="button" class="sfe-mod-nodes-toggle" data-sfe-scope="${escapeModHtml(
+            drawerScopeKey
+          )}" aria-expanded="${expanded ? 'true' : 'false'}" style="display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:var(--lwc-borderRadiusMedium, 0.25rem); font-family:var(--lwc-fontFamily, inherit); font-size:0.75rem; font-weight:${
+            isEmphasized ? '600' : '400'
+          }; line-height:1.35; cursor:pointer; background:${btnColors.bg}; color:${btnColors.fg}; border:1px solid ${
+            btnColors.border
+          }; text-align:left;">
+            <span class="sfe-mod-chevron" style="font-size:10px;">${chevron}</span>
+            <span>${escapeModHtml(toggleLabel)}</span>
+          </button>`
+        : `<span style="font-size:0.75rem; color:var(--lwc-colorTextWeak, #706e6b);">${escapeModHtml(
+            sfeInterpolate(block.emptyText || '0 Records', scope)
+          )}</span>`;
 
-      const childObjName = childCfg.objectApiName || 'Asset';
-      const rowsHtml = children
-        .map((child) => {
-          let badge;
-          if (child.status === 'ACTIVE') {
-            const dLeft = child.endDate ? diffModDaysIso(child.endDate, getModLocalTodayIso()) : null;
-            const soon = typeof dLeft === 'number' && dLeft <= soonDays;
-            badge = Object.assign(getSldsToneColors(soon ? 'warning' : 'success'), {
-              text: soon ? 'Expiring Soon' : 'Active'
-            });
-          } else if (child.status === 'UPCOMING') {
-            badge = Object.assign(getSldsToneColors('info'), { text: 'Upcoming' });
-          } else if (child.status === 'EXPIRED') {
-            badge = Object.assign(getSldsToneColors('error'), { text: 'Expired' });
-          } else {
-            badge = Object.assign(getSldsToneColors('neutral'), { text: 'No Entitlement' });
+      const itemCfg = block.item || {};
+      const rowsHtml = items
+        .map((item) => {
+          const itemScope = Object.assign({}, scope, { item });
+          const title = sfeInterpolate(itemCfg.title || '{{item.Name}}', itemScope);
+          const recId = itemCfg.recordIdPath ? sfeResolvePath(itemScope, itemCfg.recordIdPath) : item.id;
+          const objName = itemCfg.objectApiName || '';
+          const href = recId ? (objName ? `/lightning/r/${objName}/${recId}/view` : `/lightning/r/${recId}/view`) : '';
+
+          const titleEl = href
+            ? `<a class="sfe-mod-record-link" data-record-id="${escapeModHtml(recId)}" href="${escapeModHtml(
+                href
+              )}" style="color:var(--lwc-colorTextLink, #0176d3); text-decoration:none; font-size:0.75rem; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeModHtml(
+                title
+              )}">${escapeModHtml(title)}</a>`
+            : `<span style="font-size:0.75rem; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeModHtml(
+                title
+              )}</span>`;
+
+          let badgeHtml = '';
+          if (itemCfg.badge && (!itemCfg.badge.when || sfeEvalCondition(itemCfg.badge.when, itemScope))) {
+            const bText = itemCfg.badge.textPath
+              ? String(sfeResolvePath(itemScope, itemCfg.badge.textPath) || '')
+              : sfeInterpolate(itemCfg.badge.text || '', itemScope);
+            if (bText) {
+              const bc = getSldsToneColors(sfeResolveTone(itemCfg.badge, itemScope, 'neutral'));
+              badgeHtml = `<span style="flex:0 0 auto; font-size:10px; font-weight:700; padding:1px 6px; border-radius:15rem; background:${bc.bg}; color:${bc.fg}; border:1px solid ${bc.border}; white-space:nowrap;">${escapeModHtml(
+                bText
+              )}</span>`;
+            }
           }
 
-          const tagsHtml = (child.tags || [])
-            .map((t) => {
-              const tc = getSldsToneColors(t.tone);
-              return `<span style="font-size:9px; font-weight:700; padding:0 4px; border-radius:0.125rem; background:${tc.bg}; color:${tc.fg}; border:1px solid ${tc.border};">${escapeModHtml(t.tag)}</span>`;
-            })
-            .join('');
+          let tagsHtml = '';
+          if (itemCfg.tagsPath) {
+            const tags = sfeResolvePath(itemScope, itemCfg.tagsPath);
+            if (Array.isArray(tags) && tags.length) {
+              tagsHtml = tags
+                .map((t) => {
+                  const tc = getSldsToneColors((t && t.tone) || 'neutral');
+                  return `<span style="font-size:9px; font-weight:700; padding:0 4px; border-radius:0.125rem; background:${tc.bg}; color:${tc.fg}; border:1px solid ${tc.border};">${escapeModHtml(
+                    (t && t.tag) || ''
+                  )}</span>`;
+                })
+                .join('');
+            }
+          }
 
           const metaBits = [];
-          if (child.code) metaBits.push(child.code);
-          if (child.serialNumber && child.serialNumber !== child.name) metaBits.push(`S/N ${child.serialNumber}`);
-          if (child.status === 'ACTIVE' && child.endDate) metaBits.push(`ends ${child.endDate}`);
-          else if (child.status === 'UPCOMING' && child.startDate) metaBits.push(`starts ${child.startDate}`);
-          else if (child.status === 'EXPIRED' && child.endDate) metaBits.push(`ended ${child.endDate}`);
-          if (child.contractNames && child.contractNames.length) metaBits.push(child.contractNames.join(', '));
+          if (Array.isArray(itemCfg.meta)) {
+            for (const m of itemCfg.meta) {
+              if (!m) continue;
+              if (typeof m === 'string') {
+                const txt = sfeInterpolate(m, itemScope).trim();
+                if (txt) metaBits.push(txt);
+              } else if (!m.when || sfeEvalCondition(m.when, itemScope)) {
+                const txt = sfeInterpolate(m.text || '', itemScope).trim();
+                if (txt) metaBits.push(txt);
+              }
+            }
+          }
 
-          const childUrl = `/lightning/r/${childObjName}/${child.id}/view`;
           return `
             <div style="padding:6px 8px; border-radius:var(--lwc-borderRadiusMedium, 0.25rem); background:var(--lwc-cardColorBackground, var(--lwc-colorBackgroundAlt, #ffffff)); border:1px solid var(--lwc-colorBorder, #dddbda); display:flex; flex-direction:column; gap:2px;">
               <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
-                <a class="sfe-mod-record-link" data-record-id="${escapeModHtml(child.id)}" href="${escapeModHtml(
-            childUrl
-          )}" style="color:var(--lwc-colorTextLink, #0176d3); text-decoration:none; font-size:0.75rem; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeModHtml(
-            child.name
-          )}">${escapeModHtml(child.name)}</a>
-                <span style="flex:0 0 auto; font-size:10px; font-weight:700; padding:1px 6px; border-radius:15rem; background:${
-                  badge.bg
-                }; color:${badge.fg}; border:1px solid ${badge.border}; white-space:nowrap;">${escapeModHtml(
-            badge.text
-          )}</span>
+                ${titleEl}
+                ${badgeHtml}
               </div>
               ${
                 tagsHtml || metaBits.length
@@ -10612,209 +11066,340 @@
           ? 'display:grid; grid-template-columns:repeat(auto-fill, minmax(245px, 1fr)); gap:6px;'
           : 'display:flex; flex-direction:column; gap:5px;';
 
-      const drawerHtml = children.length
-        ? `<div class="sfe-mod-nodes-drawer" data-sfe-scope="${escapeModHtml(scopeKey)}" style="display:${
+      const drawerHtml = items.length
+        ? `<div class="sfe-mod-nodes-drawer" data-sfe-scope="${escapeModHtml(drawerScopeKey)}" style="display:${
             expanded ? 'block' : 'none'
           }; margin-top:8px; padding:8px; border-radius:var(--lwc-borderRadiusMedium, 0.25rem); border:1px solid var(--lwc-colorBorder, #dddbda); background:var(--lwc-colorBackground, #f3f2f2);">
             <div style="${gridLayout}">${rowsHtml}</div>
           </div>`
         : '';
 
-      return { toggleHtml, drawerHtml };
+      return { toggleHtml, drawerHtml, drawerScopeKey };
     }
 
-    function renderModContentHtml(mod, targetId, data, error, mode, scopeKey) {
+    function renderSfeViewBlocks(plugin, targetId, data, error, mode, scopeKey) {
+      const viewCfg = plugin.view || {};
       if (error) {
-        return `<div style="font-size:0.75rem; color:var(--lwc-colorTextError, #ea001e); font-weight:600;">Support lookup failed: ${escapeModHtml(
-          error.message || String(error)
-        )}</div>`;
+        const prefix = viewCfg.errorPrefix || 'Plugin lookup failed:';
+        return `<div style="font-size:0.75rem; color:var(--lwc-colorTextError, #ea001e); font-weight:600;">${escapeModHtml(
+          prefix
+        )} ${escapeModHtml(error.message || String(error))}</div>`;
       }
       if (!data) {
-        return `<div style="font-size:0.75rem; color:var(--lwc-colorTextWeak, #706e6b);">Loading support &amp; entitlements…</div>`;
+        if (mode === 'banner') return '';
+        const loadingText = viewCfg.loadingText || `Loading ${plugin.target?.headerTitle || plugin.name}…`;
+        return `<div style="font-size:0.75rem; color:var(--lwc-colorTextWeak, #706e6b);">${escapeModHtml(loadingText)}</div>`;
       }
 
-      const exp = getModStatusBadgeInfo(mod, data);
-      const covTone = data.isMixedPartial ? 'warning' : (data.coverage && data.coverage.tone) || 'neutral';
-      const covColors = getSldsToneColors(covTone);
-      const covIcon = data.isMixedPartial ? '⚠' : (data.coverage && data.coverage.icon) || '•';
-      const covLabel = (data.coverage && data.coverage.label) || 'Unknown Coverage';
+      const blocks =
+        mode === 'banner'
+          ? viewCfg.banner
+          : mode === 'highlights'
+          ? viewCfg.highlights || viewCfg.hover
+          : mode === 'rightPane'
+          ? viewCfg.rightPane || viewCfg.hover
+          : viewCfg.hover;
 
-      const seenItems = new Set();
-      const uniqueItems = [];
-      for (const item of data.items || []) {
-        const k = `${item.code}|${item.name}|${item.startDate}|${item.endDate}`;
-        if (!seenItems.has(k)) {
-          seenItems.add(k);
-          uniqueItems.push(item);
+      if (!Array.isArray(blocks) || !blocks.length) return '';
+
+      const pageRecMatch = (location.pathname || '').match(/\/lightning\/r\/(?:[^/]+\/)?([a-zA-Z0-9]{15,18})(?:\/|$|\?)/i);
+      const pageRecId = pageRecMatch ? pageRecMatch[1] : null;
+      const isDifferentRecordPage = !!(
+        pageRecId && extractModRecordIdByPrefix(pageRecId, plugin.target.keyPrefix) !== targetId
+      );
+
+      const scope = Object.assign({}, data, {
+        $mode: mode,
+        $isDifferentRecordPage: isDifferentRecordPage,
+        $targetName: (data._meta && data._meta.targetName) || targetId,
+        $headerTitle: plugin.target?.headerTitle || plugin.target?.objectApiName || plugin.name
+      });
+
+      // Pre-build named drawers so fieldGrid or metaRow blocks can embed their toggle buttons cleanly
+      const drawerRegistry = new Map();
+      for (const b of blocks) {
+        if (b && b.type === 'drawer' && b.id && (!b.when || sfeEvalCondition(b.when, scope))) {
+          drawerRegistry.set(b.id, sfeBuildDrawerParts(b, scope, mode, scopeKey));
         }
       }
 
-      const contractNames = (data.contracts || [])
-        .map((c) => c.name)
-        .filter(Boolean)
-        .join(', ');
-      const { toggleHtml, drawerHtml } = renderModChildrenToggleAndDrawer(mod, data, mode, scopeKey);
+      const labelStyle = 'font-size:0.75rem; line-height:1.25; color:var(--lwc-colorTextLabel, #444444); font-weight:400;';
+      const renderedBlocks = [];
 
-      const sldsBadgeStyle = (c) =>
-        `display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:15rem; font-size:0.75rem; font-weight:700; line-height:1.25; background:${c.bg}; color:${c.fg}; border:1px solid ${c.border};`;
+      for (let bi = 0; bi < blocks.length; bi++) {
+        const block = blocks[bi];
+        if (!block || !block.type) continue;
+        if (block.when && !sfeEvalCondition(block.when, scope)) continue;
 
-      if (mode === 'hover') {
-        const itemRowsHtml = uniqueItems
-          .map((item) => {
-            const pTag = item.primaryTag || { tag: 'SUP', tone: 'neutral' };
-            const tc = getSldsToneColors(pTag.tone);
-            const dates = item.endDate ? `ends ${item.endDate}` : '';
+        const topDivider = block.dividerTop
+          ? 'margin-top:6px; padding-top:6px; border-top:1px solid var(--lwc-colorBorder, #dddbda);'
+          : bi > 0
+          ? 'margin-top:6px;'
+          : '';
+
+        if (block.type === 'badgeRow') {
+          const badges = (Array.isArray(block.badges) ? block.badges : [])
+            .filter((b) => b && (!b.when || sfeEvalCondition(b.when, scope)))
+            .map((b) => {
+              const icon = b.iconPath ? String(sfeResolvePath(scope, b.iconPath) || '') : sfeInterpolate(b.icon || '', scope);
+              const text = b.textPath ? String(sfeResolvePath(scope, b.textPath) || '') : sfeInterpolate(b.text || '', scope);
+              const full = [icon, text].filter(Boolean).join(' ').trim();
+              if (!full) return '';
+              const tone = sfeResolveTone(b, scope, 'neutral');
+              return `<span style="${sfeBadgeStyle(tone)}">${escapeModHtml(full)}</span>`;
+            })
+            .filter(Boolean);
+          if (badges.length) {
+            renderedBlocks.push(`<div style="${topDivider} display:flex; flex-wrap:wrap; align-items:center; gap:6px;">${badges.join('')}</div>`);
+          }
+          continue;
+        }
+
+        if (block.type === 'fieldGrid') {
+          const items = Array.isArray(block.items) ? block.items : [];
+          const cols = [];
+          for (const item of items) {
+            if (!item || (item.when && !sfeEvalCondition(item.when, scope))) continue;
+            const label = sfeInterpolate(item.label || '', scope);
+            let valueHtml = '';
+
+            if (item.drawerToggle && drawerRegistry.has(item.drawerToggle)) {
+              valueHtml = `<div>${drawerRegistry.get(item.drawerToggle).toggleHtml}</div>`;
+            } else if (item.badge) {
+              const icon = item.badge.iconPath
+                ? String(sfeResolvePath(scope, item.badge.iconPath) || '')
+                : sfeInterpolate(item.badge.icon || '', scope);
+              const text = item.badge.textPath
+                ? String(sfeResolvePath(scope, item.badge.textPath) || '')
+                : sfeInterpolate(item.badge.text || '', scope);
+              const full = [icon, text].filter(Boolean).join(' ').trim();
+              if (full) {
+                valueHtml = `<div><span style="${sfeBadgeStyle(sfeResolveTone(item.badge, scope, 'neutral'))}">${escapeModHtml(
+                  full
+                )}</span></div>`;
+              }
+            } else if (item.link) {
+              const recId = item.link.recordIdPath ? sfeResolvePath(scope, item.link.recordIdPath) : targetId;
+              const objName = item.link.objectApiName || plugin.target?.objectApiName || '';
+              const linkText = sfeInterpolate(item.link.text || '', scope);
+              if (recId && linkText) {
+                const href = objName ? `/lightning/r/${objName}/${recId}/view` : `/lightning/r/${recId}/view`;
+                valueHtml = `<a class="sfe-mod-record-link" data-record-id="${escapeModHtml(recId)}" href="${escapeModHtml(
+                  href
+                )}" style="font-size:0.8125rem; font-weight:700; color:var(--lwc-colorTextLink, #0176d3); text-decoration:none;">${escapeModHtml(
+                  linkText
+                )}</a>`;
+              }
+            } else if (item.inlineItems) {
+              const arr = sfeResolvePath(scope, item.inlineItems.itemsPath);
+              if (Array.isArray(arr) && arr.length) {
+                const max = typeof item.inlineItems.maxItems === 'number' ? item.inlineItems.maxItems : arr.length;
+                const spans = arr.slice(0, max).map((el) => {
+                  const iscope = Object.assign({}, scope, { item: el });
+                  const tagText = item.inlineItems.tag?.textPath
+                    ? String(sfeResolvePath(iscope, item.inlineItems.tag.textPath) || '')
+                    : sfeInterpolate(item.inlineItems.tag?.text || '', iscope);
+                  const tagTone = sfeResolveTone(item.inlineItems.tag, iscope, 'neutral');
+                  const txt = sfeInterpolate(item.inlineItems.text || '', iscope);
+                  const showSuf = !item.inlineItems.suffixWhen || sfeEvalCondition(item.inlineItems.suffixWhen, iscope);
+                  const suffix = showSuf && item.inlineItems.suffix ? sfeInterpolate(item.inlineItems.suffix, iscope) : '';
+                  return `<span style="display:inline-flex; align-items:center; gap:4px; margin-right:8px; font-size:0.8125rem; color:var(--lwc-colorTextDefault, #181818);">${
+                    tagText ? sfeSmallTagHtml(tagText, tagTone) : ''
+                  }<span>${escapeModHtml(txt)}</span>${
+                    suffix ? `<span style="color:var(--lwc-colorTextWeak, #706e6b); font-size:0.75rem;">${escapeModHtml(suffix)}</span>` : ''
+                  }</span>`;
+                });
+                valueHtml = `<div style="display:flex; flex-wrap:wrap; align-items:center;">${spans.join('')}</div>`;
+              }
+            } else {
+              const val = sfeInterpolate(item.value || '', scope).trim();
+              if (val) {
+                const colorStyle =
+                  item.tone === 'link' || item.tone === 'info'
+                    ? 'color:var(--lwc-colorTextLink, #0176d3); font-weight:600;'
+                    : item.tone === 'error'
+                    ? 'color:var(--lwc-colorTextError, #ea001e); font-weight:600;'
+                    : 'color:var(--lwc-colorTextDefault, #181818);';
+                const truncStyle = item.truncate
+                  ? 'white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'
+                  : '';
+                valueHtml = `<span style="font-size:0.8125rem; ${colorStyle} ${truncStyle}" title="${escapeModHtml(
+                  val
+                )}">${escapeModHtml(val)}</span>`;
+              }
+            }
+
+            if (!valueHtml) continue;
+            const maxW = item.maxWidth ? `max-width:${escapeModHtml(item.maxWidth)};` : '';
+            cols.push(
+              `<div style="display:flex; flex-direction:column; gap:2px; ${maxW}">
+                 ${label ? `<span style="${labelStyle}">${escapeModHtml(label)}</span>` : ''}
+                 ${valueHtml}
+               </div>`
+            );
+          }
+
+          if (cols.length) {
+            const gap = mode === 'highlights' ? '0.75rem 1.5rem' : '0.5rem 1rem';
+            renderedBlocks.push(
+              `<div style="${topDivider} display:flex; flex-wrap:wrap; align-items:flex-start; gap:${gap};">${cols.join('')}</div>`
+            );
+          }
+          continue;
+        }
+
+        if (block.type === 'metaRow') {
+          const parts = [];
+          if (block.drawerToggle && drawerRegistry.has(block.drawerToggle)) {
+            parts.push(drawerRegistry.get(block.drawerToggle).toggleHtml);
+          }
+          const showVal = !block.valueWhen || sfeEvalCondition(block.valueWhen, scope);
+          const label = showVal && block.label ? sfeInterpolate(block.label, scope).trim() : '';
+          const value = showVal && block.value ? sfeInterpolate(block.value, scope).trim() : '';
+          if (label && value) {
+            parts.push(
+              `<span>${escapeModHtml(label)} <span style="color:var(--lwc-colorTextDefault, #181818);">${escapeModHtml(value)}</span></span>`
+            );
+          } else if (value) {
+            const toneColor =
+              block.tone === 'link' || block.tone === 'info'
+                ? 'color:var(--lwc-colorTextLink, #0176d3); font-weight:600;'
+                : block.tone === 'error'
+                ? 'color:var(--lwc-colorTextError, #ea001e); font-weight:600;'
+                : '';
+            parts.push(`<span style="${toneColor}">${escapeModHtml(value)}</span>`);
+          }
+          if (parts.length) {
+            renderedBlocks.push(
+              `<div style="${topDivider} display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:0.75rem; color:var(--lwc-colorTextWeak, #706e6b);">${parts.join(
+                ''
+              )}</div>`
+            );
+          }
+          continue;
+        }
+
+        if (block.type === 'drawer') {
+          const built = (block.id && drawerRegistry.get(block.id)) || sfeBuildDrawerParts(block, scope, mode, scopeKey);
+          if (block.hideToggle) {
+            if (built.drawerHtml) renderedBlocks.push(built.drawerHtml);
+          } else {
+            renderedBlocks.push(`<div style="${topDivider}">${built.toggleHtml}${built.drawerHtml}</div>`);
+          }
+          continue;
+        }
+
+        if (block.type === 'list') {
+          const rawItems = sfeResolvePath(scope, block.itemsPath);
+          const items = Array.isArray(rawItems) ? rawItems : [];
+          const maxItems = typeof block.maxItems === 'number' && block.maxItems > 0 ? block.maxItems : items.length;
+          const visible = items.slice(0, maxItems);
+          if (!visible.length && !block.emptyText) continue;
+
+          const titleHtml = block.title
+            ? `<div style="font-size:11px; font-weight:700; color:var(--lwc-colorTextLabel, #444444); margin-bottom:4px;">${escapeModHtml(
+                sfeInterpolate(block.title, scope)
+              )}</div>`
+            : '';
+
+          if (!visible.length) {
+            renderedBlocks.push(
+              `<div style="${topDivider}">${titleHtml}<div style="font-size:0.75rem; color:var(--lwc-colorTextWeak, #706e6b);">${escapeModHtml(
+                sfeInterpolate(block.emptyText, scope)
+              )}</div></div>`
+            );
+            continue;
+          }
+
+          const itemCfg = block.item || {};
+          const rows = visible.map((el) => {
+            const iscope = Object.assign({}, scope, { item: el });
+            let tagHtml = '';
+            if (itemCfg.tag) {
+              const tText = itemCfg.tag.textPath
+                ? String(sfeResolvePath(iscope, itemCfg.tag.textPath) || '')
+                : sfeInterpolate(itemCfg.tag.text || '', iscope);
+              if (tText) tagHtml = sfeSmallTagHtml(tText, sfeResolveTone(itemCfg.tag, iscope, 'neutral'));
+            }
+            const titleText = sfeInterpolate(itemCfg.title || '{{item.Name}}', iscope);
+            const showSuffix = !itemCfg.titleSuffixWhen || sfeEvalCondition(itemCfg.titleSuffixWhen, iscope);
+            const titleMuted = showSuffix && itemCfg.titleSuffix ? sfeInterpolate(itemCfg.titleSuffix, iscope).trim() : '';
+            const recId = itemCfg.recordIdPath ? sfeResolvePath(iscope, itemCfg.recordIdPath) : null;
+            const objName = itemCfg.objectApiName || '';
+            const titleNode = recId
+              ? `<a class="sfe-mod-record-link" data-record-id="${escapeModHtml(recId)}" href="${escapeModHtml(
+                  objName ? `/lightning/r/${objName}/${recId}/view` : `/lightning/r/${recId}/view`
+                )}" style="color:var(--lwc-colorTextLink, #0176d3); text-decoration:none; font-weight:600;">${escapeModHtml(titleText)}</a>`
+              : `<span>${escapeModHtml(titleText)}</span>`;
+            let subtext = '';
+            if (Array.isArray(itemCfg.subtextParts)) {
+              const sParts = [];
+              for (const sp of itemCfg.subtextParts) {
+                if (!sp) continue;
+                if (typeof sp === 'string') {
+                  const t = sfeInterpolate(sp, iscope).trim();
+                  if (t) sParts.push(t);
+                } else if (!sp.when || sfeEvalCondition(sp.when, iscope)) {
+                  const t = sfeInterpolate(sp.text || '', iscope).trim();
+                  if (t) sParts.push(t);
+                }
+              }
+              subtext = sParts.join(' · ');
+            } else if (itemCfg.subtext) {
+              subtext = sfeInterpolate(itemCfg.subtext, iscope).trim();
+            }
+
             return `
               <div style="display:flex; align-items:flex-start; gap:6px; margin-top:5px;">
-                <span style="flex:0 0 auto; font-size:10px; font-weight:700; padding:1px 5px; border-radius:0.125rem; background:${tc.bg}; color:${tc.fg}; border:1px solid ${tc.border}; margin-top:1px;">${escapeModHtml(
-              pTag.tag
-            )}</span>
+                ${tagHtml ? `<div style="margin-top:1px;">${tagHtml}</div>` : ''}
                 <div style="min-width:0; flex:1; font-size:0.75rem; line-height:1.35; color:var(--lwc-colorTextDefault, #181818);">
-                  <div>${escapeModHtml(item.name)}${
-              item.code ? ` <span style="color:var(--lwc-colorTextWeak, #706e6b);">(${escapeModHtml(item.code)})</span>` : ''
+                  <div>${titleNode}${
+              titleMuted ? ` <span style="color:var(--lwc-colorTextWeak, #706e6b);">${escapeModHtml(titleMuted)}</span>` : ''
             }</div>
                   ${
-                    dates
-                      ? `<div style="font-size:11px; color:var(--lwc-colorTextWeak, #706e6b);">${escapeModHtml(dates)}${
-                          item.status ? ` · ${escapeModHtml(item.status)}` : ''
-                        }</div>`
+                    subtext
+                      ? `<div style="font-size:11px; color:var(--lwc-colorTextWeak, #706e6b);">${escapeModHtml(subtext)}</div>`
                       : ''
                   }
                 </div>
               </div>
             `;
-          })
-          .join('');
+          });
+          renderedBlocks.push(`<div style="${topDivider}">${titleHtml}${rows.join('')}</div>`);
+          continue;
+        }
 
-        return `
-          <div style="font-family:var(--lwc-fontFamily, inherit); color:var(--lwc-colorTextDefault, #181818);">
-            <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px;">
-              <span style="${sldsBadgeStyle(covColors)}">${escapeModHtml(covIcon)} ${escapeModHtml(covLabel)}</span>
-              <span style="${sldsBadgeStyle(exp)}">${escapeModHtml(exp.text)}</span>
-            </div>
-            <div style="margin-top:6px; display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:0.75rem; color:var(--lwc-colorTextWeak, #706e6b);">
-              ${data.childCount > 0 ? toggleHtml : `<span>0 Records</span>`}
-              ${data.tierSummary ? `<span>· ${escapeModHtml(data.tierSummary)}</span>` : ''}
-            </div>
-            ${drawerHtml}
-            ${
-              itemRowsHtml
-                ? `<div style="margin-top:6px; padding-top:6px; border-top:1px solid var(--lwc-colorBorder, #dddbda);">${itemRowsHtml}</div>`
-                : ''
-            }
-            ${
-              contractNames
-                ? `<div style="margin-top:6px; padding-top:5px; border-top:1px solid var(--lwc-colorBorder, #dddbda); font-size:11px; color:var(--lwc-colorTextWeak, #706e6b);">Contract: <span style="color:var(--lwc-colorTextDefault, #181818);">${escapeModHtml(
-                    contractNames
-                  )}</span></div>`
-                : ''
-            }
-            ${
-              data.nextRenewal
-                ? `<div style="margin-top:4px; font-size:11px; color:var(--lwc-colorTextLink, #0176d3); font-weight:600;">Queued Renewal: ${escapeModHtml(
-                    data.nextRenewal.startDate
-                  )} → ${escapeModHtml(data.nextRenewal.endDate)}</div>`
-                : ''
-            }
-          </div>
-        `;
+        if (block.type === 'alert') {
+          const c = getSldsToneColors(sfeResolveTone(block, scope, 'info'));
+          const icon = sfeInterpolate(block.icon || '', scope);
+          const title = sfeInterpolate(block.title || '', scope);
+          const text = sfeInterpolate(block.text || '', scope);
+          if (!title && !text) continue;
+          renderedBlocks.push(
+            `<div style="${topDivider} display:flex; align-items:flex-start; gap:8px; padding:8px 12px; border-radius:var(--lwc-borderRadiusMedium, 0.25rem); background:${
+              c.bg
+            }; color:${c.fg}; border:1px solid ${c.border}; font-size:0.8125rem; line-height:1.35;">
+              ${icon ? `<span style="flex:0 0 auto; font-weight:700;">${escapeModHtml(icon)}</span>` : ''}
+              <div style="min-width:0; flex:1;">
+                ${title ? `<strong>${escapeModHtml(title)}</strong>` : ''}
+                ${title && text ? ' — ' : ''}
+                ${text ? `<span>${escapeModHtml(text)}</span>` : ''}
+              </div>
+            </div>`
+          );
+          continue;
+        }
       }
 
-      // mode === 'highlights': Native SLDS Highlights Panel field columns
-      const itemsSummaryHtml = uniqueItems
-        .map((item) => {
-          const pTag = item.primaryTag || { tag: 'SUP', tone: 'neutral' };
-          const tc = getSldsToneColors(pTag.tone);
-          return `<span style="display:inline-flex; align-items:center; gap:4px; margin-right:8px; font-size:0.8125rem; color:var(--lwc-colorTextDefault, #181818);">
-            <span style="font-size:10px; font-weight:700; padding:0 4px; border-radius:0.125rem; background:${tc.bg}; color:${tc.fg}; border:1px solid ${tc.border};">${escapeModHtml(
-            pTag.tag
-          )}</span>
-            <span>${escapeModHtml(item.code || item.name)}</span>
-            ${item.endDate ? `<span style="color:var(--lwc-colorTextWeak, #706e6b); font-size:0.75rem;">(${escapeModHtml(item.endDate)})</span>` : ''}
-          </span>`;
-        })
-        .join('');
-
-      const pageRecMatch = (location.pathname || '').match(/\/lightning\/r\/(?:[^/]+\/)?([a-zA-Z0-9]{15,18})(?:\/|$|\?)/i);
-      const pageRecId = pageRecMatch ? pageRecMatch[1] : null;
-      const isDifferentRecordPage = !!(pageRecId && extractModRecordIdByPrefix(pageRecId, mod.target.keyPrefix) !== targetId);
-
-      const labelStyle =
-        'font-size:0.75rem; line-height:1.25; color:var(--lwc-colorTextLabel, #444444); font-weight:400;';
-      const targetUrl = `/lightning/r/${mod.target.objectApiName}/${targetId}/view`;
-      const targetLabel = (data && data.targetName) || targetId;
-      const headerTitle = mod.target.headerTitle || mod.target.objectApiName;
-      return `
-        <div style="font-family:var(--lwc-fontFamily, inherit); color:var(--lwc-colorTextDefault, #181818);">
-          <div style="display:flex; flex-wrap:wrap; align-items:flex-start; gap:0.75rem 1.5rem;">
-            ${
-              isDifferentRecordPage
-                ? `<div style="display:flex; flex-direction:column; gap:2px;">
-                     <span style="${labelStyle}">${escapeModHtml(headerTitle)}</span>
-                     <a class="sfe-mod-record-link" data-record-id="${escapeModHtml(targetId)}" href="${escapeModHtml(
-                    targetUrl
-                  )}" style="font-size:0.8125rem; font-weight:700; color:var(--lwc-colorTextLink, #0176d3); text-decoration:none;">${escapeModHtml(
-                    targetLabel
-                  )}</a>
-                   </div>`
-                : ''
-            }
-            <div style="display:flex; flex-direction:column; gap:2px;">
-              <span style="${labelStyle}">Support Coverage</span>
-              <div><span style="${sldsBadgeStyle(covColors)}">${escapeModHtml(covIcon)} ${escapeModHtml(covLabel)}</span></div>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:2px;">
-              <span style="${labelStyle}">Support Status</span>
-              <div><span style="${sldsBadgeStyle(exp)}">${escapeModHtml(exp.text)}</span></div>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:2px;">
-              <span style="${labelStyle}">Nodes / Assets</span>
-              <div>${data.childCount > 0 ? toggleHtml : `<span style="font-size:0.8125rem;">0 Assets</span>`}</div>
-            </div>
-            ${
-              data.tierSummary
-                ? `<div style="display:flex; flex-direction:column; gap:2px;">
-                     <span style="${labelStyle}">Support Tier</span>
-                     <span style="font-size:0.8125rem; color:var(--lwc-colorTextDefault, #181818);">${escapeModHtml(
-                       data.tierSummary
-                     )}</span>
-                   </div>`
-                : ''
-            }
-            ${
-              itemsSummaryHtml
-                ? `<div style="display:flex; flex-direction:column; gap:2px;">
-                     <span style="${labelStyle}">Contract Line Items</span>
-                     <div style="display:flex; flex-wrap:wrap; align-items:center;">${itemsSummaryHtml}</div>
-                   </div>`
-                : ''
-            }
-            ${
-              contractNames
-                ? `<div style="display:flex; flex-direction:column; gap:2px; max-width:340px;">
-                     <span style="${labelStyle}">Service Contract</span>
-                     <span style="font-size:0.8125rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeModHtml(
-                       contractNames
-                     )}">${escapeModHtml(contractNames)}</span>
-                   </div>`
-                : ''
-            }
-            ${
-              data.nextRenewal
-                ? `<div style="display:flex; flex-direction:column; gap:2px;">
-                     <span style="${labelStyle}">Queued Renewal</span>
-                     <span style="font-size:0.8125rem; font-weight:600; color:var(--lwc-colorTextLink, #0176d3);">${escapeModHtml(
-                       data.nextRenewal.startDate
-                     )} → ${escapeModHtml(data.nextRenewal.endDate)}</span>
-                   </div>`
-                : ''
-            }
-          </div>
-          ${drawerHtml}
-        </div>
-      `;
+      if (!renderedBlocks.length) return '';
+      return `<div style="font-family:var(--lwc-fontFamily, inherit); color:var(--lwc-colorTextDefault, #181818);">${renderedBlocks.join(
+        ''
+      )}</div>`;
     }
 
+    // -------------------------------------------------------------------------
+    // Event Binding & Console-Aware Navigation
+    // -------------------------------------------------------------------------
     function bindModContainerEvents(container) {
       if (!container) return;
       container.querySelectorAll('.sfe-mod-nodes-toggle').forEach((btn) => {
@@ -10831,7 +11416,8 @@
           btn.setAttribute('aria-expanded', next ? 'true' : 'false');
           const chev = btn.querySelector('.sfe-mod-chevron');
           if (chev) chev.textContent = next ? '▾' : '▸';
-          const drawer = container.querySelector('.sfe-mod-nodes-drawer');
+          const drawer = container.querySelector(`.sfe-mod-nodes-drawer[data-sfe-scope="${scopeKey}"]`) ||
+                         container.querySelector('.sfe-mod-nodes-drawer');
           if (drawer) drawer.style.display = next ? 'block' : 'none';
         });
       });
@@ -10846,11 +11432,26 @@
           if (!recordId || !href) return;
           e.preventDefault();
           e.stopPropagation();
-          openTargetAsSubtab({ recordId, url: href });
+          if (isConsoleAppActive()) {
+            openTargetAsSubtab({ recordId, url: href });
+            return;
+          }
+          if (window.$A && typeof window.$A.get === 'function') {
+            const navEvt = window.$A.get('e.force:navigateToSObject');
+            if (navEvt) {
+              navEvt.setParams({ recordId, slideDevName: 'detail' });
+              navEvt.fire();
+              return;
+            }
+          }
+          window.location.assign(href);
         });
       });
     }
 
+    // -------------------------------------------------------------------------
+    // Shadow DOM Mounting, Cross-Object Resolution & Lifecycle
+    // -------------------------------------------------------------------------
     function walkModShadowRoots(root, visitor, visited = new WeakSet()) {
       if (!root || visited.has(root)) return;
       visited.add(root);
@@ -10867,11 +11468,22 @@
       const s = getEnhancerSettings();
       if (!s) return [];
       const mods = (s.inspectorMods && Array.isArray(s.inspectorMods.mods)) ? s.inspectorMods.mods : [];
-      return mods.filter((m) => m && m.enabled !== false && m.id && m.target && m.target.keyPrefix);
+      return mods.filter(
+        (m) =>
+          m &&
+          m.enabled !== false &&
+          m.schemaVersion === 2 &&
+          m.id &&
+          m.target &&
+          m.target.keyPrefix &&
+          Array.isArray(m.data) &&
+          m.view &&
+          typeof m.view === 'object'
+      );
     }
 
     const modMountedByUid = new Map(); // `${modId}:${uid}` -> Element
-    const modVisibleRightPaneCards = new Map(); // `${modId}:${parentId}` -> Element
+    const modVisibleRightPaneCards = new Map(); // `${modId}:${contextId}` -> Element
     let nextModMountUid = 1;
 
     function ensureModGlobalStyles() {
@@ -10936,7 +11548,7 @@
       }
 
       let kept = null;
-      if (tracked && tracked.isConnected) {
+      if (tracked && tracked.isConnected && tracked.classList && tracked.classList.contains(className)) {
         kept = tracked;
       } else if (children.length) {
         kept = children[0];
@@ -10944,9 +11556,7 @@
 
       for (const extra of children) {
         if (extra !== kept) {
-          try {
-            extra.remove();
-          } catch (_) {}
+          try { extra.remove(); } catch (_) {}
         }
       }
       if (kept) trackModMountedElement(modId, hostKey, kept);
@@ -10955,16 +11565,14 @@
 
     function clearAllModInjectedNodes() {
       for (const el of modMountedByUid.values()) {
-        try {
-          if (el && el.remove) el.remove();
-        } catch (_) {}
+        try { if (el && el.remove) el.remove(); } catch (_) {}
       }
       modMountedByUid.clear();
       modVisibleRightPaneCards.clear();
       walkModShadowRoots(document, (root) => {
         if (!root.querySelectorAll) return;
         root
-          .querySelectorAll('.sfe-mod-hover-box, .sfe-mod-highlights-bar, .sfe-mod-rightpane-card')
+          .querySelectorAll('.sfe-mod-hover-box, .sfe-mod-highlights-bar, .sfe-mod-banner, .sfe-mod-rightpane-card')
           .forEach((el) => el.remove());
       });
     }
@@ -11036,113 +11644,102 @@
       return null;
     }
 
-    async function resolveModParentTargetId(mod, parentId) {
-      const parentCfg = (mod.mounts && mod.mounts.parentRightPane) || {};
-      const keyPrefix = mod.target.keyPrefix;
-      const cacheKey = `${mod.id}:${parentId}`;
-      if (!modParentCaches.has(mod.id)) modParentCaches.set(mod.id, new Map());
-      const pMap = modParentCaches.get(mod.id);
-      const cached = pMap.get(parentId);
+    async function resolveRightPaneTargetId(plugin, contextId) {
+      const rpCfg = plugin.mounts && plugin.mounts.rightPane;
+      if (!rpCfg || rpCfg === true || !rpCfg.onObject) return contextId;
+      const keyPrefix = plugin.target.keyPrefix;
+      const cacheKey = `${plugin.id}:${contextId}`;
+      if (!modParentCaches.has(plugin.id)) modParentCaches.set(plugin.id, new Map());
+      const pMap = modParentCaches.get(plugin.id);
+      const cached = pMap.get(contextId);
       if (cached && Date.now() - cached.cachedAt < MOD_CACHE_TTL_MS) {
         return cached.targetId;
       }
       if (modParentInFlight.has(cacheKey)) return modParentInFlight.get(cacheKey);
 
       const p = (async () => {
-        const pObj = parentCfg.parentObjectApiName || 'Case';
-        const viaCfg = parentCfg.viaChildLookup || {
-          parentChildField: 'AssetId',
-          parentEntitlementField: 'EntitlementId',
-          entitlementObjectApiName: 'Entitlement',
-          entitlementChildField: 'AssetId',
-          childObjectApiName: (mod.pipeline && mod.pipeline.childRecords && mod.pipeline.childRecords.objectApiName) || 'Asset',
-          childTargetField: mod.target.objectApiName
-        };
-        const directFields = Array.isArray(parentCfg.directLookupFields) && parentCfg.directLookupFields.length
-          ? parentCfg.directLookupFields
-          : [mod.target.objectApiName];
-        const optFields = [`${pObj}.Id`];
-        for (const f of directFields) {
-          optFields.push(`${pObj}.${f}`);
+        const resolverSteps = Array.isArray(rpCfg.resolveTarget) ? rpCfg.resolveTarget : [];
+        const ctxObjName = rpCfg.onObject.objectApiName;
+        const stepRecords = {};
+        let ctxRecFlat = null;
+
+        // Pre-collect all context-object fields needed by recordField / root followLookup steps
+        const ctxFieldSet = new Set(['Id']);
+        for (const rs of resolverSteps) {
+          if (rs.type === 'recordField' && Array.isArray(rs.fields)) {
+            rs.fields.forEach((f) => ctxFieldSet.add(f));
+          } else if (rs.type === 'followLookup' && !rs.fromStep && rs.viaField) {
+            ctxFieldSet.add(rs.viaField);
+          }
         }
-        if (viaCfg.parentChildField) optFields.push(`${pObj}.${viaCfg.parentChildField}`);
-        if (viaCfg.parentEntitlementField) optFields.push(`${pObj}.${viaCfg.parentEntitlementField}`);
 
-        let rec = await modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
-          recordId: parentId,
-          optionalFields: optFields
-        }).catch(() => null);
-
-        if (!rec && directFields.length > 1) {
-          rec = await modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
-            recordId: parentId,
-            optionalFields: [
-              `${pObj}.Id`,
-              `${pObj}.${directFields[0]}`,
-              ...(viaCfg.parentChildField ? [`${pObj}.${viaCfg.parentChildField}`] : []),
-              ...(viaCfg.parentEntitlementField ? [`${pObj}.${viaCfg.parentEntitlementField}`] : [])
-            ]
+        const ensureContextRecord = async () => {
+          if (ctxRecFlat) return ctxRecFlat;
+          const optFields = qualifyAuraFields(ctxObjName, Array.from(ctxFieldSet));
+          const raw = await modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
+            recordId: contextId,
+            optionalFields: optFields
           }).catch(() => null);
-        }
+          ctxRecFlat = raw ? flattenAuraRecord(raw) : { id: contextId };
+          return ctxRecFlat;
+        };
 
-        const fields = (rec && rec.fields) || {};
-        for (const k of Object.keys(fields)) {
-          const v = fields[k] && fields[k].value;
-          const m = extractModRecordIdByPrefix(v, keyPrefix);
-          if (m) {
-            pMap.set(parentId, { targetId: m, cachedAt: Date.now() });
-            return m;
-          }
-        }
+        for (const rs of resolverSteps) {
+          if (!rs || !rs.type) continue;
 
-        if (viaCfg) {
-          let childId = viaCfg.parentChildField ? readAuraFieldPath(fields, viaCfg.parentChildField) : null;
-          const entId = viaCfg.parentEntitlementField ? readAuraFieldPath(fields, viaCfg.parentEntitlementField) : null;
-          if (!childId && entId && viaCfg.entitlementChildField) {
-            try {
-              const entObj = viaCfg.entitlementObjectApiName || 'Entitlement';
-              const entRec = await modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
-                recordId: entId,
-                optionalFields: [`${entObj}.Id`, `${entObj}.${viaCfg.entitlementChildField}`]
-              });
-              childId = readAuraFieldPath(entRec && entRec.fields, viaCfg.entitlementChildField);
-            } catch (_) {}
-          }
-          if (childId && viaCfg.childTargetField) {
-            try {
-              const cObj = viaCfg.childObjectApiName || 'Asset';
-              const cRec = await modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
-                recordId: childId,
-                optionalFields: [`${cObj}.Id`, `${cObj}.${viaCfg.childTargetField}`]
-              });
-              const tid = extractModRecordIdByPrefix(
-                readAuraFieldPath(cRec && cRec.fields, viaCfg.childTargetField),
-                keyPrefix
-              );
-              if (tid) {
-                pMap.set(parentId, { targetId: tid, cachedAt: Date.now() });
-                return tid;
-              }
-            } catch (_) {}
-          }
-        }
-
-        const jCfg = parentCfg.junctionRelatedList;
-        if (jCfg && jCfg.relatedListId) {
-          try {
-            const rels = await modFetchRelatedRecords(parentId, jCfg.relatedListId, jCfg.fields || []);
-            for (const r of rels) {
-              const rf = r.fields || {};
-              const v = readAuraFieldPath(rf, jCfg.lookupField || mod.target.objectApiName);
-              const m = extractModRecordIdByPrefix(v, keyPrefix);
+          if (rs.type === 'recordField') {
+            const rec = await ensureContextRecord();
+            for (const f of rs.fields || []) {
+              const m = extractModRecordIdByPrefix(sfeResolvePath(rec, f), keyPrefix);
               if (m) {
-                pMap.set(parentId, { targetId: m, cachedAt: Date.now() });
+                pMap.set(contextId, { targetId: m, cachedAt: Date.now() });
                 return m;
               }
             }
-          } catch (_) {}
+          } else if (rs.type === 'followLookup') {
+            const sourceRec = rs.fromStep ? stepRecords[rs.fromStep] : await ensureContextRecord();
+            if (!sourceRec) continue;
+            const linkedId = sfeResolvePath(sourceRec, rs.viaField);
+            if (!linkedId || typeof linkedId !== 'string') continue;
+            const directMatch = extractModRecordIdByPrefix(linkedId, keyPrefix);
+            if (directMatch) {
+              pMap.set(contextId, { targetId: directMatch, cachedAt: Date.now() });
+              return directMatch;
+            }
+            const optFields = qualifyAuraFields(rs.objectApiName, ['Id', ...(rs.readFields || [])]);
+            const raw = await modAuraCall('aura://RecordUiController/ACTION$getRecordWithFields', {
+              recordId: linkedId,
+              optionalFields: optFields
+            }).catch(() => null);
+            const flat = raw ? flattenAuraRecord(raw) : null;
+            if (rs.as && flat) stepRecords[rs.as] = flat;
+            if (flat) {
+              for (const rf of rs.readFields || []) {
+                const m = extractModRecordIdByPrefix(sfeResolvePath(flat, rf), keyPrefix);
+                if (m) {
+                  pMap.set(contextId, { targetId: m, cachedAt: Date.now() });
+                  return m;
+                }
+              }
+            }
+          } else if (rs.type === 'relatedList' && rs.relatedListId) {
+            const relFields = rs.objectApiName
+              ? qualifyAuraFields(rs.objectApiName, rs.fields || [])
+              : rs.fields || [];
+            const rels = await modFetchRelatedRecords(contextId, rs.relatedListId, relFields).catch(() => []);
+            for (const r of rels) {
+              const flat = flattenAuraRecord(r);
+              const val = sfeResolvePath(flat, rs.lookupField);
+              const m = extractModRecordIdByPrefix(val, keyPrefix);
+              if (m) {
+                pMap.set(contextId, { targetId: m, cachedAt: Date.now() });
+                return m;
+              }
+            }
+          }
         }
-        pMap.set(parentId, { targetId: null, cachedAt: Date.now() });
+
+        pMap.set(contextId, { targetId: null, cachedAt: Date.now() });
         return null;
       })();
 
@@ -11174,21 +11771,32 @@
       return null;
     }
 
-    function runInspectorModOnRoot(mod, root) {
-      const prefix = mod.target.keyPrefix;
-      // 1. Prefetch links
-      if (root.querySelectorAll) {
+    const RIGHT_PANE_SELECTOR =
+      'flexipage-record-home-scrollable-column.right-col, ' +
+      '[id^="rightColumn"], ' +
+      '.region-sidebar-right, ' +
+      'flexipage-record-home-template-desktop2 .sidebar, ' +
+      'flexipage-record-home-three-col-template-desktop2 .right-col';
+
+    function runInspectorModOnRoot(plugin, root) {
+      const prefix = plugin.target.keyPrefix;
+      const mounts = plugin.mounts || {};
+
+      // 1. Prefetch hover links when hoverPanel is enabled
+      if (mounts.hoverPanel && root.querySelectorAll) {
         const links = root.querySelectorAll(`a[href*="${prefix}"]`);
         for (const a of links) {
           const tid = extractModRecordIdByPrefix(a.getAttribute('href'), prefix);
-          if (tid && !getCachedModTarget(mod.id, tid) && !modInFlight.has(`${mod.id}:${tid}`)) {
-            fetchModTargetData(mod, tid).catch(() => {});
+          if (tid && !getCachedModTarget(plugin.id, tid) && !modInFlight.has(`${plugin.id}:${tid}`)) {
+            fetchModTargetData(plugin, tid).catch(() => {});
           }
         }
       }
 
-      // 2. Highlights Panel
-      if (mod.mounts?.highlightsPanel !== false && root.querySelectorAll) {
+      // 2. Highlights Panel & Record Banner
+      const wantsHighlights = !!mounts.highlightsPanel;
+      const wantsBanner = !!mounts.recordBanner;
+      if ((wantsHighlights || wantsBanner) && root.querySelectorAll) {
         const highlights = root.querySelectorAll('records-highlights2');
         for (const host of highlights) {
           const rect = host.getBoundingClientRect();
@@ -11199,22 +11807,24 @@
             host._sfShadowRoot ||
             (host.querySelector('.highlights.slds-page-header') ? host : null);
           const container = sr ? sr.querySelector('.highlights.slds-page-header') : null;
-          const existingBar = container ? findModMountedChild(mod.id, host, container, 'sfe-mod-highlights-bar') : null;
+          const existingBar = container ? findModMountedChild(`${plugin.id}:hl`, host, container, 'sfe-mod-highlights-bar') : null;
+          const existingBanner = container ? findModMountedChild(`${plugin.id}:bn`, host, container, 'sfe-mod-banner') : null;
 
           const tid = readContextRecordIdByPrefix(host, prefix);
           if (!tid) {
             if (existingBar) existingBar.remove();
-            clearModMountedElement(mod.id, host);
+            if (existingBanner) existingBanner.remove();
+            clearModMountedElement(`${plugin.id}:hl`, host);
+            clearModMountedElement(`${plugin.id}:bn`, host);
             continue;
           }
 
           if (!sr || !container) continue;
 
-          const cached = getCachedModTarget(mod.id, tid);
-          const err = modErrorMap.get(`${mod.id}:${tid}`);
-
+          const cached = getCachedModTarget(plugin.id, tid);
+          const err = modErrorMap.get(`${plugin.id}:${tid}`);
           if (!cached && !err) {
-            fetchModTargetData(mod, tid).catch(() => {});
+            fetchModTargetData(plugin, tid).catch(() => {});
             continue;
           }
 
@@ -11232,130 +11842,157 @@
           }
           if (container.style.height !== 'auto') container.style.height = 'auto';
 
-          let bar = existingBar;
-          if (!bar) {
-            bar = document.createElement('div');
-            bar.className = 'sfe-mod-highlights-bar';
-            bar.dataset.sfeModId = mod.id;
-            bar.style.cssText =
-              'margin-top:0.5rem; padding-top:0.625rem; border-top:1px solid var(--lwc-colorBorder, #dddbda); width:100%;';
-            trackModMountedElement(mod.id, host, bar);
-            container.appendChild(bar);
+          const stamp = `${tid}|${cached && cached._meta ? cached._meta.cachedAt : ''}|${err ? err.message : ''}`;
+
+          if (wantsBanner) {
+            const bannerHtml = renderSfeViewBlocks(plugin, tid, cached, err, 'banner', `banner:${plugin.id}:${tid}`);
+            if (!bannerHtml) {
+              if (existingBanner) existingBanner.remove();
+              clearModMountedElement(`${plugin.id}:bn`, host);
+            } else {
+              let banner = existingBanner;
+              if (!banner) {
+                banner = document.createElement('div');
+                banner.className = 'sfe-mod-banner';
+                banner.dataset.sfeModId = `${plugin.id}:bn`;
+                banner.style.cssText = 'margin-bottom:0.5rem; width:100%;';
+                trackModMountedElement(`${plugin.id}:bn`, host, banner);
+                container.prepend(banner);
+              }
+              if (banner.dataset.sfeStamp !== stamp) {
+                banner.dataset.sfeStamp = stamp;
+                banner.innerHTML = bannerHtml;
+                bindModContainerEvents(banner);
+              }
+            }
           }
-          const stamp = `${tid}|${cached ? cached.cachedAt : ''}|${err ? err.message : ''}`;
-          if (bar.dataset.sfeStamp !== stamp) {
-            bar.dataset.sfeStamp = stamp;
-            bar.innerHTML = renderModContentHtml(mod, tid, cached, err, 'highlights', `highlights:${mod.id}:${tid}`);
-            bindModContainerEvents(bar);
+
+          if (wantsHighlights) {
+            const hlHtml = renderSfeViewBlocks(plugin, tid, cached, err, 'highlights', `highlights:${plugin.id}:${tid}`);
+            if (!hlHtml) {
+              if (existingBar) existingBar.remove();
+              clearModMountedElement(`${plugin.id}:hl`, host);
+            } else {
+              let bar = existingBar;
+              if (!bar) {
+                bar = document.createElement('div');
+                bar.className = 'sfe-mod-highlights-bar';
+                bar.dataset.sfeModId = `${plugin.id}:hl`;
+                bar.style.cssText =
+                  'margin-top:0.5rem; padding-top:0.625rem; border-top:1px solid var(--lwc-colorBorder, #dddbda); width:100%;';
+                trackModMountedElement(`${plugin.id}:hl`, host, bar);
+                container.appendChild(bar);
+              }
+              if (bar.dataset.sfeStamp !== stamp) {
+                bar.dataset.sfeStamp = stamp;
+                bar.innerHTML = hlHtml;
+                bindModContainerEvents(bar);
+              }
+            }
           }
         }
       }
 
-      // 3. Parent Right Pane (e.g. Case Right Column)
-      const rightPaneCfg = mod.mounts?.parentRightPane;
-      if (rightPaneCfg && rightPaneCfg.enabled && root.querySelectorAll) {
-        const pPrefix = rightPaneCfg.parentKeyPrefix || '500';
-        const rightCols = root.querySelectorAll('flexipage-record-home-scrollable-column.right-col, [id^="rightColumn"]');
+      // 3. Right Pane / Record Sidebar (target object itself OR cross-object via resolveTarget)
+      const rpCfg = mounts.rightPane;
+      const rpEnabled = rpCfg === true || (rpCfg && rpCfg.enabled);
+      if (rpEnabled && root.querySelectorAll) {
+        const isCrossObject = !!(rpCfg && typeof rpCfg === 'object' && rpCfg.onObject && rpCfg.onObject.keyPrefix);
+        const contextPrefix = isCrossObject ? rpCfg.onObject.keyPrefix : prefix;
+        const rightCols = root.querySelectorAll(RIGHT_PANE_SELECTOR);
+
         for (const rightCol of rightCols) {
           const rect = rightCol.getBoundingClientRect();
           if (!rect || rect.width <= 0 || rect.height <= 0) continue;
-          const existingCard = findModMountedChild(mod.id, rightCol, rightCol, 'sfe-mod-rightpane-card');
-          const mountAttr = `data-sfe-mounted-${mod.id}`;
-          const parentId = readContextRecordIdByPrefix(rightCol, pPrefix);
-          if (!parentId) {
+          const existingCard = findModMountedChild(plugin.id, rightCol, rightCol, 'sfe-mod-rightpane-card');
+          const mountAttr = `data-sfe-mounted-${plugin.id}`;
+          const contextId = readContextRecordIdByPrefix(rightCol, contextPrefix);
+          if (!contextId) {
             if (existingCard) existingCard.remove();
-            clearModMountedElement(mod.id, rightCol);
+            clearModMountedElement(plugin.id, rightCol);
             rightCol.removeAttribute(mountAttr);
             continue;
           }
 
-          if (!existingCard && rightCol.getAttribute(mountAttr) === parentId) {
-            continue;
-          }
-          const visKey = `${mod.id}:${parentId}`;
+          if (!existingCard && rightCol.getAttribute(mountAttr) === contextId) continue;
+          const visKey = `${plugin.id}:${contextId}`;
           const prevGlobal = modVisibleRightPaneCards.get(visKey);
-          if (!existingCard && prevGlobal && prevGlobal.isConnected) {
-            continue;
-          }
+          if (!existingCard && prevGlobal && prevGlobal.isConnected) continue;
 
-          const pMap = modParentCaches.get(mod.id);
-          const parentEntry = pMap ? pMap.get(parentId) : null;
+          let resolvedTargetId = contextId;
+          if (isCrossObject) {
+            const pMap = modParentCaches.get(plugin.id);
+            const parentEntry = pMap ? pMap.get(contextId) : null;
 
-          if (parentEntry && !parentEntry.targetId) {
-            if (existingCard) existingCard.remove();
-            clearModMountedElement(mod.id, rightCol);
-            rightCol.removeAttribute(mountAttr);
-            if (modVisibleRightPaneCards.get(visKey) === existingCard) modVisibleRightPaneCards.delete(visKey);
-            continue;
+            if (parentEntry && !parentEntry.targetId) {
+              if (existingCard) existingCard.remove();
+              clearModMountedElement(plugin.id, rightCol);
+              rightCol.removeAttribute(mountAttr);
+              if (modVisibleRightPaneCards.get(visKey) === existingCard) modVisibleRightPaneCards.delete(visKey);
+              continue;
+            }
+
+            if (!parentEntry) {
+              let card = existingCard;
+              if (!card) {
+                card = createRightPaneCardEl(plugin, rightCol, mountAttr, contextId, visKey);
+              }
+              resolveRightPaneTargetId(plugin, contextId)
+                .then((tid) => {
+                  if (tid) fetchModTargetData(plugin, tid).catch(() => {});
+                  scheduleModDomScan(30);
+                })
+                .catch(() => {});
+              card.style.display = 'block';
+              card.innerHTML = `<div style="font-size:0.75rem; color:var(--lwc-colorTextWeak, #706e6b);">Checking associated ${escapeModHtml(
+                plugin.target.headerTitle || plugin.target.objectApiName
+              )}…</div>`;
+              continue;
+            }
+            resolvedTargetId = parentEntry.targetId;
           }
 
           let card = existingCard;
           if (!card) {
-            card = document.createElement('article');
-            card.className = 'sfe-mod-rightpane-card slds-card';
-            card.dataset.sfeModId = mod.id;
-            card.style.cssText = [
-              'display:block',
-              'margin:0 0 0.75rem 0',
-              'padding:0.75rem 1rem',
-              'border-radius:var(--lwc-borderRadiusMedium, 0.25rem)',
-              'border:1px solid var(--lwc-cardColorBorder, var(--lwc-colorBorder, #dddbda))',
-              'background:var(--lwc-cardColorBackground, var(--lwc-colorBackgroundAlt, #ffffff))',
-              'box-shadow:var(--lwc-cardShadow, 0 2px 2px 0 rgba(0, 0, 0, 0.10))',
-              'box-sizing:border-box',
-              'width:100%',
-              'text-align:left'
-            ].join(';');
-            trackModMountedElement(mod.id, rightCol, card);
-            rightCol.setAttribute(mountAttr, parentId);
-            modVisibleRightPaneCards.set(visKey, card);
-            rightCol.prepend(card);
-          }
-
-          if (!parentEntry) {
-            resolveModParentTargetId(mod, parentId)
-              .then((tid) => {
-                if (tid) fetchModTargetData(mod, tid).catch(() => {});
-                scheduleModDomScan(30);
-              })
-              .catch(() => {});
-            card.style.display = 'block';
-            card.innerHTML = `<div style="font-size:0.75rem; color:var(--lwc-colorTextWeak, #706e6b);">Checking associated ${escapeModHtml(
-              mod.target.headerTitle || mod.target.objectApiName
-            )}…</div>`;
-            continue;
+            card = createRightPaneCardEl(plugin, rightCol, mountAttr, contextId, visKey);
           }
 
           card.style.display = 'block';
-          const tid = parentEntry.targetId;
-          const tData = getCachedModTarget(mod.id, tid);
-          const tErr = modErrorMap.get(`${mod.id}:${tid}`);
+          const tData = getCachedModTarget(plugin.id, resolvedTargetId);
+          const tErr = modErrorMap.get(`${plugin.id}:${resolvedTargetId}`);
           if (!tData && !tErr) {
-            fetchModTargetData(mod, tid).catch(() => {});
+            fetchModTargetData(plugin, resolvedTargetId).catch(() => {});
           }
 
-          const targetUrl = `/lightning/r/${mod.target.objectApiName}/${tid}/view`;
-          const targetLabel = (tData && tData.targetName) || tid;
-          const headerTitle = mod.target.headerTitle || mod.target.objectApiName;
-          const themeInfo = getModObjectThemeInfo(mod.target.objectApiName);
-          const iconCfg = (mod.target && mod.target.icon) || {};
+          const targetUrl = `/lightning/r/${plugin.target.objectApiName}/${resolvedTargetId}/view`;
+          const targetLabel = (tData && tData._meta && tData._meta.targetName) || resolvedTargetId;
+          const headerTitle = plugin.target.headerTitle || plugin.target.objectApiName;
+          const themeInfo = getModObjectThemeInfo(plugin.target.objectApiName);
+          const iconCfg = (plugin.target && plugin.target.icon) || {};
           const iconBg =
             iconCfg.backgroundColor ||
-            (themeInfo && themeInfo.color ? `#${String(themeInfo.color).replace(/^#/, '')}` : '#8a7aed');
-          const iconSvgPath =
-            iconCfg.svgPath ||
-            'M576 711c-3-7-10-11-18-11H442c-8 0-15 4-18 11l-27 74c-3 7 2 14 9 14h188c7 0 12-8 9-14zm164-511H260c-33 0-60 27-60 60v320c0 33 27 60 60 60h480c33 0 60-27 60-60V260c0-33-27-60-60-60zM500 620c-17 0-30-13-30-30s13-30 30-30 30 13 30 30-13 30-30 30zm240-100c0 11-9 20-20 20H280c-11 0-20-9-20-20V280c0-11 9-20 20-20h440c11 0 20 9 20 20z';
+            (themeInfo && themeInfo.color ? `#${String(themeInfo.color).replace(/^#/, '')}` : '#0176d3');
+          const iconSvgPath = iconCfg.svgPath || SFE_DEFAULT_ICON_SVG;
           const iconSvgViewBox = iconCfg.svgViewBox || '0 0 1000 1000';
           const iconImgUrl = (!iconCfg.svgPath && (iconCfg.iconUrl || (themeInfo && themeInfo.iconUrl))) || '';
           const iconInnerHtml = iconImgUrl
             ? `<img src="${escapeModHtml(iconImgUrl)}" alt="" style="width:18px; height:18px; display:block;">`
             : `<svg viewBox="${escapeModHtml(iconSvgViewBox)}" width="18" height="18" fill="#ffffff" aria-hidden="true"><path d="${escapeModHtml(iconSvgPath)}"/></svg>`;
 
-          const stampWithTheme = `${parentId}|${tid}|${tData ? tData.cachedAt : ''}|${
+          const stampWithTheme = `${contextId}|${resolvedTargetId}|${tData && tData._meta ? tData._meta.cachedAt : ''}|${
             tErr ? tErr.message : ''
           }|${iconBg}|${iconImgUrl}`;
           if (card.dataset.sfeStamp === stampWithTheme) continue;
           card.dataset.sfeStamp = stampWithTheme;
+
+          const headerLinkHtml = isCrossObject
+            ? `<span>${escapeModHtml(headerTitle)}: </span>
+               <a class="sfe-mod-record-link" data-record-id="${escapeModHtml(resolvedTargetId)}" href="${escapeModHtml(
+                targetUrl
+              )}" style="color:var(--lwc-colorTextLink, #0176d3); text-decoration:none; font-weight:700;">${escapeModHtml(
+                targetLabel
+              )}</a>`
+            : `<span>${escapeModHtml(headerTitle)}</span>`;
 
           card.innerHTML = `
             <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:0.625rem;">
@@ -11366,25 +12003,43 @@
                   ${iconInnerHtml}
                 </span>
                 <div style="font-size:0.875rem; font-weight:700; color:var(--lwc-colorTextDefault, #181818); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                  <span>${escapeModHtml(headerTitle)}: </span>
-                  <a class="sfe-mod-record-link" data-record-id="${escapeModHtml(tid)}" href="${escapeModHtml(
-            targetUrl
-          )}" style="color:var(--lwc-colorTextLink, #0176d3); text-decoration:none; font-weight:700;">${escapeModHtml(
-            targetLabel
-          )}</a>
+                  ${headerLinkHtml}
                 </div>
               </div>
             </div>
-            ${renderModContentHtml(mod, tid, tData, tErr, 'hover', `rightpane:${mod.id}:${parentId}:${tid}`)}
+            ${renderSfeViewBlocks(plugin, resolvedTargetId, tData, tErr, 'rightPane', `rightpane:${plugin.id}:${contextId}:${resolvedTargetId}`)}
           `;
           bindModContainerEvents(card);
         }
       }
     }
 
-    function runInspectorModOnHoverPanels(mod) {
-      if (mod.mounts?.hoverPanel === false) return;
-      const prefix = mod.target.keyPrefix;
+    function createRightPaneCardEl(plugin, rightCol, mountAttr, contextId, visKey) {
+      const card = document.createElement('article');
+      card.className = 'sfe-mod-rightpane-card slds-card';
+      card.dataset.sfeModId = plugin.id;
+      card.style.cssText = [
+        'display:block',
+        'margin:0 0 0.75rem 0',
+        'padding:0.75rem 1rem',
+        'border-radius:var(--lwc-borderRadiusMedium, 0.25rem)',
+        'border:1px solid var(--lwc-cardColorBorder, var(--lwc-colorBorder, #dddbda))',
+        'background:var(--lwc-cardColorBackground, var(--lwc-colorBackgroundAlt, #ffffff))',
+        'box-shadow:var(--lwc-cardShadow, 0 2px 2px 0 rgba(0, 0, 0, 0.10))',
+        'box-sizing:border-box',
+        'width:100%',
+        'text-align:left'
+      ].join(';');
+      trackModMountedElement(plugin.id, rightCol, card);
+      rightCol.setAttribute(mountAttr, contextId);
+      modVisibleRightPaneCards.set(visKey, card);
+      rightCol.prepend(card);
+      return card;
+    }
+
+    function runInspectorModOnHoverPanels(plugin) {
+      if (!plugin.mounts || !plugin.mounts.hoverPanel) return;
+      const prefix = plugin.target.keyPrefix;
       const panels = document.querySelectorAll('.forceHoverPanel, .uiPanel--preview');
       for (const panel of panels) {
         let tid = null;
@@ -11402,11 +12057,11 @@
           panel.querySelector('.HoverPanel.forceRecordLayout') ||
           panel.querySelector('.panelContent');
         const existingBox =
-          (mountTarget && findModMountedChild(mod.id, panel, mountTarget, 'sfe-mod-hover-box')) ||
-          panel.querySelector(`.sfe-mod-hover-box[data-sfe-mod-id="${mod.id}"]`);
+          (mountTarget && findModMountedChild(plugin.id, panel, mountTarget, 'sfe-mod-hover-box')) ||
+          panel.querySelector(`.sfe-mod-hover-box[data-sfe-mod-id="${plugin.id}"]`);
         if (!tid) {
           if (existingBox) existingBox.remove();
-          clearModMountedElement(mod.id, panel);
+          clearModMountedElement(plugin.id, panel);
           continue;
         }
         if (!mountTarget) continue;
@@ -11414,22 +12069,22 @@
         if (!box) {
           box = document.createElement('div');
           box.className = 'sfe-mod-hover-box';
-          box.dataset.sfeModId = mod.id;
+          box.dataset.sfeModId = plugin.id;
           box.style.cssText =
             'margin-top:8px; padding:8px 4px 4px 4px; box-sizing:border-box; width:100%; border-top:1px solid var(--lwc-colorBorder, #dddbda); text-align:left;';
-          trackModMountedElement(mod.id, panel, box);
+          trackModMountedElement(plugin.id, panel, box);
           mountTarget.appendChild(box);
         }
-        const cached = getCachedModTarget(mod.id, tid);
-        const err = modErrorMap.get(`${mod.id}:${tid}`);
-        const stamp = `${tid}|${cached ? cached.cachedAt : ''}|${err ? err.message : ''}`;
+        const cached = getCachedModTarget(plugin.id, tid);
+        const err = modErrorMap.get(`${plugin.id}:${tid}`);
+        const stamp = `${tid}|${cached && cached._meta ? cached._meta.cachedAt : ''}|${err ? err.message : ''}`;
         if (box.dataset.sfeStamp !== stamp) {
           box.dataset.sfeStamp = stamp;
-          box.innerHTML = renderModContentHtml(mod, tid, cached, err, 'hover', `hover:${mod.id}:${tid}`);
+          box.innerHTML = renderSfeViewBlocks(plugin, tid, cached, err, 'hover', `hover:${plugin.id}:${tid}`);
           bindModContainerEvents(box);
         }
         if (!cached && !err) {
-          fetchModTargetData(mod, tid).catch(() => {});
+          fetchModTargetData(plugin, tid).catch(() => {});
         }
       }
     }
@@ -11458,7 +12113,7 @@
         return;
       }
 
-      // Mark active mod prefixes so standalone userscripts yield and never duplicate cards
+      // Mark active plugin prefixes so standalone userscripts yield and never duplicate cards
       ensureModGlobalStyles();
       for (const mod of activeMods) {
         const prefix = String(mod.target.keyPrefix || '').toLowerCase();
@@ -11486,5 +12141,5 @@
     setInterval(refreshInspectorMods, 850);
     setTimeout(refreshInspectorMods, 400);
 
-  console.log('[Salesforce Enhancer v1.3.3] Ready — Modular shortcuts, Quick Views, declarative Inspector Mods, developer themes & loading animations.');
+  console.log('[Salesforce Enhancer v1.4.0] Ready — Modular shortcuts, Quick Views, composable .sfe.json plugins, developer themes & loading animations.');
 })();

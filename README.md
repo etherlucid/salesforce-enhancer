@@ -1,6 +1,6 @@
 # Salesforce Enhancer
 
-Salesforce Enhancer is a browser extension for Salesforce Lightning Experience with deep workspace and tab management for **Lightning Console apps** (such as Service Console, Sales Console, and custom Console apps) alongside Lightning-wide productivity tools like Quick Views pinning, declarative Inspector Mods (`.mod.json`), developer themes, and custom loading animations.
+Salesforce Enhancer is a browser extension for Salesforce Lightning Experience with deep workspace and tab management for **Lightning Console apps** (such as Service Console, Sales Console, and custom Console apps) alongside Lightning-wide productivity tools like Quick Views pinning, composable Custom Plugins (`.sfe.json`), developer themes, and custom loading animations.
 
 ## Features
 
@@ -12,20 +12,29 @@ These features activate automatically inside Lightning Console apps and stay out
   - `Alt+Click` opens records as subtabs (`Alt+Shift+Click` in the background); `Cmd/Ctrl+Click` opens new primary workspace tabs (`Cmd/Ctrl+Shift+Click` in the background). Outside Console apps, native browser `Cmd/Ctrl+Click` behavior is preserved.
   - Bidirectional tab drag-and-drop to convert workspaces into subtabs, promote subtabs into workspaces, or move subtabs between workspaces, with a confirmation prompt before merging a workspace that contains multiple tabs.
   - Optional toggle for a compact Console header that hides the Console app label and condenses the active Console navigation item into an icon button.
-- **Customizable Tab & Subtab Keybinds**: Navigate between workspaces and subtabs, reorder tabs/subtabs left or right (including pinned tabs within the pinned group), promote subtabs, move tabs across workspaces, and close active tabs via keyboard shortcuts. All shortcuts can be rebound or cleared on the Extension Site's **Keybinds** page.
+- **Customizable Tab & Subtab Keybinds**: Navigate continuously across visible workspaces, **"More"** overflow tabs, and subtabs, reorder tabs/subtabs left or right (including pinned tabs within the pinned group), promote subtabs, move tabs across workspaces, and close active tabs via keyboard shortcuts. All shortcuts can be rebound or cleared on the Extension Site's **Keybinds** page.
 - **Link Interceptor**: Routes external Salesforce Lightning and Knowledge article links (`/lightning/...`, `/articles/...`, `/lightning/articles/...`) into an open Lightning Console tab instead of spawning duplicate browser tabs. Standard Navigation tabs are never overwritten.
 
 ### All Salesforce Lightning Apps
 
 - **Quick Views**: Pin favorite list views to the top of the List View Switcher dropdown with manual reordering and A–Z sorting.
-- **Custom Plugins (Declarative Inspector Mods)**: Org-agnostic `.mod.json` engine that renders related record status cards across Hover Previews, Record Highlights Panels, and Right Panes without hardcoding org-specific schemas into the extension.
+- **Custom Plugins (`.sfe.json`, Schema v2)**: Composable, org-agnostic declarative plugin engine (zero `eval()`). Chain arbitrary `record`, `relatedList`, `dateStatus`, `classify`, `filter`, `dedupe`, `rollup`, `sort`, and `compute` steps and render SLDS-native UI blocks (`badgeRow`, `fieldGrid`, `metaRow`, `drawer`, `list`, `alert`) across **Hover Previews**, **Highlights Panels**, **Record Banners**, and **Right Panes / Record Sidebars** (on both Console and Standard Navigation pages, including cross-object target resolution).
 - **Developer Themes**: Includes Classic SF, Gruvbox Dark/Light, Solarized Dark/Light, Nord, Dracula, One Dark, and Custom accent colors with optional navigation bar and Console tab accent styling.
 - **Loading Animation**: Built-in plugin to replace the default Salesforce spinner with bundled offline presets (`Parrot`, `Nyan Cat`) or a custom uploaded GIF/image/URL, with configurable display size (`48px`–`128px`) and rotation. Disabled by default.
 
 ### Extension Experience
 
-- **Multi-Page Extension Site**: Full browser-tab settings site (`options_ui`) with dedicated pages for **Plugins**, **Keybinds**, **Themes**, **Custom Plugins** (`.mod.json` uploader and JSON editor), and **Loading Animation**.
+- **Multi-Page Extension Site**: Full browser-tab settings site (`options_ui`) with dedicated pages for **Plugins**, **Keybinds**, **Themes**, **Custom Plugins** (`.sfe.json` uploader, starter templates, live v2 validator, and JSON editor), and **Loading Animation**.
 - **Offline and Private**: Runs locally with zero telemetry, zero analytics, and permissions scoped strictly to Salesforce domains.
+
+## Custom Plugins (`.sfe.json` — Schema v2)
+
+Custom plugins are declarative `.sfe.json` files (`"schemaVersion": 2`) executed safely with zero dynamic JavaScript. Built-in starter templates (Record Card, Related List, Alert Banner, and Multi-Hop Rollup) are included on the Extension Site's **Custom Plugins** page.
+
+- **Mount targets (`mounts`)**: `hoverPanel`, `highlightsPanel`, `recordBanner`, and `rightPane` (either `true` for the target record's own sidebar or an object with `onObject` + `resolveTarget` steps to mount on a related object's sidebar).
+- **Composable `data` steps**: `record`, `relatedList` (supports `forEach` fan-out & `attachAs`), `dateStatus`, `classify`, `filter`, `dedupe`, `rollup`, `sort`, and `compute` (`count`, `sum`, `min`, `max`, `first`, `last`, `unique`, `uniqueJoin`, `daysFromToday`, `coalesce`, `diff`, `cond`, `template`, `joinParts`, `cases`).
+- **Declarative `view` blocks**: `badgeRow`, `fieldGrid`, `metaRow`, `drawer`, `list`, and `alert`, with safe `{{path || fallback | currency|number|date|upper|lower|join|default:...}}` interpolation and HTML escaping.
+- **Note**: v1.4.0 is a clean break to `schemaVersion: 2` (`.sfe.json`). Legacy v1 `.mod.json` definitions are flagged in the UI and ignored until migrated.
 
 ## Default Keybinds
 

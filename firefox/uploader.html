@@ -964,7 +964,7 @@
       <img src="icons/icon-48.png" alt="Salesforce Enhancer" class="brand-logo">
       <div class="brand-meta">
         <div class="brand-title">Salesforce Enhancer</div>
-        <span class="brand-version">v1.3.3</span>
+        <span class="brand-version">v1.4.0</span>
       </div>
     </div>
 
@@ -1259,20 +1259,20 @@
       </div>
     </section>
 
-    <!-- PAGE 3: CUSTOM PLUGIN IMPORTER (.mod.json) -->
+    <!-- PAGE 3: CUSTOM PLUGIN IMPORTER (.sfe.json) -->
     <section class="page-section" id="pageImportPlugin">
       <div class="split-layout">
         <!-- Left Column: Upload & Installed Plugins -->
         <div style="display:flex; flex-direction:column; gap:16px;">
           <div class="panel-card">
             <div class="panel-card-title">Upload Plugin File</div>
-            <div class="panel-card-desc">Import a declarative `.mod.json` plugin configuration from disk.</div>
+            <div class="panel-card-desc">Import a declarative `.sfe.json` plugin (schema v2) from disk.</div>
             <div class="dropzone" id="modDropzone">
               <div class="dropzone-icon">🧩</div>
-              <div class="dropzone-title">Drop a `.mod.json` file here</div>
-              <div class="dropzone-sub">or click to choose from Finder (.mod.json, .json)</div>
+              <div class="dropzone-title">Drop a `.sfe.json` file here</div>
+              <div class="dropzone-sub">or click to choose from disk (.sfe.json, .json)</div>
             </div>
-            <input type="file" id="modFileInput" accept=".json,application/json" style="display:none;">
+            <input type="file" id="modFileInput" accept=".json,.sfe.json,application/json" style="display:none;">
           </div>
 
           <div class="panel-card">
@@ -1291,17 +1291,23 @@
           <div class="editor-toolbar">
             <div>
               <div class="panel-card-title" id="editorTitleLabel">Plugin JSON Editor</div>
-              <div class="panel-card-desc" id="editorSubtitleLabel" style="margin-bottom:0;">Select an installed plugin or paste JSON to install/update.</div>
+              <div class="panel-card-desc" id="editorSubtitleLabel" style="margin-bottom:0;">Select an installed plugin, load a starter template, or paste `.sfe.json` below.</div>
             </div>
-            <div style="display:flex; gap:6px; flex-wrap:wrap;">
-              <button type="button" class="btn btn-neutral btn-sm" id="btnLoadModTemplate">Template</button>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+              <select id="selModTemplate" class="btn btn-neutral btn-sm" style="padding-right: 18px;" title="Load a starter .sfe.json template">
+                <option value="">Load Template…</option>
+                <option value="record-card">Record Card (Account)</option>
+                <option value="related-list">Related List (Open Cases)</option>
+                <option value="record-banner">Alert Banner (Opportunity)</option>
+                <option value="multi-hop">Multi-Hop Rollup (Coverage)</option>
+              </select>
               <button type="button" class="btn btn-neutral btn-sm" id="btnFormatModJson">Format</button>
               <button type="button" class="btn btn-neutral btn-sm" id="btnDownloadEditorMod">Download</button>
               <button type="button" class="btn btn-primary btn-sm" id="btnSaveModJson">Save &amp; Install</button>
             </div>
           </div>
 
-          <textarea id="modJsonTextarea" class="json-textarea" spellcheck="false" placeholder="Paste or edit .mod.json content here..."></textarea>
+          <textarea id="modJsonTextarea" class="json-textarea" spellcheck="false" placeholder="Paste or edit .sfe.json (schemaVersion: 2) content here..."></textarea>
 
           <div class="schema-summary" id="modSchemaSummary">
             <span>Status: <strong>Ready</strong></span>

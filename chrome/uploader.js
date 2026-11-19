@@ -74,7 +74,7 @@
   }
 
   const DEFAULT_SETTINGS = {
-    version: '1.3.3',
+    version: '1.4.0',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -103,32 +103,313 @@
     }
   };
 
-  const SAMPLE_MOD_TEMPLATE = {
-    schemaVersion: 1,
-    id: 'my-custom-inspector',
-    name: 'Custom Record Inspector',
-    version: '1.0.0',
-    description: 'Displays related child records on hover and highlights panels.',
-    enabled: true,
-    target: {
-      objectApiName: 'CustomObject__c',
-      keyPrefix: 'a00',
-      nameField: 'Name',
-      headerTitle: 'Related Items',
-      icon: {
-        sldsName: 'standard:record',
-        backgroundColor: '#0176d3'
+  const STARTER_TEMPLATES = {
+    'record-card': {
+      schemaVersion: 2,
+      id: 'account-quick-card',
+      name: 'Account Quick Card',
+      version: '1.0.0',
+      description: 'Displays key Account fields and a conditional rating badge on Hover Previews and Highlights Panels.',
+      enabled: true,
+      target: {
+        objectApiName: 'Account',
+        keyPrefix: '001',
+        nameField: 'Name',
+        headerTitle: 'Account Snapshot'
+      },
+      mounts: {
+        hoverPanel: true,
+        highlightsPanel: true,
+        rightPane: false
+      },
+      data: [
+        {
+          id: 'target',
+          type: 'record',
+          objectApiName: 'Account',
+          fields: ['Id', 'Name', 'Type', 'Industry', 'Rating', 'AnnualRevenue']
+        },
+        {
+          id: 'summary',
+          type: 'compute',
+          fields: {
+            ratingTone: {
+              op: 'cases',
+              cases: [
+                { when: { path: 'target.Rating', op: 'eq', value: 'Hot' }, value: 'success' },
+                { when: { path: 'target.Rating', op: 'eq', value: 'Warm' }, value: 'warning' },
+                { when: { path: 'target.Rating', op: 'eq', value: 'Cold' }, value: 'info' }
+              ],
+              default: 'neutral'
+            }
+          }
+        }
+      ],
+      view: {
+        hover: [
+          {
+            type: 'badgeRow',
+            badges: [
+              {
+                text: '{{target.Rating}} Account',
+                tonePath: 'summary.ratingTone',
+                when: { path: 'target.Rating', op: 'exists' }
+              },
+              {
+                text: '{{target.Type}}',
+                tone: 'neutral',
+                when: { path: 'target.Type', op: 'exists' }
+              }
+            ]
+          },
+          {
+            type: 'fieldGrid',
+            items: [
+              { label: 'Industry', value: '{{target.Industry}}' },
+              { label: 'Annual Revenue', value: '{{target.AnnualRevenue | currency}}' }
+            ]
+          }
+        ]
       }
     },
-    mounts: {
-      hoverPanel: true,
-      highlightsPanel: true
+    'related-list': {
+      schemaVersion: 2,
+      id: 'account-open-cases',
+      name: 'Account Open Cases',
+      version: '1.0.0',
+      description: 'Shows open Case count and an expandable list of recent open Cases on Account Hover Previews and Right Panes.',
+      enabled: true,
+      target: {
+        objectApiName: 'Account',
+        keyPrefix: '001',
+        nameField: 'Name',
+        headerTitle: 'Open Cases'
+      },
+      mounts: {
+        hoverPanel: true,
+        highlightsPanel: false,
+        rightPane: true
+      },
+      data: [
+        {
+          id: 'target',
+          type: 'record',
+          objectApiName: 'Account',
+          fields: ['Id', 'Name']
+        },
+        {
+          id: 'openCases',
+          type: 'relatedList',
+          relatedListId: 'Cases',
+          fields: ['Case.Id', 'Case.CaseNumber', 'Case.Subject', 'Case.Status', 'Case.Priority'],
+          where: { path: 'item.Status', op: 'neq', value: 'Closed', ignoreCase: true },
+          limit: 8
+        },
+        {
+          id: 'summary',
+          type: 'compute',
+          fields: {
+            openCount: { op: 'count', from: 'openCases' },
+            highPriorityCount: {
+              op: 'count',
+              from: 'openCases',
+              where: { path: 'item.Priority', op: 'in', value: ['High', 'Critical', 'Urgent'], ignoreCase: true }
+            },
+            countTone: {
+              op: 'cases',
+              cases: [
+                { when: { path: 'summary.highPriorityCount', op: 'gt', value: 0 }, value: 'warning' },
+                { when: { path: 'summary.openCount', op: 'gt', value: 0 }, value: 'info' }
+              ],
+              default: 'success'
+            }
+          }
+        }
+      ],
+      view: {
+        hover: [
+          {
+            type: 'badgeRow',
+            badges: [
+              { text: '{{summary.openCount}} Open Cases', tonePath: 'summary.countTone' },
+              {
+                text: '{{summary.highPriorityCount}} High Priority',
+                tone: 'error',
+                when: { path: 'summary.highPriorityCount', op: 'gt', value: 0 }
+              }
+            ]
+          },
+          {
+            type: 'list',
+            dividerTop: true,
+            itemsPath: 'openCases',
+            maxItems: 5,
+            emptyText: 'No open cases',
+            item: {
+              title: '{{item.CaseNumber}} — {{item.Subject}}',
+              recordIdPath: 'item.id',
+              objectApiName: 'Case',
+              subtextParts: [
+                { text: '{{item.Status}}', when: { path: 'item.Status', op: 'exists' } },
+                { text: '{{item.Priority}}', when: { path: 'item.Priority', op: 'exists' } }
+              ]
+            }
+          }
+        ]
+      }
     },
-    pipeline: {
-      childRecords: {
-        objectApiName: 'ChildObject__c',
-        relationshipField: 'Parent__c',
-        fields: ['Id', 'Name', 'Status__c']
+    'record-banner': {
+      schemaVersion: 2,
+      id: 'opportunity-overdue-banner',
+      name: 'Opportunity Close Date Alert',
+      version: '1.0.0',
+      description: 'Displays a warning banner at the top of open Opportunities whose Close Date has passed.',
+      enabled: true,
+      target: {
+        objectApiName: 'Opportunity',
+        keyPrefix: '006',
+        nameField: 'Name',
+        headerTitle: 'Opportunity Alert'
+      },
+      mounts: {
+        hoverPanel: false,
+        highlightsPanel: false,
+        recordBanner: true
+      },
+      data: [
+        {
+          id: 'target',
+          type: 'record',
+          objectApiName: 'Opportunity',
+          fields: ['Id', 'Name', 'StageName', 'CloseDate', 'Amount', 'IsClosed']
+        },
+        {
+          id: 'summary',
+          type: 'compute',
+          fields: {
+            daysToClose: { op: 'daysFromToday', path: 'target.CloseDate' },
+            isOverdue: {
+              op: 'cond',
+              when: {
+                all: [
+                  { path: 'target.IsClosed', op: 'isFalse' },
+                  { path: 'summary.daysToClose', op: 'lt', value: 0 }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      view: {
+        banner: [
+          {
+            type: 'alert',
+            tone: 'warning',
+            icon: '⚠',
+            title: 'Past-Due Close Date',
+            text: 'Scheduled close {{target.CloseDate}} has passed while in stage {{target.StageName}} ({{target.Amount | currency}}).',
+            when: { path: 'summary.isOverdue', op: 'isTrue' }
+          }
+        ]
+      }
+    },
+    'multi-hop': {
+      schemaVersion: 2,
+      id: 'account-asset-coverage',
+      name: 'Account Asset Coverage Rollup',
+      version: '1.0.0',
+      description: 'Multi-hop example: rolls up Entitlement date status across an Account’s Assets into a collapsible drawer.',
+      enabled: true,
+      target: {
+        objectApiName: 'Account',
+        keyPrefix: '001',
+        nameField: 'Name',
+        headerTitle: 'Asset Coverage'
+      },
+      mounts: {
+        hoverPanel: true,
+        highlightsPanel: true
+      },
+      data: [
+        {
+          id: 'target',
+          type: 'record',
+          objectApiName: 'Account',
+          fields: ['Id', 'Name']
+        },
+        {
+          id: 'assets',
+          type: 'relatedList',
+          relatedListId: 'Assets',
+          fields: ['Asset.Id', 'Asset.Name', 'Asset.SerialNumber']
+        },
+        {
+          id: 'entitlements',
+          type: 'relatedList',
+          forEach: 'assets',
+          attachAs: 'entitlements',
+          relatedListId: 'Entitlements',
+          fields: ['Entitlement.Id', 'Entitlement.Name', 'Entitlement.StartDate', 'Entitlement.EndDate', 'Entitlement.Status']
+        },
+        {
+          id: 'entitlements',
+          type: 'dateStatus',
+          from: 'entitlements',
+          startDateField: 'StartDate',
+          endDateField: 'EndDate',
+          statusField: 'Status',
+          soonDays: 30,
+          pickPrimaryBucketAs: 'primaryBucket'
+        },
+        {
+          id: 'assets',
+          type: 'rollup',
+          from: 'assets',
+          childrenField: 'entitlements',
+          soonDays: 30,
+          statusBadgeCases: [
+            { when: { all: [{ path: 'item.status', op: 'eq', value: 'ACTIVE' }, { path: 'item.isExpiringSoon', op: 'isTrue' }] }, value: { text: 'Expiring Soon', tone: 'warning' } },
+            { when: { path: 'item.status', op: 'eq', value: 'ACTIVE' }, value: { text: 'Active', tone: 'success' } },
+            { when: { path: 'item.status', op: 'eq', value: 'UPCOMING' }, value: { text: 'Upcoming', tone: 'info' } },
+            { when: { path: 'item.status', op: 'eq', value: 'EXPIRED' }, value: { text: 'Expired', tone: 'error' } },
+            { value: { text: 'None', tone: 'neutral' } }
+          ]
+        },
+        {
+          id: 'summary',
+          type: 'compute',
+          fields: {
+            totalAssets: { op: 'count', from: 'assets' },
+            activeAssets: { op: 'count', from: 'assets', where: { path: 'item.status', op: 'eq', value: 'ACTIVE' } }
+          }
+        }
+      ],
+      view: {
+        hover: [
+          {
+            type: 'badgeRow',
+            badges: [
+              { text: '{{summary.activeAssets}}/{{summary.totalAssets}} Assets Active', tone: 'info' }
+            ]
+          },
+          {
+            type: 'drawer',
+            id: 'assetDrawer',
+            itemsPath: 'assets',
+            toggleLabel: 'Inspect {{summary.totalAssets}} Assets',
+            emptyText: 'No Assets Found',
+            item: {
+              title: '{{item.Name}}',
+              recordIdPath: 'item.id',
+              objectApiName: 'Asset',
+              badge: { textPath: 'item.statusBadge.text', tonePath: 'item.statusBadge.tone' },
+              meta: [
+                { text: 'S/N {{item.SerialNumber}}', when: { path: 'item.SerialNumber', op: 'exists' } },
+                { text: 'ends {{item.endDate}}', when: { path: 'item.endDate', op: 'exists' } }
+              ]
+            }
+          }
+        ]
       }
     }
   };
@@ -148,7 +429,7 @@
     },
     'import-plugin': {
       title: 'Custom Plugins',
-      subtitle: 'Upload .mod.json files, manage installed plugins, and edit definitions.'
+      subtitle: 'Upload .sfe.json (schema v2) files, manage installed plugins, and edit definitions.'
     },
     'loading-animation': {
       title: 'Loading Animation',
@@ -235,7 +516,7 @@
   const editorTitleLabel = document.getElementById('editorTitleLabel');
   const modJsonTextarea = document.getElementById('modJsonTextarea');
   const modSchemaSummary = document.getElementById('modSchemaSummary');
-  const btnLoadModTemplate = document.getElementById('btnLoadModTemplate');
+  const selModTemplate = document.getElementById('selModTemplate');
   const btnFormatModJson = document.getElementById('btnFormatModJson');
   const btnDownloadEditorMod = document.getElementById('btnDownloadEditorMod');
   const btnSaveModJson = document.getElementById('btnSaveModJson');
@@ -539,6 +820,12 @@
     if (!rawMod || typeof rawMod !== 'object' || Array.isArray(rawMod)) {
       throw new Error('Plugin must be a JSON object.');
     }
+    if (rawMod.schemaVersion === 1 || (!rawMod.schemaVersion && rawMod.pipeline)) {
+      throw new Error('Legacy schemaVersion 1 (.mod.json) is not supported in v1.4.0. Migrate to schemaVersion 2 (.sfe.json).');
+    }
+    if (rawMod.schemaVersion !== 2) {
+      throw new Error('Plugin JSON requires "schemaVersion": 2.');
+    }
     const id = String(rawMod.id || '').trim();
     const name = String(rawMod.name || '').trim();
     if (!id || !name) {
@@ -547,10 +834,20 @@
     if (!rawMod.target || typeof rawMod.target !== 'object' || !rawMod.target.keyPrefix || !rawMod.target.objectApiName) {
       throw new Error('Plugin JSON requires "target.objectApiName" and "target.keyPrefix".');
     }
-    if (!rawMod.pipeline || typeof rawMod.pipeline !== 'object' || !rawMod.pipeline.childRecords) {
-      throw new Error('Plugin JSON requires "pipeline.childRecords".');
+    if (!Array.isArray(rawMod.data) || rawMod.data.length === 0) {
+      throw new Error('Plugin JSON requires a non-empty "data" array of steps.');
+    }
+    if (!rawMod.view || typeof rawMod.view !== 'object') {
+      throw new Error('Plugin JSON requires a "view" object.');
+    }
+    const hasViewBlocks = ['hover', 'highlights', 'rightPane', 'banner'].some(
+      (k) => Array.isArray(rawMod.view[k]) && rawMod.view[k].length > 0
+    );
+    if (!hasViewBlocks) {
+      throw new Error('Plugin "view" requires at least one non-empty block array (hover, highlights, rightPane, or banner).');
     }
     return Object.assign({}, rawMod, {
+      schemaVersion: 2,
       id,
       name,
       version: String(rawMod.version || '1.0.0'),
@@ -571,9 +868,10 @@
       const valid = validateModObject(item);
       const mounts = Object.keys(valid.mounts || {}).filter((k) => valid.mounts[k] === true || valid.mounts[k]?.enabled === true);
       modSchemaSummary.innerHTML = `
-        <span>Schema: <strong style="color:#065f46;">Valid</strong></span>
+        <span>Schema: <strong style="color:#065f46;">v2 Valid</strong></span>
         <span>ID: <strong>${escapeHtml(valid.id)}</strong></span>
         <span>Target: <strong>${escapeHtml(valid.target.objectApiName)} (${escapeHtml(valid.target.keyPrefix)})</strong></span>
+        <span>Steps: <strong>${valid.data.length}</strong></span>
         <span>Mounts: <strong>${escapeHtml(mounts.join(', ') || 'none')}</strong></span>
       `;
     } catch (err) {
@@ -595,7 +893,7 @@
       ? currentSettings.inspectorMods.mods
       : [];
 
-    currentSettings.modules.inspectorMods = mods.some((m) => m && m.enabled !== false);
+    currentSettings.modules.inspectorMods = mods.some((m) => m && m.enabled !== false && m.schemaVersion === 2);
     if (customModsCountPill) customModsCountPill.textContent = String(mods.length);
     if (btnExportAllMods) btnExportAllMods.style.display = mods.length > 0 ? 'inline-flex' : 'none';
 
@@ -605,7 +903,8 @@
         .map((mod) => {
           const targetObj = (mod.target && mod.target.objectApiName) || 'Record';
           const keyPrefix = (mod.target && mod.target.keyPrefix) || '';
-          const isEnabled = mod.enabled !== false;
+          const isV2 = mod.schemaVersion === 2;
+          const isEnabled = isV2 && mod.enabled !== false;
           return `
             <div class="plugin-card" data-plugin-kind="custom" data-plugin-search="${escapeHtml(
               `${mod.name} ${targetObj} ${keyPrefix} ${mod.description || ''}`
@@ -616,11 +915,12 @@
                     <span class="plugin-name">${escapeHtml(mod.name)}</span>
                     <span class="tag-pill">${escapeHtml(targetObj)}${keyPrefix ? ` (${escapeHtml(keyPrefix)})` : ''}</span>
                     ${mod.version ? `<span class="tag-pill">v${escapeHtml(mod.version)}</span>` : ''}
+                    ${!isV2 ? `<span class="tag-pill" style="background:#fef3c7; color:#92400e; border-color:#f59e0b;">Legacy v1 — Re-import .sfe.json</span>` : ''}
                   </div>
                   ${mod.description ? `<div class="plugin-desc">${escapeHtml(mod.description)}</div>` : ''}
                 </div>
                 <label class="switch">
-                  <input type="checkbox" class="overview-mod-toggle" data-mod-id="${escapeHtml(mod.id)}" ${isEnabled ? 'checked' : ''}>
+                  <input type="checkbox" class="overview-mod-toggle" data-mod-id="${escapeHtml(mod.id)}" ${isEnabled ? 'checked' : ''} ${!isV2 ? 'disabled' : ''}>
                   <span class="slider"></span>
                 </label>
               </div>
@@ -672,19 +972,21 @@
             const targetObj = (mod.target && mod.target.objectApiName) || 'Record';
             const keyPrefix = (mod.target && mod.target.keyPrefix) || '';
             const isSelected = selectedEditModId === mod.id;
+            const isV2 = mod.schemaVersion === 2;
             return `
               <div class="mod-row-card ${isSelected ? 'selected' : ''}" data-mod-id="${escapeHtml(mod.id)}">
                 <div class="mod-row-main" data-mod-id="${escapeHtml(mod.id)}">
                   <div class="mod-row-title">
                     <span>${escapeHtml(mod.name)}</span>
                     <span class="tag-pill">${escapeHtml(targetObj)}${keyPrefix ? ` (${escapeHtml(keyPrefix)})` : ''}</span>
+                    ${!isV2 ? `<span class="tag-pill" style="background:#fef3c7; color:#92400e; border-color:#f59e0b;">Legacy v1</span>` : ''}
                   </div>
                   ${mod.description ? `<div class="mod-row-desc">${escapeHtml(mod.description)}</div>` : ''}
                 </div>
                 <div class="mod-row-actions">
                   <button type="button" class="btn btn-danger-ghost btn-sm page-mod-remove" data-mod-id="${escapeHtml(mod.id)}" title="Remove">✕</button>
                   <label class="switch">
-                    <input type="checkbox" class="page-mod-toggle" data-mod-id="${escapeHtml(mod.id)}" ${mod.enabled !== false ? 'checked' : ''}>
+                    <input type="checkbox" class="page-mod-toggle" data-mod-id="${escapeHtml(mod.id)}" ${isV2 && mod.enabled !== false ? 'checked' : ''} ${!isV2 ? 'disabled' : ''}>
                     <span class="slider"></span>
                   </label>
                 </div>
@@ -744,7 +1046,7 @@
       const mods = (currentSettings.inspectorMods && Array.isArray(currentSettings.inspectorMods.mods))
         ? currentSettings.inspectorMods.mods
         : [];
-      const activeCustomCount = mods.filter((m) => m && m.enabled !== false).length;
+      const activeCustomCount = mods.filter((m) => m && m.enabled !== false && m.schemaVersion === 2).length;
       const activeBuiltInCount =
         (currentSettings.modules.subtabs !== false ? 1 : 0) +
         (currentSettings.modules.linkInterceptor !== false ? 1 : 0) +
@@ -1116,11 +1418,15 @@
   if (modJsonTextarea) {
     modJsonTextarea.addEventListener('input', updateEditorSchemaSummary);
   }
-  if (btnLoadModTemplate && modJsonTextarea) {
-    btnLoadModTemplate.addEventListener('click', () => {
+  if (selModTemplate && modJsonTextarea) {
+    selModTemplate.addEventListener('change', () => {
+      const tplKey = selModTemplate.value;
+      if (!tplKey || !STARTER_TEMPLATES[tplKey]) return;
       selectedEditModId = '';
-      if (editorTitleLabel) editorTitleLabel.textContent = 'Plugin JSON Editor';
-      modJsonTextarea.value = JSON.stringify(SAMPLE_MOD_TEMPLATE, null, 2);
+      const tpl = STARTER_TEMPLATES[tplKey];
+      if (editorTitleLabel) editorTitleLabel.textContent = `Template: ${tpl.name}`;
+      modJsonTextarea.value = JSON.stringify(tpl, null, 2);
+      selModTemplate.value = '';
       updateEditorSchemaSummary();
       renderModsViews();
     });
@@ -1141,7 +1447,7 @@
       try {
         const parsed = JSON.parse(modJsonTextarea.value || '{}');
         const name = (parsed.id || 'plugin').replace(/[^a-zA-Z0-9_-]/g, '-');
-        triggerDownloadJson(`${name}.mod.json`, parsed);
+        triggerDownloadJson(`${name}.sfe.json`, parsed);
       } catch (err) {
         showStatus(`Cannot download invalid JSON: ${err.message || err}`, true);
       }
@@ -1152,7 +1458,7 @@
       const mods = currentSettings.inspectorMods?.mods || [];
       if (!mods.length) return;
       const payload = mods.length === 1 ? mods[0] : { mods };
-      const filename = mods.length === 1 ? `${mods[0].id}.mod.json` : 'salesforce-enhancer-mods.json';
+      const filename = mods.length === 1 ? `${mods[0].id}.sfe.json` : 'salesforce-enhancer-plugins.sfe.json';
       triggerDownloadJson(filename, payload);
     });
   }
@@ -1160,7 +1466,7 @@
     btnSaveModJson.addEventListener('click', () => {
       const raw = modJsonTextarea ? modJsonTextarea.value.trim() : '';
       if (!raw) {
-        showStatus('Choose a .mod.json file or paste Plugin JSON first.', true);
+        showStatus('Choose a .sfe.json file, select a template, or paste Plugin JSON first.', true);
         return;
       }
       installAndSaveModsFromRawText(raw);
