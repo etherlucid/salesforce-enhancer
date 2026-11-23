@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salesforce Enhancer
 // @namespace    https://etherlucid.local/
-// @version      1.4.0
+// @version      1.4.1
 // @description  Salesforce productivity: subtabs & tab drag-and-drop, Quick Views list bookmarking, declarative Inspector Mods, developer themes, and custom animations.
 // @match        https://*.lightning.force.com/*
 // @match        https://*.salesforce.com/*
@@ -263,11 +263,12 @@
   }
 
   const DEFAULT_SETTINGS = {
-    version: '1.4.0',
+    version: '1.4.1',
     modules: {
       subtabs: true,
       quickViews: true,
       linkInterceptor: true,
+      clipboardFix: true,
       inspectorMods: false,
       theming: false,
       loadingAnimation: false
@@ -303,11 +304,12 @@
     const keybinds = normalizeKeybinds(raw.subtabs && raw.subtabs.keybinds);
 
     const res = {
-      version: '1.4.0',
+      version: '1.4.1',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
         linkInterceptor: raw.modules ? raw.modules.linkInterceptor !== false : true,
+        clipboardFix: raw.modules ? raw.modules.clipboardFix !== false : true,
         inspectorMods: raw.modules ? !!raw.modules.inspectorMods : false,
         theming: raw.modules ? !!raw.modules.theming : (raw.applyToSalesforce === false ? false : !!(raw.theme && raw.theme !== 'classic')),
         loadingAnimation: raw.modules ? raw.modules.loadingAnimation === true : (raw.loadingImage ? raw.loadingImage.enabled === true : false)
@@ -1304,6 +1306,375 @@
     return true;
   }
 
+  function initShadowSlotCopyFix() {
+    if (window.__sfEnhancerSlotCopyFixInstalled) return;
+    window.__sfEnhancerSlotCopyFixInstalled = true;
+
+    let lastDblClickSlot = null;
+    let lastDblClickAt = 0;
+
+    const BLOCK_TAGS = new Set([
+      'P', 'DIV', 'LI', 'TR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+      'BLOCKQUOTE', 'PRE', 'SECTION', 'ARTICLE', 'HEADER', 'FOOTER',
+      'RECORDS-RECORD-LAYOUT-ROW', 'RECORDS-RECORD-LAYOUT-ITEM',
+      'RECORDS-RECORD-LAYOUT-SECTION'
+    ]);
+
+    const SKIP_TAGS = new Set(['STYLE', 'SCRIPT', 'NOSCRIPT', 'SVG', 'TEMPLATE']);
+
+    function normalizeCopiedText(raw) {
+      return String(raw || '')
+        .replace(/\r\n/g, '\n')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n[ \t]+/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    }
+
+    function isSkippedElement(el) {
+      if (!el || el.nodeType !== 1) return false;
+      const tag = el.tagName ? el.tagName.toUpperCase() : '';
+      if (SKIP_TAGS.has(tag)) return true;
+      if (tag === 'BUTTON') return true;
+      if (el.classList && (el.classList.contains('slds-assistive-text') || el.classList.contains('slds-hide'))) {
+        return true;
+      }
+      if (el.getAttribute && el.getAttribute('aria-hidden') === 'true') return true;
+      try {
+        if (el.style && (el.style.display === 'none' || el.style.visibility === 'hidden')) return true;
+      } catch (_) {}
+      return false;
+    }
+
+    function getFlatChildren(node) {
+      if (!node) return [];
+      const tag = node.nodeType === 1 && node.tagName ? node.tagName.toUpperCase() : '';
+      if (tag === 'SLOT' && typeof node.assignedNodes === 'function') {
+        const assigned = node.assignedNodes({ flatten: true });
+        if (assigned && assigned.length > 0) return assigned;
+      }
+      const sr = node.nodeType === 1 ? (node.shadowRoot || node._sfShadowRoot) : null;
+      if (sr) return Array.from(sr.childNodes || []);
+      return Array.from(node.childNodes || []);
+    }
+
+    function getFlatParent(node) {
+      if (!node) return null;
+      if (node.assignedSlot) return node.assignedSlot;
+      if (node.parentNode) return node.parentNode;
+      if (node.host) return node.host;
+      return null;
+    }
+
+    function findFlatLca(a, b) {
+      if (!a || !b) return document.body || document.documentElement;
+      const ancestors = new Set();
+      let cur = a;
+      for (let i = 0; cur && i < 200; i++) {
+        ancestors.add(cur);
+        cur = getFlatParent(cur);
+      }
+      cur = b;
+      for (let i = 0; cur && i < 200; i++) {
+        if (ancestors.has(cur)) return cur;
+        cur = getFlatParent(cur);
+      }
+      return document.body || document.documentElement;
+    }
+
+    function collectAllShadowRoots(root, priorityNodes = []) {
+      const out = [];
+      const seen = new Set();
+      const addRoot = (sr) => {
+        if (sr && !seen.has(sr)) {
+          seen.add(sr);
+          out.push(sr);
+        }
+      };
+
+      // 1. Always collect shadow roots from priority nodes (event composedPath, recent dblclick slot, etc.) first
+      for (const pn of priorityNodes) {
+        let cur = pn;
+        for (let i = 0; cur && i < 40; i++) {
+          if (typeof ShadowRoot !== 'undefined' && cur instanceof ShadowRoot) {
+            addRoot(cur);
+          } else if (cur.nodeType === 1) {
+            addRoot(cur.shadowRoot || cur._sfShadowRoot);
+          }
+          const rn = cur.getRootNode ? cur.getRootNode() : null;
+          cur = cur.parentNode || (rn && rn.host) || null;
+        }
+      }
+
+      // 2. Walk visible DOM subtrees (skipping hidden background Console tabs) to collect all active shadow roots
+      const stack = [root || document.body || document.documentElement];
+      let visited = 0;
+      while (stack.length > 0 && visited < 60000) {
+        const node = stack.pop();
+        if (!node) continue;
+        visited++;
+        if (node.nodeType === 1) {
+          if (node.classList && (node.classList.contains('hidden') || node.classList.contains('slds-hide'))) {
+            continue;
+          }
+          if (node.style && node.style.display === 'none') {
+            continue;
+          }
+          const sr = node.shadowRoot || node._sfShadowRoot;
+          if (sr && !seen.has(sr)) {
+            addRoot(sr);
+            stack.push(sr);
+          }
+        }
+        const children = node.children;
+        if (children && children.length > 0) {
+          for (let i = children.length - 1; i >= 0; i--) {
+            stack.push(children[i]);
+          }
+        }
+      }
+      return out;
+    }
+
+    function readFlattenedSlotText(node, seen = new Set()) {
+      if (!node || seen.has(node)) return '';
+      seen.add(node);
+      if (node.nodeType === 3) return node.nodeValue || '';
+      if (node.nodeType !== 1 && node.nodeType !== 11) return '';
+      const tag = node.tagName ? node.tagName.toUpperCase() : '';
+      if (tag === 'BR') return '\n';
+      if (node.nodeType === 1 && isSkippedElement(node)) return '';
+      let out = '';
+      for (const child of getFlatChildren(node)) {
+        out += readFlattenedSlotText(child, seen);
+      }
+      if (BLOCK_TAGS.has(tag) && out.trim()) return `\n${out}\n`;
+      if ((tag === 'TD' || tag === 'TH') && out.trim()) return `${out}\t`;
+      return out;
+    }
+
+    /**
+     * Serialize the exact visible text between (startContainer, startOffset) and
+     * (endContainer, endOffset) across the rendered flat tree (piercing Shadow DOM & <slot>s).
+     */
+    function serializeComposedRange(startContainer, startOffset, endContainer, endOffset) {
+      if (!startContainer || !endContainer) return '';
+      if (startContainer === endContainer && startContainer.nodeType === 3) {
+        return normalizeCopiedText((startContainer.nodeValue || '').slice(startOffset, endOffset));
+      }
+
+      const lca = findFlatLca(startContainer, endContainer);
+      if (!lca) return '';
+
+      let state = 'before'; // 'before' | 'inside' | 'done'
+      const chunks = [];
+      const visited = new Set();
+
+      const walk = (node) => {
+        if (!node || state === 'done' || visited.has(node)) return;
+        visited.add(node);
+
+        if (node.nodeType === 3) {
+          const val = node.nodeValue || '';
+          if (node === startContainer && node === endContainer) {
+            chunks.push(val.slice(startOffset, endOffset));
+            state = 'done';
+            return;
+          }
+          if (node === startContainer) {
+            chunks.push(val.slice(startOffset));
+            state = 'inside';
+            return;
+          }
+          if (node === endContainer) {
+            if (state === 'inside') chunks.push(val.slice(0, endOffset));
+            state = 'done';
+            return;
+          }
+          if (state === 'inside') chunks.push(val);
+          return;
+        }
+
+        if (node.nodeType !== 1 && node.nodeType !== 11) return;
+        const tag = node.tagName ? node.tagName.toUpperCase() : '';
+
+        if (node.nodeType === 1 && isSkippedElement(node)) {
+          if (node === startContainer) state = 'inside';
+          if (node === endContainer) state = 'done';
+          return;
+        }
+
+        if (tag === 'BR') {
+          if (state === 'inside') chunks.push('\n');
+          return;
+        }
+
+        const isStartEl = node === startContainer;
+        const isEndEl = node === endContainer;
+        const isBlock = BLOCK_TAGS.has(tag);
+        const beforeLen = chunks.length;
+
+        if (isBlock && state === 'inside') chunks.push('\n');
+
+        if (isStartEl || isEndEl) {
+          // Offset on an Element/ShadowRoot indexes into its DOM childNodes
+          const domChildren = Array.from(node.childNodes || []);
+          const fromIdx = isStartEl ? startOffset : 0;
+          const toIdx = isEndEl ? endOffset : domChildren.length;
+
+          if (isStartEl && isEndEl) {
+            state = 'inside';
+            for (let i = fromIdx; i < toIdx && i < domChildren.length; i++) {
+              walk(domChildren[i]);
+              if (state === 'done') break;
+            }
+            state = 'done';
+          } else if (isStartEl) {
+            state = 'inside';
+            for (let i = fromIdx; i < domChildren.length; i++) {
+              walk(domChildren[i]);
+              if (state === 'done') break;
+            }
+          } else {
+            // isEndEl
+            for (let i = 0; i < toIdx && i < domChildren.length; i++) {
+              walk(domChildren[i]);
+              if (state === 'done') break;
+            }
+            state = 'done';
+          }
+        } else {
+          const flatChildren = getFlatChildren(node);
+          for (let i = 0; i < flatChildren.length; i++) {
+            walk(flatChildren[i]);
+            if (state === 'done') break;
+          }
+        }
+
+        if (isBlock && chunks.length > beforeLen) chunks.push('\n');
+        if ((tag === 'TD' || tag === 'TH') && chunks.length > beforeLen) chunks.push('\t');
+      };
+
+      walk(lca);
+      return normalizeCopiedText(chunks.join(''));
+    }
+
+    document.addEventListener(
+      'dblclick',
+      (e) => {
+        try {
+          const _modSettings = getEnhancerSettings();
+          if (_modSettings.modules && _modSettings.modules.clipboardFix === false) return;
+          const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+          let foundSlot = null;
+          for (const node of path) {
+            if (!node || node.nodeType !== 1) continue;
+            if (node.tagName && node.tagName.toUpperCase() === 'SLOT') {
+              foundSlot = node;
+              break;
+            }
+            if (node.classList && node.classList.contains('fieldComponent')) {
+              const s = node.querySelector('slot');
+              if (s) {
+                foundSlot = s;
+                break;
+              }
+            }
+          }
+          if (foundSlot) {
+            lastDblClickSlot = foundSlot;
+            lastDblClickAt = Date.now();
+          }
+        } catch (_) {}
+      },
+      true
+    );
+
+    document.addEventListener(
+      'copy',
+      (e) => {
+        try {
+          const _modSettings = getEnhancerSettings();
+          if (_modSettings.modules && _modSettings.modules.clipboardFix === false) return;
+          if (!e.clipboardData) return;
+          const path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
+          const firstEl = path[0];
+          if (
+            firstEl &&
+            firstEl.nodeType === 1 &&
+            (firstEl.tagName === 'INPUT' || firstEl.tagName === 'TEXTAREA' || firstEl.isContentEditable)
+          ) {
+            return;
+          }
+
+          const sel = window.getSelection ? window.getSelection() : null;
+          const nativeText = sel ? normalizeCopiedText(sel.toString()) : '';
+
+          // Collect all active ShadowRoots on the page (prioritizing composedPath + recent dblclick slot)
+          const priorityNodes = path.slice();
+          if (lastDblClickSlot && lastDblClickSlot.isConnected && Date.now() - lastDblClickAt < 10000) {
+            priorityNodes.push(lastDblClickSlot);
+          }
+          const shadowRoots = collectAllShadowRoots(document.body || document.documentElement, priorityNodes);
+
+          let composedText = '';
+
+          // 1. Primary path: Selection.getComposedRanges() (exact Blink flat-tree range across all shadow roots)
+          if (sel && typeof sel.getComposedRanges === 'function') {
+            let ranges = [];
+            try {
+              ranges = sel.getComposedRanges({ shadowRoots });
+            } catch (_) {
+              try {
+                ranges = sel.getComposedRanges(...shadowRoots);
+              } catch (_) {}
+            }
+            const parts = [];
+            for (const r of ranges || []) {
+              if (!r || r.collapsed) continue;
+              const txt = serializeComposedRange(r.startContainer, r.startOffset, r.endContainer, r.endOffset);
+              if (txt) parts.push(txt);
+            }
+            composedText = normalizeCopiedText(parts.join('\n'));
+          }
+
+          // 2. Fallback: window Selection live range serialized through flat tree
+          if (!composedText && sel && sel.rangeCount > 0) {
+            const r = sel.getRangeAt(0);
+            if (r && !r.collapsed) {
+              composedText = serializeComposedRange(r.startContainer, r.startOffset, r.endContainer, r.endOffset);
+            }
+          }
+
+          // 3. Fallback: recent double-click on a Shadow DOM <slot> field (e.g. Highlights Panel fieldComponent)
+          if (!composedText && !nativeText && lastDblClickSlot && lastDblClickSlot.isConnected && Date.now() - lastDblClickAt < 10000) {
+            const pathHasFieldSlot = path.some(
+              (n) =>
+                n === lastDblClickSlot ||
+                (n && n.nodeType === 1 && n.classList && n.classList.contains('fieldComponent') && n.contains(lastDblClickSlot))
+            );
+            const hasActiveSelection =
+              (sel && sel.rangeCount > 0 && !sel.isCollapsed) ||
+              shadowRoots.some((sr) => typeof sr.getSelection === 'function' && sr.getSelection() && !sr.getSelection().isCollapsed);
+            if (pathHasFieldSlot || hasActiveSelection) {
+              composedText = normalizeCopiedText(readFlattenedSlotText(lastDblClickSlot));
+            }
+          }
+
+          // Override clipboard whenever the composed flat tree captured more text than Chrome's native DOM copy
+          // (fixes empty <slot></slot> copies AND partial copies where Chrome stopped at the first shadow boundary)
+          if (composedText && (!nativeText || composedText.length > nativeText.length)) {
+            e.clipboardData.setData('text/plain', composedText);
+            e.preventDefault();
+          }
+        } catch (_) {}
+      },
+      true
+    );
+  }
+
+  initShadowSlotCopyFix();
+
   if (isTopWindow) {
     initTabDragAndDrop();
     const initInterval = setInterval(() => {
@@ -1693,11 +2064,26 @@
       );
     const isSourcePinned = isNodePinned(sourceLi, focused.tabId);
     const parentUl = sourceLi.parentNode;
-    const siblings = Array.from(parentUl.children).filter((child) => {
+    const visibleBarItems = Array.from(parentUl.children).filter((child) => {
       if (!child || child.nodeType !== 1) return false;
       if (child.classList && child.classList.contains('hidden')) return false;
       const rect = child.getBoundingClientRect ? child.getBoundingClientRect() : null;
       if (rect && rect.width <= 0 && rect.height <= 0) return false;
+      return !!getTabIdFromElement(child);
+    });
+
+    // Moving the first subtab left into the workspace owner slot promotes it to become the workspace owner
+    if (isSubtab && delta < 0 && focused.parentTabId && focused.tabId !== focused.parentTabId) {
+      const visIdx = visibleBarItems.indexOf(sourceLi);
+      const prevBarLi = visIdx > 0 ? visibleBarItems[visIdx - 1] : null;
+      const prevBarTabId = prevBarLi ? getTabIdFromElement(prevBarLi) : null;
+      if (prevBarTabId === focused.parentTabId) {
+        await makeSubtabWorkspaceOwner(ws, focused.tabId, focused.parentTabId);
+        return;
+      }
+    }
+
+    const siblings = visibleBarItems.filter((child) => {
       const tid = getTabIdFromElement(child);
       if (!tid) return false;
       return isNodePinned(child, tid) === isSourcePinned;
@@ -1946,22 +2332,34 @@
       li.slds-sub-tabs__item.sf-tab-drop-hover::after,
       .navexConsoleTabItem.sf-tab-drop-hover::after,
       [role="tab"].sf-tab-drop-hover::after {
-        content: "↳ Drop to convert to subtab";
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        background: var(--sf-theme-accent, #0176d3);
-        color: var(--sf-theme-accent-contrast, #ffffff);
-        font-size: 11px;
-        font-weight: 600;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        padding: 3px 8px;
-        border-radius: 4px;
-        white-space: nowrap;
-        pointer-events: none;
-        z-index: 999999;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+        content: "↳ Drop to convert to subtab" !important;
+        display: inline-block !important;
+        position: absolute !important;
+        top: calc(100% + 4px) !important;
+        bottom: auto !important;
+        left: 50% !important;
+        right: auto !important;
+        transform: translateX(-50%) !important;
+        width: auto !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-width: none !important;
+        background: var(--sf-theme-accent, #0176d3) !important;
+        background-color: var(--sf-theme-accent, #0176d3) !important;
+        color: var(--sf-theme-accent-contrast, #ffffff) !important;
+        font-size: 11.5px !important;
+        font-weight: 600 !important;
+        line-height: 1.35 !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        padding: 4px 10px !important;
+        border-radius: 5px !important;
+        border: 1px solid rgba(255, 255, 255, 0.22) !important;
+        white-space: nowrap !important;
+        pointer-events: none !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        z-index: 999999 !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
       }
       li.tabItem.sf-tab-drop-hover.sf-promote-hover::after,
       .navexConsoleTabItem.sf-tab-drop-hover.sf-promote-hover::after,
@@ -1973,6 +2371,21 @@
       [role="tab"].sf-tab-drop-hover.sf-subtab-target-hover::after {
         content: "↳ Drop to move to this workspace" !important;
       }
+      li.tabItem.sf-tab-drop-hover.sf-owner-hover::after,
+      li.slds-sub-tabs__item.sf-tab-drop-hover.sf-owner-hover::after,
+      .navexConsoleTabItem.sf-tab-drop-hover.sf-owner-hover::after,
+      [role="tab"].sf-tab-drop-hover.sf-owner-hover::after {
+        content: "★ Drop to make workspace owner" !important;
+        left: 0 !important;
+        transform: none !important;
+      }
+      li.tabItem.sf-tab-drop-hover.sf-move-owner-hover::after,
+      li.slds-sub-tabs__item.sf-tab-drop-hover.sf-move-owner-hover::after,
+      .navexConsoleTabItem.sf-tab-drop-hover.sf-move-owner-hover::after,
+      [role="tab"].sf-tab-drop-hover.sf-move-owner-hover::after {
+        content: "↳ Drop to demote workspace owner" !important;
+      }
+      .sf-subtab-bar-drop-hover,
       .navexConsoleTabContainer[aria-label="Active Workspace Subtabs"].sf-subtab-bar-drop-hover,
       .navexConsoleSubtabContainer.sf-subtab-bar-drop-hover,
       .subTabBarContainer.sf-subtab-bar-drop-hover,
@@ -1984,27 +2397,39 @@
         border-radius: 4px !important;
         position: relative !important;
       }
+      .sf-subtab-bar-drop-hover::after,
       .navexConsoleTabContainer[aria-label="Active Workspace Subtabs"].sf-subtab-bar-drop-hover::after,
       .navexConsoleSubtabContainer.sf-subtab-bar-drop-hover::after,
       .subTabBarContainer.sf-subtab-bar-drop-hover::after,
       .subTabBar.sf-subtab-bar-drop-hover::after,
       .slds-sub-tabs.sf-subtab-bar-drop-hover::after {
-        content: "↳ Drop to add to this workspace as subtab";
-        position: absolute;
-        top: 100%;
-        left: 20px;
-        background: var(--sf-theme-accent, #0176d3);
-        color: var(--sf-theme-accent-contrast, #ffffff);
-        font-size: 11px;
-        font-weight: 600;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        padding: 3px 8px;
-        border-radius: 4px;
-        white-space: nowrap;
-        pointer-events: none;
-        z-index: 999999;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+        content: "↳ Drop to add to this workspace as subtab" !important;
+        display: inline-block !important;
+        position: absolute !important;
+        top: calc(100% + 4px) !important;
+        bottom: auto !important;
+        left: 20px !important;
+        right: auto !important;
+        width: auto !important;
+        height: auto !important;
+        background: var(--sf-theme-accent, #0176d3) !important;
+        background-color: var(--sf-theme-accent, #0176d3) !important;
+        color: var(--sf-theme-accent-contrast, #ffffff) !important;
+        font-size: 11.5px !important;
+        font-weight: 600 !important;
+        line-height: 1.35 !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        padding: 4px 10px !important;
+        border-radius: 5px !important;
+        border: 1px solid rgba(255, 255, 255, 0.22) !important;
+        white-space: nowrap !important;
+        pointer-events: none !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        z-index: 999999 !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
       }
+      .sf-bar-drop-hover,
       .navexConsoleTabContainer[aria-label="Workspaces"].sf-bar-drop-hover,
       .navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]).sf-bar-drop-hover,
       .navCenter.tabBarContainer.sf-bar-drop-hover {
@@ -2014,24 +2439,35 @@
         border-radius: 4px !important;
         position: relative !important;
       }
+      .sf-bar-drop-hover::after,
       .navexConsoleTabContainer[aria-label="Workspaces"].sf-bar-drop-hover::after,
       .navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]).sf-bar-drop-hover::after,
       .navCenter.tabBarContainer.sf-bar-drop-hover::after {
-        content: "↳ Drop to promote to workspace tab";
-        position: absolute;
-        top: 100%;
-        left: 20px;
-        background: var(--sf-theme-accent, #0176d3);
-        color: var(--sf-theme-accent-contrast, #ffffff);
-        font-size: 11px;
-        font-weight: 600;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        padding: 3px 8px;
-        border-radius: 4px;
-        white-space: nowrap;
-        pointer-events: none;
-        z-index: 999999;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+        content: "↳ Drop to promote to workspace tab" !important;
+        display: inline-block !important;
+        position: absolute !important;
+        top: calc(100% + 4px) !important;
+        bottom: auto !important;
+        left: 20px !important;
+        right: auto !important;
+        width: auto !important;
+        height: auto !important;
+        background: var(--sf-theme-accent, #0176d3) !important;
+        background-color: var(--sf-theme-accent, #0176d3) !important;
+        color: var(--sf-theme-accent-contrast, #ffffff) !important;
+        font-size: 11.5px !important;
+        font-weight: 600 !important;
+        line-height: 1.35 !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        padding: 4px 10px !important;
+        border-radius: 5px !important;
+        border: 1px solid rgba(255, 255, 255, 0.22) !important;
+        white-space: nowrap !important;
+        pointer-events: none !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        z-index: 999999 !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
       }
     `;
     (document.head || document.documentElement).appendChild(styleEl);
@@ -2166,6 +2602,8 @@
         'sf-tab-drop-hover',
         'sf-promote-hover',
         'sf-subtab-target-hover',
+        'sf-owner-hover',
+        'sf-move-owner-hover',
         'sf-bar-drop-hover',
         'sf-subtab-bar-drop-hover'
       );
@@ -2178,6 +2616,8 @@
       'sf-tab-drop-hover',
       'sf-promote-hover',
       'sf-subtab-target-hover',
+      'sf-owner-hover',
+      'sf-move-owner-hover',
       'sf-bar-drop-hover',
       'sf-subtab-bar-drop-hover'
     );
@@ -2188,6 +2628,10 @@
       el.classList.add('sf-tab-drop-hover', 'sf-promote-hover');
     } else if (mode === 'tab-move-subtab') {
       el.classList.add('sf-tab-drop-hover', 'sf-subtab-target-hover');
+    } else if (mode === 'subtab-make-owner') {
+      el.classList.add('sf-tab-drop-hover', 'sf-owner-hover');
+    } else if (mode === 'subtab-move-owner') {
+      el.classList.add('sf-tab-drop-hover', 'sf-move-owner-hover');
     } else if (mode === 'bar-promote') {
       el.classList.add('sf-bar-drop-hover');
     } else if (mode === 'subtab-bar-add') {
@@ -2202,6 +2646,8 @@
           'sf-tab-drop-hover',
           'sf-promote-hover',
           'sf-subtab-target-hover',
+          'sf-owner-hover',
+          'sf-move-owner-hover',
           'sf-bar-drop-hover',
           'sf-subtab-bar-drop-hover'
         );
@@ -2215,6 +2661,8 @@
         'sf-tab-drop-hover',
         'sf-promote-hover',
         'sf-subtab-target-hover',
+        'sf-owner-hover',
+        'sf-move-owner-hover',
         'sf-bar-drop-hover',
         'sf-subtab-bar-drop-hover'
       );
@@ -2472,6 +2920,583 @@
     });
   }
 
+  function extractCleanTabTarget(tabInfo) {
+    if (!tabInfo) return null;
+    let cleanUrl = tabInfo.url || '';
+    if (cleanUrl) {
+      cleanUrl = cleanUrl
+        .replace(/[?&]ws=[^&#]*/g, '')
+        .replace(/\?&/, '?')
+        .replace(/[?&]$/, '');
+      try {
+        if (typeof location !== 'undefined' && location.origin && cleanUrl.startsWith(location.origin + '/')) {
+          cleanUrl = cleanUrl.slice(location.origin.length);
+        }
+      } catch (_) {}
+    }
+    let cleanPageRef = null;
+    if (tabInfo.pageReference) {
+      try {
+        cleanPageRef = JSON.parse(JSON.stringify(tabInfo.pageReference));
+        if (cleanPageRef && cleanPageRef.state) {
+          delete cleanPageRef.state.ws;
+        }
+      } catch (_) {}
+    }
+    return {
+      tabId: tabInfo.tabId || null,
+      recordId: tabInfo.recordId || null,
+      url: cleanUrl || null,
+      pageReference: cleanPageRef,
+      title: getTabDisplayTitle(tabInfo.tabId, tabInfo, 'Tab')
+    };
+  }
+
+  function isLiveSessionTab(tabInfo) {
+    if (!tabInfo) return false;
+    const url = String(tabInfo.url || '');
+    const title = String(tabInfo.title || tabInfo.customTitle || tabInfo.pageTitle || '');
+    const recordId = String(tabInfo.recordId || '');
+    const objApi = String((tabInfo.pageReference && tabInfo.pageReference.attributes && tabInfo.pageReference.attributes.objectApiName) || '');
+    if (/MessagingSession|LiveChatTranscript|VoiceCall/i.test(url) || /MessagingSession|LiveChatTranscript|VoiceCall/i.test(objApi)) {
+      return true;
+    }
+    if (/Messaging Session|Chat Transcript|Voice Call/i.test(title)) {
+      return true;
+    }
+    if (/^(0Mw|570|0LQ)[a-zA-Z0-9]{12,15}$/.test(recordId)) {
+      return true;
+    }
+    return false;
+  }
+
+  function promptMakeWorkspaceOwner({
+    newOwnerTitle,
+    oldOwnerTitle,
+    orderedSubtabs = [],
+    liveSessionTabs = [],
+    isPinned = false,
+    triggeredByMovingOwnerOut = false
+  }) {
+    return new Promise((resolve) => {
+      const existing = document.getElementById('sf-enhancer-owner-modal');
+      if (existing) existing.remove();
+
+      const totalTabs = 1 + orderedSubtabs.length;
+      const backdrop = document.createElement('div');
+      backdrop.id = 'sf-enhancer-owner-modal';
+      backdrop.setAttribute('role', 'dialog');
+      backdrop.setAttribute('aria-modal', 'true');
+      backdrop.style.cssText = [
+        'position:fixed',
+        'inset:0',
+        'z-index:2147483647',
+        'background:rgba(15,23,42,0.48)',
+        'display:flex',
+        'align-items:center',
+        'justify-content:center',
+        'padding:16px',
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif'
+      ].join(';');
+
+      const card = document.createElement('div');
+      card.style.cssText = [
+        'width:100%',
+        'max-width:460px',
+        'background:var(--sf-theme-bg,#ffffff)',
+        'color:var(--sf-theme-text,#181818)',
+        'border:1px solid var(--sf-theme-border,#dddbda)',
+        'border-radius:8px',
+        'box-shadow:0 12px 32px rgba(0,0,0,0.28)',
+        'overflow:hidden'
+      ].join(';');
+
+      const header = document.createElement('div');
+      header.style.cssText = [
+        'display:flex',
+        'align-items:center',
+        'justify-content:space-between',
+        'padding:14px 18px',
+        'border-bottom:1px solid var(--sf-theme-border,#e5e5e5)'
+      ].join(';');
+
+      const heading = document.createElement('h2');
+      heading.textContent = triggeredByMovingOwnerOut
+        ? 'Change Workspace Owner?'
+        : 'Make Subtab Workspace Owner?';
+      heading.style.cssText = 'margin:0;font-size:15px;font-weight:700;';
+
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.textContent = '✕';
+      closeBtn.setAttribute('aria-label', 'Cancel');
+      closeBtn.style.cssText = [
+        'border:none',
+        'background:transparent',
+        'color:inherit',
+        'font-size:15px',
+        'line-height:1',
+        'cursor:pointer',
+        'padding:4px 6px',
+        'opacity:0.7'
+      ].join(';');
+
+      header.appendChild(heading);
+      header.appendChild(closeBtn);
+
+      const body = document.createElement('div');
+      body.style.cssText = 'padding:16px 18px;font-size:13px;line-height:1.45;';
+
+      const summary = document.createElement('p');
+      summary.style.cssText = 'margin:0 0 10px 0;';
+      if (triggeredByMovingOwnerOut) {
+        summary.textContent =
+          `Moving "${oldOwnerTitle}" out of the first position will make "${newOwnerTitle}" the workspace owner. All ${totalTabs} tabs in this workspace will reload.`;
+      } else {
+        const extraCount = Math.max(0, orderedSubtabs.length - 1);
+        summary.textContent =
+          `Promote "${newOwnerTitle}" to own this workspace and move "${oldOwnerTitle}"${extraCount > 0 ? ` and ${extraCount} other subtab${extraCount === 1 ? '' : 's'}` : ''} beneath it? All ${totalTabs} tabs in this workspace will reload.`;
+      }
+      body.appendChild(summary);
+
+      if (Array.isArray(liveSessionTabs) && liveSessionTabs.length > 0) {
+        const sessionNames = liveSessionTabs
+          .slice(0, 2)
+          .map((t) => getTabDisplayTitle(t.tabId, t, 'Live Session'))
+          .join(', ');
+        const warnBox = document.createElement('div');
+        warnBox.style.cssText = [
+          'margin:0 0 10px 0',
+          'padding:8px 10px',
+          'border-radius:6px',
+          'background:rgba(245,158,11,0.14)',
+          'border:1px solid rgba(217,119,6,0.45)',
+          'font-size:12px',
+          'line-height:1.4'
+        ].join(';');
+        warnBox.textContent =
+          `⚠ Live session tab detected (${sessionNames}). Reloading this workspace may interrupt active Messaging/Chat/Voice sessions.`;
+        body.appendChild(warnBox);
+      }
+
+      if (isPinned) {
+        const pinNote = document.createElement('p');
+        pinNote.style.cssText = 'margin:0 0 10px 0;font-size:12px;opacity:0.8;';
+        pinNote.textContent = 'Note: This workspace is currently pinned. The rebuilt workspace tab will open unpinned.';
+        body.appendChild(pinNote);
+      }
+
+      const listEl = document.createElement('div');
+      listEl.style.cssText = [
+        'background:var(--sf-theme-surface,#f8fafc)',
+        'border:1px solid var(--sf-theme-border,#e2e8f0)',
+        'border-radius:6px',
+        'padding:8px 10px',
+        'font-size:12px',
+        'max-height:150px',
+        'overflow-y:auto',
+        'display:flex',
+        'flex-direction:column',
+        'gap:4px'
+      ].join(';');
+
+      const tabNames = [newOwnerTitle].concat(
+        orderedSubtabs.map((st, idx) => getTabDisplayTitle(st.tabId, st, `Subtab ${idx + 1}`))
+      );
+      const maxVisible = 6;
+      tabNames.slice(0, maxVisible).forEach((name, idx) => {
+        const item = document.createElement('div');
+        item.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' + (idx === 0 ? 'font-weight:600;' : '');
+        item.textContent = `${idx === 0 ? '★ New Owner:' : '↳ Subtab:'} ${name}`;
+        listEl.appendChild(item);
+      });
+      if (tabNames.length > maxVisible) {
+        const more = document.createElement('div');
+        more.style.cssText = 'opacity:0.75;font-style:italic;';
+        more.textContent = `+ ${tabNames.length - maxVisible} more subtab${tabNames.length - maxVisible === 1 ? '' : 's'}`;
+        listEl.appendChild(more);
+      }
+      body.appendChild(listEl);
+
+      const footer = document.createElement('div');
+      footer.style.cssText = [
+        'display:flex',
+        'justify-content:flex-end',
+        'gap:8px',
+        'padding:12px 18px',
+        'border-top:1px solid var(--sf-theme-border,#e5e5e5)'
+      ].join(';');
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.style.cssText = [
+        'padding:6px 14px',
+        'border-radius:5px',
+        'border:1px solid var(--sf-theme-border,#cbd5e1)',
+        'background:var(--sf-theme-bg,#ffffff)',
+        'color:var(--sf-theme-text,#181818)',
+        'font-size:12.5px',
+        'font-weight:600',
+        'cursor:pointer'
+      ].join(';');
+
+      const confirmBtn = document.createElement('button');
+      confirmBtn.type = 'button';
+      confirmBtn.textContent = triggeredByMovingOwnerOut ? 'Change Workspace Owner' : 'Make Workspace Owner';
+      confirmBtn.style.cssText = [
+        'padding:6px 14px',
+        'border-radius:5px',
+        'border:1px solid transparent',
+        'background:var(--sf-theme-accent,#0176d3)',
+        'color:var(--sf-theme-accent-contrast,#ffffff)',
+        'font-size:12.5px',
+        'font-weight:600',
+        'cursor:pointer'
+      ].join(';');
+
+      footer.appendChild(cancelBtn);
+      footer.appendChild(confirmBtn);
+
+      card.appendChild(header);
+      card.appendChild(body);
+      card.appendChild(footer);
+      backdrop.appendChild(card);
+
+      let settled = false;
+      const cleanup = (accepted) => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('keydown', onKeyDown, true);
+        backdrop.remove();
+        resolve(accepted);
+      };
+
+      const onKeyDown = (ev) => {
+        if (ev.key === 'Escape') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          cleanup(false);
+        }
+      };
+
+      closeBtn.addEventListener('click', () => cleanup(false));
+      cancelBtn.addEventListener('click', () => cleanup(false));
+      confirmBtn.addEventListener('click', () => cleanup(true));
+      backdrop.addEventListener('click', (ev) => {
+        if (ev.target === backdrop) cleanup(false);
+      });
+      document.addEventListener('keydown', onKeyDown, true);
+
+      (document.body || document.documentElement).appendChild(backdrop);
+      confirmBtn.focus();
+    });
+  }
+
+  /**
+   * Rebuild a workspace so that a subtab becomes the primary workspace owner tab,
+   * moving the previous workspace owner and remaining subtabs beneath it in the requested order.
+   */
+  async function makeSubtabWorkspaceOwner(
+    wsArg,
+    sourceSubtabId,
+    parentTabIdArg = null,
+    { insertOldOwnerAfterTabId = null, focusOldOwner = false, triggeredByMovingOwnerOut = false } = {}
+  ) {
+    if (!sourceSubtabId) return;
+    let ws = wsArg;
+    let parentTabId = parentTabIdArg;
+    let parentInfo = null;
+    let sourceSubtabInfo = null;
+    let otherSubtabs = [];
+
+    try {
+      if (!ws) ws = await getWorkspaceAPI();
+      const subInfo = await ws.getTabInfo({ tabId: sourceSubtabId }).catch(() => null);
+      if (!parentTabId && subInfo && subInfo.parentTabId) {
+        parentTabId = subInfo.parentTabId;
+      }
+      if (!parentTabId || sourceSubtabId === parentTabId) return;
+
+      parentInfo = await ws.getTabInfo({ tabId: parentTabId }).catch(() => null);
+      if (!parentInfo) {
+        showToast('Workspace information unavailable');
+        return;
+      }
+
+      const rawSubtabs = Array.isArray(parentInfo.subtabs) ? parentInfo.subtabs : [];
+      const orderedSubtabs = getStableTabOrder(rawSubtabs, true, `subtabs:${parentTabId}`);
+      sourceSubtabInfo = orderedSubtabs.find((st) => st && st.tabId === sourceSubtabId) || subInfo;
+      if (!sourceSubtabInfo) {
+        showToast('Subtab information unavailable');
+        return;
+      }
+
+      otherSubtabs = orderedSubtabs.filter(
+        (st) => st && st.tabId && st.tabId !== sourceSubtabId && st.tabId !== parentTabId
+      );
+
+      let subtabsToRestore;
+      if (insertOldOwnerAfterTabId && insertOldOwnerAfterTabId !== sourceSubtabId) {
+        const insertIdx = otherSubtabs.findIndex((st) => st && st.tabId === insertOldOwnerAfterTabId);
+        subtabsToRestore = otherSubtabs.slice();
+        if (insertIdx >= 0) {
+          subtabsToRestore.splice(insertIdx + 1, 0, parentInfo);
+        } else {
+          subtabsToRestore.push(parentInfo);
+        }
+      } else {
+        subtabsToRestore = [parentInfo, ...otherSubtabs];
+      }
+
+      const newOwnerTitle = getTabDisplayTitle(sourceSubtabId, sourceSubtabInfo, 'Subtab');
+      const oldOwnerTitle = getTabDisplayTitle(parentTabId, parentInfo, 'Workspace');
+      const liveSessionTabs = [parentInfo, ...orderedSubtabs].filter(isLiveSessionTab);
+
+      const confirmed = await promptMakeWorkspaceOwner({
+        newOwnerTitle,
+        oldOwnerTitle,
+        orderedSubtabs: subtabsToRestore,
+        liveSessionTabs,
+        isPinned: !!parentInfo.pinned,
+        triggeredByMovingOwnerOut
+      });
+      if (!confirmed) {
+        showToast('Workspace owner change cancelled');
+        return;
+      }
+
+      const newOwnerTarget = extractCleanTabTarget(sourceSubtabInfo);
+      const oldOwnerTarget = extractCleanTabTarget(parentInfo);
+      const preservedCustomTitle =
+        parentInfo && typeof parentInfo.customTitle === 'string' && parentInfo.customTitle.trim()
+          ? parentInfo.customTitle
+          : null;
+      const preservedCustomIcon =
+        parentInfo && typeof parentInfo.customIcon === 'string' && parentInfo.customIcon.trim()
+          ? parentInfo.customIcon
+          : null;
+      const preservedCustomIconAlt =
+        parentInfo && typeof parentInfo.customIconAlt === 'string' && parentInfo.customIconAlt.trim()
+          ? parentInfo.customIconAlt
+          : parentInfo && typeof parentInfo.iconAlt === 'string' && parentInfo.iconAlt.trim()
+            ? parentInfo.iconAlt
+            : '';
+      const applyPreservedCustomTabMeta = async (targetTabId) => {
+        if (!targetTabId || (!preservedCustomTitle && !preservedCustomIcon)) return;
+        const applyOnce = async () => {
+          try {
+            if (preservedCustomTitle && typeof ws.setTabLabel === 'function') {
+              await ws.setTabLabel({ tabId: targetTabId, label: preservedCustomTitle }).catch(() => {});
+            }
+            if (preservedCustomIcon && typeof ws.setTabIcon === 'function') {
+              const iconParams = { tabId: targetTabId, icon: preservedCustomIcon };
+              if (preservedCustomIconAlt) iconParams.iconAlt = preservedCustomIconAlt;
+              await ws.setTabIcon(iconParams).catch(() => {});
+            }
+          } catch (_) {}
+        };
+        await applyOnce();
+        setTimeout(applyOnce, 350);
+      };
+      const restoreTargets = subtabsToRestore
+        .map((st) => ({
+          target: extractCleanTabTarget(st),
+          isOldOwner: !!(st && st.tabId === parentTabId)
+        }))
+        .filter((entry) => entry.target && (entry.target.url || entry.target.pageReference || entry.target.recordId));
+
+      if (!newOwnerTarget || (!newOwnerTarget.url && !newOwnerTarget.pageReference && !newOwnerTarget.recordId)) {
+        showToast('Could not promote subtab (missing tab target)');
+        return;
+      }
+
+      showToast('Updating workspace owner...');
+      isInternalWorkspaceCall = true;
+      try {
+        // 1. Close the existing workspace (closes owner + all subtabs, clearing deduplication registry)
+        await ws.closeTab({ tabId: parentTabId }).catch(() => false);
+        let stillOpen = null;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          await new Promise((r) => setTimeout(r, 60));
+          stillOpen = await ws.getTabInfo({ tabId: parentTabId }).catch(() => null);
+          if (!stillOpen || stillOpen.tabId !== parentTabId) break;
+        }
+        if (stillOpen && stillOpen.tabId === parentTabId) {
+          showToast('Could not change workspace owner (workspace stayed open)');
+          return;
+        }
+
+        logicalTabOrderCache.delete(`subtabs:${parentTabId}`);
+
+        const openPrimaryTarget = async (target) => {
+          if (!target) return null;
+          if (target.recordId) {
+            try {
+              const id = await ws.openTab({ recordId: target.recordId, focus: true, overrideNavRules: true });
+              if (id) return id;
+            } catch (_) {}
+          }
+          if (target.url) {
+            try {
+              const id = await ws.openTab({ url: target.url, focus: true, overrideNavRules: true });
+              if (id) return id;
+            } catch (_) {}
+          }
+          if (target.pageReference) {
+            try {
+              const id = await ws.openTab({ pageReference: target.pageReference, focus: true, overrideNavRules: true });
+              if (id) return id;
+            } catch (_) {}
+          }
+          return null;
+        };
+
+        const openSubtabTarget = async (pId, target) => {
+          if (!pId || !target) return null;
+          if (target.recordId) {
+            try {
+              const id = await ws.openSubtab({ parentTabId: pId, recordId: target.recordId, focus: false });
+              if (id) return id;
+            } catch (_) {}
+          }
+          if (target.pageReference) {
+            try {
+              const id = await ws.openSubtab({ parentTabId: pId, pageReference: target.pageReference, focus: false });
+              if (id) return id;
+            } catch (_) {}
+          }
+          if (target.url) {
+            try {
+              const id = await ws.openSubtab({ parentTabId: pId, url: target.url, focus: false });
+              if (id) return id;
+            } catch (_) {}
+          }
+          return null;
+        };
+
+        // 2. Open promoted subtab as the new primary workspace tab (overriding Console Navigation Rules)
+        const newPrimaryId = await openPrimaryTarget(newOwnerTarget);
+        await new Promise((r) => setTimeout(r, 100));
+
+        if (!newPrimaryId) {
+          // Safety net: attempt to restore the previous workspace so tabs are not lost
+          const restoredOldId = oldOwnerTarget ? await openPrimaryTarget(oldOwnerTarget) : null;
+          if (restoredOldId) {
+            await openSubtabTarget(restoredOldId, newOwnerTarget);
+            for (const entry of restoreTargets) {
+              if (!entry.isOldOwner) {
+                await openSubtabTarget(restoredOldId, entry.target);
+              }
+            }
+            await applyPreservedCustomTabMeta(restoredOldId);
+            await activateWorkspaceAndSubtab(ws, restoredOldId, null);
+          }
+          showToast('Could not make subtab workspace owner');
+          return;
+        }
+
+        const newPrimaryInfo = await ws.getTabInfo({ tabId: newPrimaryId }).catch(() => null);
+        const effectiveOwnerTabId =
+          newPrimaryInfo && newPrimaryInfo.isSubtab && newPrimaryInfo.parentTabId
+            ? newPrimaryInfo.parentTabId
+            : newPrimaryId;
+        const effectiveOwnerInfo =
+          effectiveOwnerTabId === newPrimaryId
+            ? newPrimaryInfo
+            : await ws.getTabInfo({ tabId: effectiveOwnerTabId }).catch(() => newPrimaryInfo);
+
+        const existingRecordIds = new Set();
+        const existingUrls = new Set();
+        if (effectiveOwnerInfo) {
+          if (effectiveOwnerInfo.recordId) existingRecordIds.add(effectiveOwnerInfo.recordId);
+          const ownerClean = extractCleanTabTarget(effectiveOwnerInfo);
+          if (ownerClean && ownerClean.url) existingUrls.add(ownerClean.url);
+          if (Array.isArray(effectiveOwnerInfo.subtabs)) {
+            for (const st of effectiveOwnerInfo.subtabs) {
+              if (st && st.recordId) existingRecordIds.add(st.recordId);
+              const stClean = extractCleanTabTarget(st);
+              if (stClean && stClean.url) existingUrls.add(stClean.url);
+            }
+          }
+        }
+
+        const revertedByNavRules = !!(
+          parentInfo.recordId &&
+          effectiveOwnerInfo &&
+          effectiveOwnerInfo.recordId === parentInfo.recordId &&
+          newOwnerTarget.recordId !== parentInfo.recordId
+        );
+
+        // 3. Reopen old owner and remaining subtabs in the requested order
+        let oldOwnerNewSubtabId = null;
+        for (const entry of restoreTargets) {
+          const target = entry.target;
+          if (target.recordId && existingRecordIds.has(target.recordId)) continue;
+          if (!target.recordId && target.url && existingUrls.has(target.url)) continue;
+          const createdId = await openSubtabTarget(effectiveOwnerTabId, target);
+          if (entry.isOldOwner && createdId) {
+            oldOwnerNewSubtabId = createdId;
+          }
+        }
+
+        // 4. Preserve any customized workspace tab label & icon on the rebuilt workspace
+        await applyPreservedCustomTabMeta(effectiveOwnerTabId);
+
+        // 5. Focus the moved tab (old owner in its new slot when dragged out, or new owner when promoted in)
+        let focusSubtabId = null;
+        if (revertedByNavRules && newPrimaryId !== effectiveOwnerTabId) {
+          focusSubtabId = newPrimaryId;
+        } else if (focusOldOwner && oldOwnerNewSubtabId) {
+          focusSubtabId = oldOwnerNewSubtabId;
+        }
+        await activateWorkspaceAndSubtab(ws, effectiveOwnerTabId, focusSubtabId);
+
+        if (revertedByNavRules) {
+          showToast(`Salesforce Navigation Rules kept "${oldOwnerTitle}" as workspace owner`);
+        } else {
+          showToast(`★ "${newOwnerTitle}" is now the workspace owner`);
+        }
+      } finally {
+        isInternalWorkspaceCall = false;
+      }
+    } catch (err) {
+      console.error('[Salesforce Enhancer] Failed to make subtab workspace owner:', err);
+      showToast('Could not make subtab workspace owner');
+    }
+  }
+
+  /**
+   * Move the current workspace owner (position 0 in the subtab bar) out of the first position,
+   * making the 2nd tab (first subtab) the new workspace owner.
+   */
+  async function moveWorkspaceOwnerOutOfFirstPosition(wsArg, parentTabId, insertAfterTabId = '__END__') {
+    if (!parentTabId) return;
+    try {
+      const ws = wsArg || (await getWorkspaceAPI());
+      const parentInfo = await ws.getTabInfo({ tabId: parentTabId }).catch(() => null);
+      if (!parentInfo) {
+        showToast('Workspace information unavailable');
+        return;
+      }
+      const rawSubtabs = Array.isArray(parentInfo.subtabs) ? parentInfo.subtabs : [];
+      const orderedSubtabs = getStableTabOrder(rawSubtabs, true, `subtabs:${parentTabId}`);
+      const nextOwnerSubtab = orderedSubtabs.find((st) => st && st.tabId && st.tabId !== parentTabId);
+      if (!nextOwnerSubtab || !nextOwnerSubtab.tabId) {
+        showToast('No subtab available to become workspace owner');
+        return;
+      }
+      await makeSubtabWorkspaceOwner(ws, nextOwnerSubtab.tabId, parentTabId, {
+        insertOldOwnerAfterTabId: insertAfterTabId || nextOwnerSubtab.tabId,
+        focusOldOwner: true,
+        triggeredByMovingOwnerOut: true
+      });
+    } catch (err) {
+      console.error('[Salesforce Enhancer] Failed to move workspace owner out of first position:', err);
+      showToast('Could not change workspace owner');
+    }
+  }
+
   /**
    * Move a Primary Workspace Tab into another Primary Tab as a Subtab
    */
@@ -2675,12 +3700,12 @@
 
       let newTabId = null;
       try {
-        if (cleanUrl) {
-          newTabId = await ws.openTab({ url: cleanUrl, focus: true });
+        if (subInfo.recordId) {
+          newTabId = await ws.openTab({ recordId: subInfo.recordId, focus: true, overrideNavRules: true });
+        } else if (cleanUrl) {
+          newTabId = await ws.openTab({ url: cleanUrl, focus: true, overrideNavRules: true });
         } else if (cleanPageRef) {
-          newTabId = await ws.openTab({ pageReference: cleanPageRef, focus: true });
-        } else if (subInfo.recordId) {
-          newTabId = await ws.openTab({ recordId: subInfo.recordId, focus: true });
+          newTabId = await ws.openTab({ pageReference: cleanPageRef, focus: true, overrideNavRules: true });
         }
       } catch (openErr) {
         console.warn('[Salesforce Enhancer] openTab error:', openErr);
@@ -2893,9 +3918,9 @@
 
         const isSubtab = isSubtabElement(li);
         const activeWsEl = document.querySelector(
-          '.navexConsoleTabContainer[aria-label="Workspaces"] li.tabItem.slds-is-active, .navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]) li.tabItem.slds-is-active, li.tabItem.slds-is-active:not(.slds-sub-tabs__item)'
+          '.navexConsoleTabContainer[aria-label="Workspaces"] li.tabItem.slds-is-active, .navexConsoleTabContainer[aria-label="Workspaces"] li.tabItem.active, .navexConsoleTabContainer:not([aria-label="Active Workspace Subtabs"]) li.tabItem.slds-is-active, li.tabItem.slds-is-active:not(.slds-sub-tabs__item)'
         );
-        const parentTabId = activeWsEl ? getTabIdFromElement(activeWsEl) : null;
+        const parentTabId = (activeWsEl ? getTabIdFromElement(activeWsEl) : null) || preClickParentTabId || null;
         const a = li.querySelector('a.tabHeader, a[data-tabid]');
         const title = (a ? a.getAttribute('title') : null) || li.innerText?.trim() || 'Tab';
 
@@ -2949,9 +3974,48 @@
       // CASE 1: Dragging a SUBTAB
       // =====================================================================
       if (activeTabDragState.isSubtab) {
-        // Dragging subtab within its own workspace's subtab bar -> DO NOT INTERCEPT!
-        // This lets Salesforce's native tab reordering operate without interference.
+        // Dragging subtab within its own workspace's subtab bar:
+        // - Subtab over the workspace owner (first tab) -> MAKE WORKSPACE OWNER!
+        // - Workspace owner (first tab) dragged out onto another subtab or right side -> PROMOTE 2ND TAB TO OWNER!
+        // - Subtab over any other subtab -> DO NOT INTERCEPT (preserve Salesforce native subtab reordering).
         if (targetSubtabBar) {
+          const hoveredSubLi = getTabListItem(getElementFromTarget(e.target));
+          const hoveredSubTabId =
+            hoveredSubLi && targetSubtabBar.contains(hoveredSubLi)
+              ? getTabIdFromElement(hoveredSubLi)
+              : null;
+          if (
+            hoveredSubLi &&
+            hoveredSubTabId &&
+            activeTabDragState.parentTabId &&
+            hoveredSubTabId === activeTabDragState.parentTabId &&
+            activeTabDragState.tabId !== activeTabDragState.parentTabId
+          ) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            e.dataTransfer.dropEffect = 'move';
+            setTabDropHighlight(hoveredSubLi, 'subtab-make-owner');
+            return;
+          }
+          if (
+            activeTabDragState.parentTabId &&
+            activeTabDragState.tabId === activeTabDragState.parentTabId &&
+            hoveredSubTabId !== activeTabDragState.parentTabId
+          ) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            e.dataTransfer.dropEffect = 'move';
+            if (hoveredSubLi && hoveredSubTabId) {
+              setTabDropHighlight(hoveredSubLi, 'subtab-move-owner');
+            } else {
+              const barItems = getTabBarItemsInDom(true).filter((i) => i.tabId !== activeTabDragState.parentTabId);
+              const lastSub = barItems.length > 0 ? barItems[barItems.length - 1].li : null;
+              setTabDropHighlight(lastSub, lastSub ? 'subtab-move-owner' : '');
+            }
+            return;
+          }
           setTabDropHighlight(null);
           return;
         }
@@ -3070,9 +4134,40 @@
         // CASE 1: Dropping a SUBTAB
         // =====================================================================
         if (dragData.isSubtab) {
-          // If dropped within its own subtab bar -> DO NOT INTERCEPT!
-          // Allow Salesforce native subtab reordering to run.
+          // Dropped within its own subtab bar:
+          // - Subtab on workspace owner (first position) -> prompt to make this subtab the workspace owner
+          // - Workspace owner (first position) dropped onto another subtab or empty bar area -> promote 2nd tab to owner
+          // - Elsewhere in subtab bar -> allow Salesforce native subtab reordering to run
           if (targetSubtabBar) {
+            const droppedSubLi = getTabListItem(getElementFromTarget(e.target));
+            const droppedSubTabId =
+              droppedSubLi && targetSubtabBar.contains(droppedSubLi)
+                ? getTabIdFromElement(droppedSubLi)
+                : null;
+            if (
+              droppedSubLi &&
+              droppedSubTabId &&
+              dragData.parentTabId &&
+              droppedSubTabId === dragData.parentTabId &&
+              dragData.tabId !== dragData.parentTabId
+            ) {
+              e.preventDefault();
+              e.stopPropagation();
+              e.stopImmediatePropagation();
+              await makeSubtabWorkspaceOwner(null, dragData.tabId, dragData.parentTabId);
+              return;
+            }
+            if (
+              dragData.parentTabId &&
+              dragData.tabId === dragData.parentTabId &&
+              droppedSubTabId !== dragData.parentTabId
+            ) {
+              e.preventDefault();
+              e.stopPropagation();
+              e.stopImmediatePropagation();
+              await moveWorkspaceOwnerOutOfFirstPosition(null, dragData.parentTabId, droppedSubTabId || '__END__');
+              return;
+            }
             return;
           }
 
@@ -9786,26 +10881,69 @@
     const modParentCaches = new Map(); // pluginId -> Map<contextId, { targetId, cachedAt }>
     const modInFlight = new Map(); // `${pluginId}:${recordId}` -> Promise
     const modParentInFlight = new Map(); // `${pluginId}:${contextId}` -> Promise
-    const modErrorMap = new Map(); // `${pluginId}:${id}` -> Error
+    const modErrorMap = new Map(); // `${pluginId}:${id}` -> { error, cachedAt }
     const modExpandedScopes = new Set();
     const modPendingQueue = [];
     let modActiveFetches = 0;
     const MOD_MAX_CONCURRENT = 3;
     const MOD_CACHE_TTL_MS = 10 * 60 * 1000;
+    const MOD_PARENT_TTL_MS = 25 * 1000;
+    const MOD_PARENT_NULL_TTL_MS = 4 * 1000;
+    const MOD_ERROR_TTL_MS = 10 * 1000;
     const SFE_CACHE_VERSION = 'v2';
+
+    let modMutationInvalidateTimer1 = null;
+    let modMutationInvalidateTimer2 = null;
+    function scheduleModMutationRefresh() {
+      const doInvalidate = () => {
+        for (const pMap of modParentCaches.values()) {
+          for (const [k, entry] of pMap.entries()) {
+            if (entry) entry.cachedAt = 0;
+          }
+        }
+        modErrorMap.clear();
+        if (typeof scheduleModDomScan === 'function') scheduleModDomScan(50);
+      };
+      if (modMutationInvalidateTimer1) clearTimeout(modMutationInvalidateTimer1);
+      if (modMutationInvalidateTimer2) clearTimeout(modMutationInvalidateTimer2);
+      modMutationInvalidateTimer1 = setTimeout(() => {
+        modMutationInvalidateTimer1 = null;
+        doInvalidate();
+      }, 900);
+      modMutationInvalidateTimer2 = setTimeout(() => {
+        modMutationInvalidateTimer2 = null;
+        doInvalidate();
+      }, 2400);
+    }
+
+    function getModError(key) {
+      const entry = modErrorMap.get(key);
+      if (!entry) return null;
+      if (Date.now() - entry.cachedAt >= MOD_ERROR_TTL_MS) {
+        modErrorMap.delete(key);
+        return null;
+      }
+      return entry.error;
+    }
 
     const SFE_DEFAULT_ICON_SVG =
       'M832 160H168c-40 0-72 32-72 72v536c0 40 32 72 72 72h664c40 0 72-32 72-72V232c0-40-32-72-72-72zM300 320h400c18 0 32 14 32 32s-14 32-32 32H300c-18 0-32-14-32-32s14-32 32-32zm0 148h400c18 0 32 14 32 32s-14 32-32 32H300c-18 0-32-14-32-32s14-32 32-32zm0 148h260c18 0 32 14 32 32s-14 32-32 32H300c-18 0-32-14-32-32s14-32 32-32z';
 
     function extractModAuraAuthFromBody(rawBody) {
-      if (typeof rawBody !== 'string' || !rawBody.includes('aura.token=')) return;
-      try {
-        const params = new URLSearchParams(rawBody);
-        const t = params.get('aura.token');
-        const c = params.get('aura.context');
-        if (t && t.includes('.')) modAuraCapture.token = t;
-        if (c && c.startsWith('{')) modAuraCapture.context = c;
-      } catch (_) {}
+      if (typeof rawBody !== 'string') return;
+      if (rawBody.includes('aura.token=')) {
+        try {
+          const params = new URLSearchParams(rawBody);
+          const t = params.get('aura.token');
+          const c = params.get('aura.context');
+          if (t && t.includes('.')) modAuraCapture.token = t;
+          if (c && c.startsWith('{')) modAuraCapture.context = c;
+        } catch (_) {}
+      }
+      // Invalidate cross-object parent target caches whenever Salesforce saves/updates/creates a record
+      if (/ACTION(?:\$|%24)(?:updateRecord|createRecord|deleteRecord|saveRecord)/i.test(rawBody)) {
+        scheduleModMutationRefresh();
+      }
     }
 
     try {
@@ -9824,6 +10962,11 @@
         window.fetch = function (input, init) {
           try {
             if (init && typeof init.body === 'string') extractModAuraAuthFromBody(init.body);
+            const method = (init && init.method ? String(init.method) : 'GET').toUpperCase();
+            const urlStr = typeof input === 'string' ? input : (input && input.url ? String(input.url) : '');
+            if ((method === 'PATCH' || method === 'POST' || method === 'DELETE') && /\/ui-api\/records\b/i.test(urlStr)) {
+              scheduleModMutationRefresh();
+            }
           } catch (_) {}
           return origFetch.apply(this, arguments);
         };
@@ -10881,7 +12024,7 @@
             scheduleModDomScan(30);
           })
           .catch((err) => {
-            modErrorMap.set(job.key, err);
+            modErrorMap.set(job.key, { error: err, cachedAt: Date.now() });
             job.reject(err);
             scheduleModDomScan(30);
           })
@@ -11422,6 +12565,24 @@
         });
       });
 
+      container.querySelectorAll('.sfe-mod-inferred-toggle').forEach((btn) => {
+        if (btn.dataset.sfeBound === '1') return;
+        btn.dataset.sfeBound = '1';
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const scopeKey = btn.dataset.sfeScope;
+          if (!scopeKey) return;
+          const next = !modExpandedScopes.has(scopeKey);
+          if (next) modExpandedScopes.add(scopeKey);
+          else modExpandedScopes.delete(scopeKey);
+          btn.setAttribute('aria-expanded', next ? 'true' : 'false');
+          btn.textContent = next ? 'Hide ▴' : 'Show ▾';
+          const body = container.querySelector('.sfe-mod-inferred-body');
+          if (body) body.style.display = next ? 'block' : 'none';
+        });
+      });
+
       container.querySelectorAll('.sfe-mod-record-link').forEach((link) => {
         if (link.dataset.sfeBound === '1') return;
         link.dataset.sfeBound = '1';
@@ -11644,7 +12805,7 @@
       return null;
     }
 
-    async function resolveRightPaneTargetId(plugin, contextId) {
+    async function resolveRightPaneTargetId(plugin, contextId, { force = false } = {}) {
       const rpCfg = plugin.mounts && plugin.mounts.rightPane;
       if (!rpCfg || rpCfg === true || !rpCfg.onObject) return contextId;
       const keyPrefix = plugin.target.keyPrefix;
@@ -11652,7 +12813,8 @@
       if (!modParentCaches.has(plugin.id)) modParentCaches.set(plugin.id, new Map());
       const pMap = modParentCaches.get(plugin.id);
       const cached = pMap.get(contextId);
-      if (cached && Date.now() - cached.cachedAt < MOD_CACHE_TTL_MS) {
+      const ttl = cached && cached.targetId ? MOD_PARENT_TTL_MS : MOD_PARENT_NULL_TTL_MS;
+      if (!force && cached && Date.now() - cached.cachedAt < ttl) {
         return cached.targetId;
       }
       if (modParentInFlight.has(cacheKey)) return modParentInFlight.get(cacheKey);
@@ -11661,7 +12823,37 @@
         const resolverSteps = Array.isArray(rpCfg.resolveTarget) ? rpCfg.resolveTarget : [];
         const ctxObjName = rpCfg.onObject.objectApiName;
         const stepRecords = {};
+        const stepSourceRoots = {};
         let ctxRecFlat = null;
+
+        const cleanApiLabel = (name) =>
+          String(name || '')
+            .replace(/__(?:c|r)$/i, '')
+            .replace(/_/g, ' ')
+            .trim();
+
+        const deriveSourceLabel = (rs) => {
+          if (rs && typeof rs.sourceLabel === 'string') {
+            return rs.sourceLabel.trim() || null;
+          }
+          if (!rs || rs.type === 'recordField') return null;
+          if (rs.type === 'followLookup') {
+            const rootName = (rs.fromStep && stepSourceRoots[rs.fromStep]) || rs.objectApiName || rs.viaField;
+            const cleaned = cleanApiLabel(rootName);
+            return cleaned ? `via ${cleaned}` : null;
+          }
+          if (rs.type === 'relatedList') {
+            const cleaned = cleanApiLabel(rs.relatedListId || rs.objectApiName);
+            return cleaned ? `via ${cleaned}` : null;
+          }
+          return null;
+        };
+
+        const isStepInferred = (rs) => {
+          if (rs && rs.confidence === 'high') return false;
+          if (rs && rs.confidence === 'low') return true;
+          return !!(rs && rs.type !== 'recordField');
+        };
 
         // Pre-collect all context-object fields needed by recordField / root followLookup steps
         const ctxFieldSet = new Set(['Id']);
@@ -11692,7 +12884,7 @@
             for (const f of rs.fields || []) {
               const m = extractModRecordIdByPrefix(sfeResolvePath(rec, f), keyPrefix);
               if (m) {
-                pMap.set(contextId, { targetId: m, cachedAt: Date.now() });
+                pMap.set(contextId, { targetId: m, sourceLabel: deriveSourceLabel(rs), isInferred: isStepInferred(rs), cachedAt: Date.now() });
                 return m;
               }
             }
@@ -11703,7 +12895,7 @@
             if (!linkedId || typeof linkedId !== 'string') continue;
             const directMatch = extractModRecordIdByPrefix(linkedId, keyPrefix);
             if (directMatch) {
-              pMap.set(contextId, { targetId: directMatch, cachedAt: Date.now() });
+              pMap.set(contextId, { targetId: directMatch, sourceLabel: deriveSourceLabel(rs), isInferred: isStepInferred(rs), cachedAt: Date.now() });
               return directMatch;
             }
             const optFields = qualifyAuraFields(rs.objectApiName, ['Id', ...(rs.readFields || [])]);
@@ -11712,12 +12904,15 @@
               optionalFields: optFields
             }).catch(() => null);
             const flat = raw ? flattenAuraRecord(raw) : null;
-            if (rs.as && flat) stepRecords[rs.as] = flat;
+            if (rs.as && flat) {
+              stepRecords[rs.as] = flat;
+              stepSourceRoots[rs.as] = (rs.fromStep && stepSourceRoots[rs.fromStep]) || rs.objectApiName || rs.viaField;
+            }
             if (flat) {
               for (const rf of rs.readFields || []) {
                 const m = extractModRecordIdByPrefix(sfeResolvePath(flat, rf), keyPrefix);
                 if (m) {
-                  pMap.set(contextId, { targetId: m, cachedAt: Date.now() });
+                  pMap.set(contextId, { targetId: m, sourceLabel: deriveSourceLabel(rs), isInferred: isStepInferred(rs), cachedAt: Date.now() });
                   return m;
                 }
               }
@@ -11732,14 +12927,14 @@
               const val = sfeResolvePath(flat, rs.lookupField);
               const m = extractModRecordIdByPrefix(val, keyPrefix);
               if (m) {
-                pMap.set(contextId, { targetId: m, cachedAt: Date.now() });
+                pMap.set(contextId, { targetId: m, sourceLabel: deriveSourceLabel(rs), isInferred: isStepInferred(rs), cachedAt: Date.now() });
                 return m;
               }
             }
           }
         }
 
-        pMap.set(contextId, { targetId: null, cachedAt: Date.now() });
+        pMap.set(contextId, { targetId: null, sourceLabel: null, isInferred: false, cachedAt: Date.now() });
         return null;
       })();
 
@@ -11822,7 +13017,7 @@
           if (!sr || !container) continue;
 
           const cached = getCachedModTarget(plugin.id, tid);
-          const err = modErrorMap.get(`${plugin.id}:${tid}`);
+          const err = getModError(`${plugin.id}:${tid}`);
           if (!cached && !err) {
             fetchModTargetData(plugin, tid).catch(() => {});
             continue;
@@ -11904,7 +13099,9 @@
         for (const rightCol of rightCols) {
           const rect = rightCol.getBoundingClientRect();
           if (!rect || rect.width <= 0 || rect.height <= 0) continue;
-          const existingCard = findModMountedChild(plugin.id, rightCol, rightCol, 'sfe-mod-rightpane-card');
+          const existingCard =
+            findModMountedChild(plugin.id, rightCol, rightCol, 'sfe-mod-rightpane-card') ||
+            rightCol.querySelector(`.sfe-mod-rightpane-card[data-sfe-mod-id="${plugin.id}"]`);
           const mountAttr = `data-sfe-mounted-${plugin.id}`;
           const contextId = readContextRecordIdByPrefix(rightCol, contextPrefix);
           if (!contextId) {
@@ -11914,15 +13111,27 @@
             continue;
           }
 
-          if (!existingCard && rightCol.getAttribute(mountAttr) === contextId) continue;
           const visKey = `${plugin.id}:${contextId}`;
           const prevGlobal = modVisibleRightPaneCards.get(visKey);
           if (!existingCard && prevGlobal && prevGlobal.isConnected) continue;
 
           let resolvedTargetId = contextId;
+          let resolvedSourceLabel = null;
+          let resolvedIsInferred = false;
           if (isCrossObject) {
             const pMap = modParentCaches.get(plugin.id);
             const parentEntry = pMap ? pMap.get(contextId) : null;
+            const parentTtl = parentEntry && parentEntry.targetId ? MOD_PARENT_TTL_MS : MOD_PARENT_NULL_TTL_MS;
+            const isParentStale = !parentEntry || Date.now() - parentEntry.cachedAt >= parentTtl;
+
+            if (isParentStale) {
+              resolveRightPaneTargetId(plugin, contextId, { force: true })
+                .then((tid) => {
+                  if (tid) fetchModTargetData(plugin, tid).catch(() => {});
+                  scheduleModDomScan(30);
+                })
+                .catch(() => {});
+            }
 
             if (parentEntry && !parentEntry.targetId) {
               if (existingCard) existingCard.remove();
@@ -11937,12 +13146,6 @@
               if (!card) {
                 card = createRightPaneCardEl(plugin, rightCol, mountAttr, contextId, visKey);
               }
-              resolveRightPaneTargetId(plugin, contextId)
-                .then((tid) => {
-                  if (tid) fetchModTargetData(plugin, tid).catch(() => {});
-                  scheduleModDomScan(30);
-                })
-                .catch(() => {});
               card.style.display = 'block';
               card.innerHTML = `<div style="font-size:0.75rem; color:var(--lwc-colorTextWeak, #706e6b);">Checking associated ${escapeModHtml(
                 plugin.target.headerTitle || plugin.target.objectApiName
@@ -11950,6 +13153,8 @@
               continue;
             }
             resolvedTargetId = parentEntry.targetId;
+            resolvedSourceLabel = parentEntry.sourceLabel || null;
+            resolvedIsInferred = !!parentEntry.isInferred;
           }
 
           let card = existingCard;
@@ -11959,7 +13164,7 @@
 
           card.style.display = 'block';
           const tData = getCachedModTarget(plugin.id, resolvedTargetId);
-          const tErr = modErrorMap.get(`${plugin.id}:${resolvedTargetId}`);
+          const tErr = getModError(`${plugin.id}:${resolvedTargetId}`);
           if (!tData && !tErr) {
             fetchModTargetData(plugin, resolvedTargetId).catch(() => {});
           }
@@ -11979,36 +13184,96 @@
             ? `<img src="${escapeModHtml(iconImgUrl)}" alt="" style="width:18px; height:18px; display:block;">`
             : `<svg viewBox="${escapeModHtml(iconSvgViewBox)}" width="18" height="18" fill="#ffffff" aria-hidden="true"><path d="${escapeModHtml(iconSvgPath)}"/></svg>`;
 
-          const stampWithTheme = `${contextId}|${resolvedTargetId}|${tData && tData._meta ? tData._meta.cachedAt : ''}|${
-            tErr ? tErr.message : ''
-          }|${iconBg}|${iconImgUrl}`;
+          const inferredScopeKey = `inferred:${plugin.id}:${contextId}:${resolvedTargetId}`;
+          const isInferredExpanded = resolvedIsInferred && modExpandedScopes.has(inferredScopeKey);
+
+          const stampWithTheme = `${contextId}|${resolvedTargetId}|${resolvedSourceLabel || ''}|${
+            resolvedIsInferred ? (isInferredExpanded ? 'inf1' : 'inf0') : 'dir'
+          }|${tData && tData._meta ? tData._meta.cachedAt : ''}|${tErr ? tErr.message : ''}|${iconBg}|${iconImgUrl}`;
           if (card.dataset.sfeStamp === stampWithTheme) continue;
           card.dataset.sfeStamp = stampWithTheme;
 
-          const headerLinkHtml = isCrossObject
-            ? `<span>${escapeModHtml(headerTitle)}: </span>
-               <a class="sfe-mod-record-link" data-record-id="${escapeModHtml(resolvedTargetId)}" href="${escapeModHtml(
-                targetUrl
-              )}" style="color:var(--lwc-colorTextLink, #0176d3); text-decoration:none; font-weight:700;">${escapeModHtml(
-                targetLabel
-              )}</a>`
-            : `<span>${escapeModHtml(headerTitle)}</span>`;
+          if (resolvedIsInferred) {
+            card.style.padding = '0.45rem 0.7rem';
+            card.style.border = '1px dashed var(--lwc-colorBorder, #c9c7c5)';
+            card.style.background = 'var(--lwc-colorBackground, #f8f9fb)';
+            card.style.boxShadow = 'none';
 
-          card.innerHTML = `
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:0.625rem;">
-              <div style="display:flex; align-items:center; gap:0.5rem; min-width:0;">
-                <span style="flex:0 0 auto; width:24px; height:24px; border-radius:var(--lwc-borderRadiusMedium, 0.25rem); background:${escapeModHtml(
-                  iconBg
-                )}; display:inline-flex; align-items:center; justify-content:center;">
-                  ${iconInnerHtml}
-                </span>
-                <div style="font-size:0.875rem; font-weight:700; color:var(--lwc-colorTextDefault, #181818); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                  ${headerLinkHtml}
+            const smallIconHtml = iconImgUrl
+              ? `<img src="${escapeModHtml(iconImgUrl)}" alt="" style="width:13px; height:13px; display:block;">`
+              : `<svg viewBox="${escapeModHtml(iconSvgViewBox)}" width="13" height="13" fill="#ffffff" aria-hidden="true"><path d="${escapeModHtml(iconSvgPath)}"/></svg>`;
+            const ctxObjLabel = ((rpCfg && rpCfg.onObject && rpCfg.onObject.objectApiName) || 'record').replace(/__(?:c|r)$/i, '').replace(/_/g, ' ');
+            const targetObjLabel = ((plugin.target && plugin.target.objectApiName) || 'Record').replace(/__(?:c|r)$/i, '').replace(/_/g, ' ');
+            const srcText = resolvedSourceLabel ? ` (${resolvedSourceLabel})` : '';
+            const disclaimerText = `${targetObjLabel} not directly assigned on this ${ctxObjLabel}.`;
+
+            card.innerHTML = `
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                <div style="display:flex; align-items:center; gap:0.4rem; min-width:0;">
+                  <span style="flex:0 0 auto; width:18px; height:18px; opacity:0.72; border-radius:var(--lwc-borderRadiusSmall, 0.2rem); background:${escapeModHtml(
+                    iconBg
+                  )}; display:inline-flex; align-items:center; justify-content:center;">
+                    ${smallIconHtml}
+                  </span>
+                  <div title="${escapeModHtml(disclaimerText)}" style="font-size:0.78rem; font-weight:600; line-height:1.3; color:var(--lwc-colorTextWeak, #5c5a58); min-width:0; word-break:break-word;">
+                    <span>Possible ${escapeModHtml(headerTitle)}: </span>
+                    <a class="sfe-mod-record-link" data-record-id="${escapeModHtml(resolvedTargetId)}" href="${escapeModHtml(
+                      targetUrl
+                    )}" style="color:var(--lwc-colorTextLink, #0176d3); text-decoration:none; font-weight:600;">${escapeModHtml(
+                      targetLabel
+                    )}</a><span style="font-weight:500; font-size:0.72rem; opacity:0.85;">${escapeModHtml(srcText)}</span>
+                  </div>
+                </div>
+                <button type="button" class="sfe-mod-inferred-toggle" data-sfe-scope="${escapeModHtml(
+                  inferredScopeKey
+                )}" aria-expanded="${isInferredExpanded ? 'true' : 'false'}" style="flex:0 0 auto; border:1px solid var(--lwc-colorBorder, #dddbda); background:var(--lwc-colorBackgroundAlt, #ffffff); color:var(--lwc-colorTextWeak, #5c5a58); border-radius:4px; padding:1px 6px; font-size:0.7rem; font-weight:600; cursor:pointer; white-space:nowrap;">${
+                  isInferredExpanded ? 'Hide ▴' : 'Show ▾'
+                }</button>
+              </div>
+              <div class="sfe-mod-inferred-body" style="display:${isInferredExpanded ? 'block' : 'none'}; margin-top:0.5rem; padding-top:0.45rem; border-top:1px dashed var(--lwc-colorBorder, #dddbda);">
+                <div style="font-size:0.7rem; color:#7c4a03; background:#fcf3e0; border:1px solid #f3cf8a; border-radius:4px; padding:4px 7px; margin-bottom:0.5rem; line-height:1.35;">
+                  ⚠ ${escapeModHtml(disclaimerText)}
+                </div>
+                ${renderSfeViewBlocks(plugin, resolvedTargetId, tData, tErr, 'rightPane', `rightpane:${plugin.id}:${contextId}:${resolvedTargetId}`)}
+              </div>
+            `;
+          } else {
+            card.style.padding = '0.75rem 1rem';
+            card.style.border = '1px solid var(--lwc-cardColorBorder, var(--lwc-colorBorder, #dddbda))';
+            card.style.background = 'var(--lwc-cardColorBackground, var(--lwc-colorBackgroundAlt, #ffffff))';
+            card.style.boxShadow = 'var(--lwc-cardShadow, 0 2px 2px 0 rgba(0, 0, 0, 0.10))';
+
+            const sourceTagHtml = resolvedSourceLabel
+              ? ` <span style="font-size:0.75rem; font-weight:500; color:var(--lwc-colorTextWeak, #706e6b);">(${escapeModHtml(
+                  resolvedSourceLabel
+                )})</span>`
+              : '';
+
+            const headerLinkHtml = isCrossObject
+              ? `<span>${escapeModHtml(headerTitle)}: </span>
+                 <a class="sfe-mod-record-link" data-record-id="${escapeModHtml(resolvedTargetId)}" href="${escapeModHtml(
+                  targetUrl
+                )}" style="color:var(--lwc-colorTextLink, #0176d3); text-decoration:none; font-weight:700;">${escapeModHtml(
+                  targetLabel
+                )}</a>${sourceTagHtml}`
+              : `<span>${escapeModHtml(headerTitle)}</span>`;
+
+            card.innerHTML = `
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:0.625rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem; min-width:0;">
+                  <span style="flex:0 0 auto; width:24px; height:24px; border-radius:var(--lwc-borderRadiusMedium, 0.25rem); background:${escapeModHtml(
+                    iconBg
+                  )}; display:inline-flex; align-items:center; justify-content:center;">
+                    ${iconInnerHtml}
+                  </span>
+                  <div style="font-size:0.875rem; font-weight:700; line-height:1.3; color:var(--lwc-colorTextDefault, #181818); min-width:0; word-break:break-word;">
+                    ${headerLinkHtml}
+                  </div>
                 </div>
               </div>
-            </div>
-            ${renderSfeViewBlocks(plugin, resolvedTargetId, tData, tErr, 'rightPane', `rightpane:${plugin.id}:${contextId}:${resolvedTargetId}`)}
-          `;
+              ${renderSfeViewBlocks(plugin, resolvedTargetId, tData, tErr, 'rightPane', `rightpane:${plugin.id}:${contextId}:${resolvedTargetId}`)}
+            `;
+          }
           bindModContainerEvents(card);
         }
       }
@@ -12076,7 +13341,7 @@
           mountTarget.appendChild(box);
         }
         const cached = getCachedModTarget(plugin.id, tid);
-        const err = modErrorMap.get(`${plugin.id}:${tid}`);
+        const err = getModError(`${plugin.id}:${tid}`);
         const stamp = `${tid}|${cached && cached._meta ? cached._meta.cachedAt : ''}|${err ? err.message : ''}`;
         if (box.dataset.sfeStamp !== stamp) {
           box.dataset.sfeStamp = stamp;
@@ -12141,5 +13406,5 @@
     setInterval(refreshInspectorMods, 850);
     setTimeout(refreshInspectorMods, 400);
 
-  console.log('[Salesforce Enhancer v1.4.0] Ready — Modular shortcuts, Quick Views, composable .sfe.json plugins, developer themes & loading animations.');
+  console.log('[Salesforce Enhancer v1.4.1] Ready — Modular shortcuts, Quick Views, composable .sfe.json plugins, developer themes & loading animations.');
 })();

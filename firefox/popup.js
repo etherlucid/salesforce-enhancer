@@ -115,11 +115,12 @@
   }
 
   const DEFAULT_SETTINGS = {
-    version: '1.4.0',
+    version: '1.4.1',
     modules: {
       subtabs: true,
       quickViews: true,
       linkInterceptor: true,
+      clipboardFix: true,
       inspectorMods: false,
       theming: false,
       loadingAnimation: false
@@ -164,6 +165,7 @@
   const btnOpenKeybinds = document.getElementById('btnOpenKeybinds');
   const subtabsHideAppNameRow = document.getElementById('subtabsHideAppNameRow');
   const chkModQuickViews = document.getElementById('chkModQuickViews');
+  const chkModClipboardFix = document.getElementById('chkModClipboardFix');
   const chkModLinkInterceptor = document.getElementById('chkModLinkInterceptor');
 
   const installedModsList = document.getElementById('installedModsList');
@@ -242,6 +244,7 @@
       res.modules.subtabs = loaded.modules.subtabs !== false;
       res.modules.quickViews = loaded.modules.quickViews !== false;
       res.modules.linkInterceptor = loaded.modules.linkInterceptor !== false;
+      res.modules.clipboardFix = loaded.modules.clipboardFix !== false;
       res.modules.inspectorMods = !!(loaded.modules.inspectorMods || loaded.modules.loadingAnimation);
       res.modules.theming = !!loaded.modules.theming;
       res.modules.loadingAnimation = loaded.modules.loadingAnimation === true;
@@ -250,6 +253,7 @@
       res.modules.subtabs = true;
       res.modules.quickViews = true;
       res.modules.linkInterceptor = true;
+      res.modules.clipboardFix = true;
       res.modules.inspectorMods = false;
       if (loaded.applyToSalesforce === false && !loaded.isDarkMode && (!loaded.theme || loaded.theme === 'classic')) {
         res.modules.theming = false;
@@ -349,6 +353,11 @@
     // 2. Quick Views plugin
     chkModQuickViews.checked = currentSettings.modules.quickViews !== false;
 
+    // 2a. Clipboard Fix plugin
+    if (chkModClipboardFix) {
+      chkModClipboardFix.checked = currentSettings.modules.clipboardFix !== false;
+    }
+
     // 2b. Link Interceptor plugin
     if (chkModLinkInterceptor) {
       chkModLinkInterceptor.checked = currentSettings.modules.linkInterceptor !== false;
@@ -409,6 +418,7 @@
         (currentSettings.modules.subtabs !== false ? 1 : 0) +
         (currentSettings.modules.linkInterceptor !== false ? 1 : 0) +
         (currentSettings.modules.quickViews !== false ? 1 : 0) +
+        (currentSettings.modules.clipboardFix !== false ? 1 : 0) +
         (currentSettings.modules.loadingAnimation === true ? 1 : 0);
       pluginsActiveCountPill.textContent = String(activeBuiltInCount + activeCustomCount);
     }
@@ -596,6 +606,14 @@
     updateUI();
     saveAndApply();
   });
+
+  if (chkModClipboardFix) {
+    chkModClipboardFix.addEventListener('change', (e) => {
+      currentSettings.modules.clipboardFix = e.target.checked;
+      updateUI();
+      saveAndApply();
+    });
+  }
 
   if (chkModLinkInterceptor) {
     chkModLinkInterceptor.addEventListener('change', (e) => {

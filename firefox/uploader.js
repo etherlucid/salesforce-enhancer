@@ -74,11 +74,12 @@
   }
 
   const DEFAULT_SETTINGS = {
-    version: '1.4.0',
+    version: '1.4.1',
     modules: {
       subtabs: true,
       quickViews: true,
       linkInterceptor: true,
+      clipboardFix: true,
       inspectorMods: false,
       theming: false,
       loadingAnimation: false
@@ -481,6 +482,7 @@
   const btnOpenKeybindsPage = document.getElementById('btnOpenKeybindsPage');
   const chkModLinkInterceptor = document.getElementById('chkModLinkInterceptor');
   const chkModQuickViews = document.getElementById('chkModQuickViews');
+  const chkModClipboardFix = document.getElementById('chkModClipboardFix');
   const chkModLoading = document.getElementById('chkModLoading');
   const pluginCardGifStatus = document.getElementById('pluginCardGifStatus');
   const btnOpenGifStudio = document.getElementById('btnOpenGifStudio');
@@ -1037,6 +1039,9 @@
     if (chkModQuickViews) {
       chkModQuickViews.checked = currentSettings.modules.quickViews !== false;
     }
+    if (chkModClipboardFix) {
+      chkModClipboardFix.checked = currentSettings.modules.clipboardFix !== false;
+    }
     if (chkModLoading) {
       chkModLoading.checked = currentSettings.modules.loadingAnimation === true;
     }
@@ -1051,6 +1056,7 @@
         (currentSettings.modules.subtabs !== false ? 1 : 0) +
         (currentSettings.modules.linkInterceptor !== false ? 1 : 0) +
         (currentSettings.modules.quickViews !== false ? 1 : 0) +
+        (currentSettings.modules.clipboardFix !== false ? 1 : 0) +
         (currentSettings.modules.loadingAnimation === true ? 1 : 0);
       pluginsActiveCountPill.textContent = String(activeBuiltInCount + activeCustomCount);
     }
@@ -1395,6 +1401,13 @@
   if (chkModQuickViews) {
     chkModQuickViews.addEventListener('change', (e) => {
       currentSettings.modules.quickViews = e.target.checked;
+      updateUI();
+      persistCurrentSettings();
+    });
+  }
+  if (chkModClipboardFix) {
+    chkModClipboardFix.addEventListener('change', (e) => {
+      currentSettings.modules.clipboardFix = e.target.checked;
       updateUI();
       persistCurrentSettings();
     });

@@ -183,8 +183,8 @@
     const keybinds = normalizeKeybinds(raw && raw.subtabs && raw.subtabs.keybinds);
     if (!raw || typeof raw !== 'object') {
       return {
-        version: '1.4.0',
-        modules: { subtabs: true, quickViews: true, linkInterceptor: true, inspectorMods: false, theming: false, loadingAnimation: false },
+        version: '1.4.1',
+        modules: { subtabs: true, quickViews: true, linkInterceptor: true, clipboardFix: true, inspectorMods: false, theming: false, loadingAnimation: false },
         subtabs: { hideAppName: false, keybinds: Object.assign({}, DEFAULT_KEYBINDS) },
         hideAppName: false,
         inspectorMods: { mods: [] },
@@ -194,11 +194,12 @@
     }
 
     const res = {
-      version: '1.4.0',
+      version: '1.4.1',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
         linkInterceptor: raw.modules ? raw.modules.linkInterceptor !== false : true,
+        clipboardFix: raw.modules ? raw.modules.clipboardFix !== false : true,
         inspectorMods: raw.modules ? !!raw.modules.inspectorMods : false,
         theming: raw.modules ? !!raw.modules.theming : (raw.applyToSalesforce === false ? false : !!(raw.theme && raw.theme !== 'classic')),
         loadingAnimation: raw.modules ? raw.modules.loadingAnimation === true : (raw.loadingImage ? raw.loadingImage.enabled === true : false)

@@ -10,7 +10,8 @@ These features activate automatically inside Lightning Console apps and stay out
 
 - **Subtabs & Shortcuts**:
   - `Alt+Click` opens records as subtabs (`Alt+Shift+Click` in the background); `Cmd/Ctrl+Click` opens new primary workspace tabs (`Cmd/Ctrl+Shift+Click` in the background). Outside Console apps, native browser `Cmd/Ctrl+Click` behavior is preserved.
-  - Bidirectional tab drag-and-drop to convert workspaces into subtabs, promote subtabs into workspaces, or move subtabs between workspaces, with a confirmation prompt before merging a workspace that contains multiple tabs.
+  - Bidirectional tab drag-and-drop to convert workspaces into subtabs, promote subtabs into workspaces, move subtabs between workspaces, or swap the **workspace owner** by moving a subtab into the first position (via drag-and-drop or `Reorder Tab Left`) or dragging the workspace owner out of the first position to promote the 2nd tab (with a confirmation prompt that warns about tab reloads and active Messaging/Chat/Voice sessions).
+  - Confirmation prompt before merging a workspace that contains multiple tabs.
   - Optional toggle for a compact Console header that hides the Console app label and condenses the active Console navigation item into an icon button.
 - **Customizable Tab & Subtab Keybinds**: Navigate continuously across visible workspaces, **"More"** overflow tabs, and subtabs, reorder tabs/subtabs left or right (including pinned tabs within the pinned group), promote subtabs, move tabs across workspaces, and close active tabs via keyboard shortcuts. All shortcuts can be rebound or cleared on the Extension Site's **Keybinds** page.
 - **Link Interceptor**: Routes external Salesforce Lightning and Knowledge article links (`/lightning/...`, `/articles/...`, `/lightning/articles/...`) into an open Lightning Console tab instead of spawning duplicate browser tabs. Standard Navigation tabs are never overwritten.
@@ -18,6 +19,7 @@ These features activate automatically inside Lightning Console apps and stay out
 ### All Salesforce Lightning Apps
 
 - **Quick Views**: Pin favorite list views to the top of the List View Switcher dropdown with manual reordering and A–Z sorting.
+- **Clipboard Fix**: Built-in plugin that fixes empty or truncated Chromium copies from Salesforce Lightning Shadow DOM `<slot>` fields (Highlights Panel values, Knowledge articles, and record detail sections).
 - **Custom Plugins (`.sfe.json`, Schema v2)**: Composable, org-agnostic declarative plugin engine (zero `eval()`). Chain arbitrary `record`, `relatedList`, `dateStatus`, `classify`, `filter`, `dedupe`, `rollup`, `sort`, and `compute` steps and render SLDS-native UI blocks (`badgeRow`, `fieldGrid`, `metaRow`, `drawer`, `list`, `alert`) across **Hover Previews**, **Highlights Panels**, **Record Banners**, and **Right Panes / Record Sidebars** (on both Console and Standard Navigation pages, including cross-object target resolution).
 - **Developer Themes**: Includes Classic SF, Gruvbox Dark/Light, Solarized Dark/Light, Nord, Dracula, One Dark, and Custom accent colors with optional navigation bar and Console tab accent styling.
 - **Loading Animation**: Built-in plugin to replace the default Salesforce spinner with bundled offline presets (`Parrot`, `Nyan Cat`) or a custom uploaded GIF/image/URL, with configurable display size (`48px`–`128px`) and rotation. Disabled by default.
