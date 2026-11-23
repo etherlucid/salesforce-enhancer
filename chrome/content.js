@@ -183,7 +183,7 @@
     const keybinds = normalizeKeybinds(raw && raw.subtabs && raw.subtabs.keybinds);
     if (!raw || typeof raw !== 'object') {
       return {
-        version: '1.4.1',
+        version: '1.4.2',
         modules: { subtabs: true, quickViews: true, linkInterceptor: true, clipboardFix: true, inspectorMods: false, theming: false, loadingAnimation: false },
         subtabs: { hideAppName: false, keybinds: Object.assign({}, DEFAULT_KEYBINDS) },
         hideAppName: false,
@@ -194,7 +194,7 @@
     }
 
     const res = {
-      version: '1.4.1',
+      version: '1.4.2',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,

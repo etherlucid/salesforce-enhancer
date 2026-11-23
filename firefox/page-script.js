@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salesforce Enhancer
 // @namespace    https://etherlucid.local/
-// @version      1.4.1
+// @version      1.4.2
 // @description  Salesforce productivity: subtabs & tab drag-and-drop, Quick Views list bookmarking, declarative Inspector Mods, developer themes, and custom animations.
 // @match        https://*.lightning.force.com/*
 // @match        https://*.salesforce.com/*
@@ -263,7 +263,7 @@
   }
 
   const DEFAULT_SETTINGS = {
-    version: '1.4.1',
+    version: '1.4.2',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -304,7 +304,7 @@
     const keybinds = normalizeKeybinds(raw.subtabs && raw.subtabs.keybinds);
 
     const res = {
-      version: '1.4.1',
+      version: '1.4.2',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
@@ -402,6 +402,7 @@
   let preClickParentTabId = null;
   let preClickFocusedTabId = null;
   let preClickPrimaryTabIds = new Set();
+  let preClickSubtabIds = new Set();
 
   // State for catching LWC Global Search instant-dropdown clicks where recordId isn't in DOM attributes
   let pendingInstantIntercept = null;
@@ -632,6 +633,15 @@
 
       if (Array.isArray(allTabs) && allTabs.length > 0) {
         preClickPrimaryTabIds = new Set(allTabs.map((t) => t.tabId));
+        const nextSubIds = new Set();
+        for (const t of allTabs) {
+          if (t && Array.isArray(t.subtabs)) {
+            for (const st of t.subtabs) {
+              if (st && st.tabId) nextSubIds.add(st.tabId);
+            }
+          }
+        }
+        preClickSubtabIds = nextSubIds;
         if (typeof getStableTabOrder === 'function') {
           getStableTabOrder(allTabs, false, 'workspaces');
         }
@@ -696,7 +706,26 @@
     if (!target || (!target.recordId && !target.url && !target.pageReference)) return false;
     if (target.url && !isSafeTargetUrl(target.url)) return false;
 
-    // Normalize recordId from url if missing
+    // Normalize recordId from url if missing and strip any stale ?ws= workspace routing param
+    if (target.url) {
+      let cleanUrl = String(target.url)
+        .replace(/[?&]ws=[^&#]*/g, '')
+        .replace(/\?&/, '?')
+        .replace(/[?&]$/, '');
+      try {
+        if (typeof location !== 'undefined' && location.origin && cleanUrl.startsWith(location.origin + '/')) {
+          cleanUrl = cleanUrl.slice(location.origin.length);
+        }
+      } catch (_) {}
+      target.url = cleanUrl;
+    }
+    if (target.pageReference && target.pageReference.state && 'ws' in target.pageReference.state) {
+      try {
+        const cloned = JSON.parse(JSON.stringify(target.pageReference));
+        if (cloned && cloned.state) delete cloned.state.ws;
+        target.pageReference = cloned;
+      } catch (_) {}
+    }
     if (!target.recordId && target.url) {
       const m = target.url.match(RECORD_URL_REGEX);
       if (m && m[1]) target.recordId = m[1];
@@ -744,47 +773,41 @@
         return await openTargetAsPrimaryTab(target, { focus: !openInBackground });
       }
 
-      const buildParams = (pId) => {
-        const params = { parentTabId: pId, focus: !openInBackground };
-        if (target.recordId) {
-          params.recordId = target.recordId;
-          params.url = target.url || `/lightning/r/${target.recordId}/view`;
-        } else if (target.url) {
-          params.url = target.url;
-        } else if (target.pageReference) {
-          params.pageReference = target.pageReference;
+      const tryOpenSubtabUnder = async (pId) => {
+        const attempts = [];
+        if (target.recordId) attempts.push({ parentTabId: pId, recordId: target.recordId, focus: !openInBackground });
+        if (target.url) attempts.push({ parentTabId: pId, url: target.url, focus: !openInBackground });
+        if (target.pageReference) attempts.push({ parentTabId: pId, pageReference: target.pageReference, focus: !openInBackground });
+
+        let lastErr = null;
+        let fallbackOtherParentId = null;
+        for (const params of attempts) {
+          try {
+            const subId = await ws.openSubtab(params);
+            if (!subId) continue;
+            const info = await ws.getTabInfo({ tabId: subId }).catch(() => null);
+            if (!info || !info.parentTabId || info.parentTabId === pId) {
+              return subId;
+            }
+            // Salesforce routed it to a different workspace (e.g. an open Account workspace):
+            // remember as fallback and try the next payload form (e.g. clean URL)
+            fallbackOtherParentId = subId;
+          } catch (err) {
+            lastErr = err;
+          }
         }
-        return params;
+        if (fallbackOtherParentId) return fallbackOtherParentId;
+        if (lastErr) throw lastErr;
+        return null;
       };
 
       isInternalWorkspaceCall = true;
       try {
-        let newSubtabId = null;
-        try {
-          newSubtabId = await ws.openSubtab(buildParams(parentTabId));
-        } catch (subErr) {
-          if (target.url && target.recordId) {
-            newSubtabId = await ws.openSubtab({ parentTabId, url: target.url, focus: !openInBackground });
-          } else {
-            throw subErr;
-          }
-        }
+        const newSubtabId = await tryOpenSubtabUnder(parentTabId);
+        if (!newSubtabId) throw new Error('openSubtab returned null');
 
         if (!openInBackground && ws.focusTab) {
-          if (parentTabId) {
-            await ws.focusTab({ tabId: parentTabId }).catch(() => {});
-          }
-          if (newSubtabId) {
-            await ws.focusTab({ tabId: newSubtabId }).catch(() => {});
-          }
-          setTimeout(async () => {
-            if (parentTabId) {
-              await ws.focusTab({ tabId: parentTabId }).catch(() => {});
-            }
-            if (newSubtabId) {
-              await ws.focusTab({ tabId: newSubtabId }).catch(() => {});
-            }
-          }, 80);
+          await activateWorkspaceAndSubtab(ws, parentTabId, newSubtabId);
         } else if (openInBackground && ws.focusTab) {
           const tabToPreserve = preClickFocusedTabId || explicitParentTabId;
           if (tabToPreserve) {
@@ -798,25 +821,10 @@
           const fallbackParentId = await findTargetParentTabId(ws, true);
           if (fallbackParentId && fallbackParentId !== parentTabId) {
             try {
-              let fallbackSubtabId = await ws.openSubtab(buildParams(fallbackParentId));
-              if (!fallbackSubtabId && target.url && target.recordId) {
-                fallbackSubtabId = await ws.openSubtab({ parentTabId: fallbackParentId, url: target.url, focus: !openInBackground });
-              }
+              const fallbackSubtabId = await tryOpenSubtabUnder(fallbackParentId);
+              if (!fallbackSubtabId) throw new Error('fallback openSubtab returned null');
               if (!openInBackground && ws.focusTab) {
-                if (fallbackParentId) {
-                  await ws.focusTab({ tabId: fallbackParentId }).catch(() => {});
-                }
-                if (fallbackSubtabId) {
-                  await ws.focusTab({ tabId: fallbackSubtabId }).catch(() => {});
-                }
-                setTimeout(async () => {
-                  if (fallbackParentId) {
-                    await ws.focusTab({ tabId: fallbackParentId }).catch(() => {});
-                  }
-                  if (fallbackSubtabId) {
-                    await ws.focusTab({ tabId: fallbackSubtabId }).catch(() => {});
-                  }
-                }, 80);
+                await activateWorkspaceAndSubtab(ws, fallbackParentId, fallbackSubtabId);
               } else if (openInBackground && ws.focusTab) {
                 const tabToPreserve = preClickFocusedTabId || explicitParentTabId;
                 if (tabToPreserve) {
@@ -942,7 +950,7 @@
       const ws = await getWorkspaceAPI();
 
       const buildParams = () => {
-        const params = { focus };
+        const params = { focus, overrideNavRules: true };
         if (target.recordId) {
           params.recordId = target.recordId;
         } else if (target.url) {
@@ -960,7 +968,7 @@
           newTabId = await ws.openTab(buildParams());
         } catch (tabErr) {
           if (target.url && target.recordId) {
-            newTabId = await ws.openTab({ url: target.url, focus });
+            newTabId = await ws.openTab({ url: target.url, focus, overrideNavRules: true });
           } else {
             throw tabErr;
           }
@@ -1159,6 +1167,7 @@
     const parentTabId = preClickParentTabId || lastNonSearchParentTabId;
     const focusedTabId = preClickFocusedTabId;
     const knownPrimaryTabs = new Set(preClickPrimaryTabIds);
+    const knownSubtabIds = new Set(preClickSubtabIds);
 
     const state = {
       parentTabId,
@@ -1166,6 +1175,7 @@
       openInBackground,
       preferPinned,
       knownPrimaryTabs,
+      knownSubtabIds,
       timer: null,
       pollTimer: null
     };
@@ -1175,6 +1185,36 @@
       try {
         const ws = await getWorkspaceAPI();
         const allTabs = (await ws.getAllTabInfo()) || [];
+
+        // Case A: Salesforce natively opened the clicked record as a NEW subtab inside ANOTHER existing workspace
+        // (e.g. an open Account workspace) instead of the user's currently focused workspace
+        if (state.parentTabId && knownPrimaryTabs.size > 0) {
+          let misroutedSubtab = null;
+          for (const t of allTabs) {
+            if (!t || t.tabId === state.parentTabId || !knownPrimaryTabs.has(t.tabId)) continue;
+            const subs = Array.isArray(t.subtabs) ? t.subtabs : [];
+            const newSub = subs.find((s) => s && s.tabId && !knownSubtabIds.has(s.tabId));
+            if (newSub) {
+              misroutedSubtab = newSub;
+              break;
+            }
+          }
+          if (misroutedSubtab) {
+            disarmNavigationIntercept();
+            const target = extractCleanTabTarget(misroutedSubtab);
+            if (target && (target.recordId || target.url || target.pageReference)) {
+              await ws.closeTab({ tabId: misroutedSubtab.tabId }).catch(() => {});
+              await new Promise((r) => setTimeout(r, 60));
+              await openTargetAsSubtab(target, {
+                openInBackground: state.openInBackground,
+                preferPinned: state.preferPinned,
+                explicitParentTabId: state.preferPinned ? null : state.parentTabId
+              });
+            }
+            return;
+          }
+        }
+
         const newPrimaryTab = allTabs.find(
           (t) =>
             !t.isSubtab &&
@@ -1184,8 +1224,8 @@
         );
 
         if (newPrimaryTab) {
-          // Check if this new primary tab already has subtabs (e.g. Salesforce opened a parent
-          // workspace tab and automatically placed the record subtab inside it per Console Navigation Rules)
+          // Check if this new primary tab already has subtabs (e.g. Salesforce auto-opened a parent Account
+          // workspace tab and placed the clicked Case subtab inside it per Console Navigation Rules)
           const tabInfo = await ws.getTabInfo({ tabId: newPrimaryTab.tabId }).catch(() => newPrimaryTab);
           let hasSubtabs = tabInfo && Array.isArray(tabInfo.subtabs) && tabInfo.subtabs.length > 0;
           let freshInfo = null;
@@ -1198,11 +1238,23 @@
 
           if (hasSubtabs) {
             disarmNavigationIntercept();
+            const lastSub = freshInfo?.subtabs?.[freshInfo.subtabs.length - 1] || tabInfo?.subtabs?.[tabInfo.subtabs.length - 1];
+            const childTarget = lastSub ? extractCleanTabTarget(lastSub) : null;
+            if (state.parentTabId && childTarget && (childTarget.recordId || childTarget.url || childTarget.pageReference)) {
+              // Relocate the clicked child record into the user's focused workspace and close the unwanted auto-opened parent workspace
+              await ws.closeTab({ tabId: newPrimaryTab.tabId }).catch(() => {});
+              await new Promise((r) => setTimeout(r, 60));
+              await openTargetAsSubtab(childTarget, {
+                openInBackground: state.openInBackground,
+                preferPinned: state.preferPinned,
+                explicitParentTabId: state.preferPinned ? null : state.parentTabId
+              });
+              return;
+            }
             if (state.openInBackground && state.focusedTabId && ws.focusTab) {
               await ws.focusTab({ tabId: state.focusedTabId }).catch(() => {});
             } else if (!state.openInBackground && ws.focusTab) {
               await ws.focusTab({ tabId: newPrimaryTab.tabId }).catch(() => {});
-              const lastSub = freshInfo?.subtabs?.[freshInfo.subtabs.length - 1] || tabInfo?.subtabs?.[tabInfo.subtabs.length - 1];
               if (lastSub && lastSub.tabId) {
                 await ws.focusTab({ tabId: lastSub.tabId }).catch(() => {});
               }
@@ -1772,8 +1824,7 @@
 
           openTargetAsSubtab(target, {
             openInBackground,
-            preferPinned,
-            explicitParentTabId: preClickParentTabId
+            preferPinned
           }).then(() => {
             setTimeout(() => {
               document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
@@ -3675,58 +3726,99 @@
         return;
       }
 
-      // Clean the URL and pageReference so Salesforce doesn't force it back into parent workspace
-      let cleanUrl = subInfo.url || '';
-      if (cleanUrl) {
-        cleanUrl = cleanUrl
-          .replace(/[?&]ws=[^&#]*/g, '')
-          .replace(/\?&/, '?')
-          .replace(/[?&]$/, '');
+      const origParentTabId = subInfo.parentTabId || null;
+      const target = extractCleanTabTarget(subInfo);
+      if (!target || (!target.recordId && !target.url && !target.pageReference)) {
+        showToast('Could not promote subtab (missing target)');
+        return;
       }
 
-      let cleanPageRef = null;
-      if (subInfo.pageReference) {
-        try {
-          cleanPageRef = JSON.parse(JSON.stringify(subInfo.pageReference));
-          if (cleanPageRef.state) {
-            delete cleanPageRef.state.ws;
-          }
-        } catch (_) {}
-      }
-
-      // Close the subtab first so the record is freed from Salesforce's tab deduplication registry
-      await ws.closeTab({ tabId: sourceSubtabId }).catch(() => {});
-      await new Promise((r) => setTimeout(r, 40));
-
-      let newTabId = null;
-      try {
-        if (subInfo.recordId) {
-          newTabId = await ws.openTab({ recordId: subInfo.recordId, focus: true, overrideNavRules: true });
-        } else if (cleanUrl) {
-          newTabId = await ws.openTab({ url: cleanUrl, focus: true, overrideNavRules: true });
-        } else if (cleanPageRef) {
-          newTabId = await ws.openTab({ pageReference: cleanPageRef, focus: true, overrideNavRules: true });
+      const closeAndWait = async (tabId) => {
+        if (!tabId) return true;
+        await ws.closeTab({ tabId }).catch(() => false);
+        for (let attempt = 0; attempt < 5; attempt++) {
+          await new Promise((r) => setTimeout(r, 60));
+          const still = await ws.getTabInfo({ tabId }).catch(() => null);
+          if (!still || still.tabId !== tabId) return true;
         }
-      } catch (openErr) {
-        console.warn('[Salesforce Enhancer] openTab error:', openErr);
+        return false;
+      };
+
+      // Close the subtab first and verify it's cleared from Salesforce's tab deduplication registry
+      const closed = await closeAndWait(sourceSubtabId);
+      if (!closed) {
+        showToast('Could not promote subtab (tab stayed open)');
+        return;
       }
 
-      // Fallback: If Workspace API openTab failed (e.g. strict Console navigation rules),
-      // navigate natively using Aura force:navigateToURL or force:navigateToSObject
-      if (!newTabId && window.$A && typeof window.$A.get === 'function') {
-        if (cleanUrl) {
+      const attempts = [];
+      if (target.recordId) attempts.push({ recordId: target.recordId, focus: true, overrideNavRules: true });
+      if (target.url) attempts.push({ url: target.url, focus: true, overrideNavRules: true });
+      if (target.pageReference) attempts.push({ pageReference: target.pageReference, focus: true, overrideNavRules: true });
+
+      let promotedTabId = null;
+      let fallbackNestedTabId = null;
+
+      for (let i = 0; i < attempts.length; i++) {
+        let candidateId = null;
+        try {
+          candidateId = await ws.openTab(attempts[i]);
+        } catch (openErr) {
+          console.warn('[Salesforce Enhancer] openTab attempt failed:', openErr);
+          continue;
+        }
+        if (!candidateId) continue;
+        await new Promise((r) => setTimeout(r, 80));
+        const info = await ws.getTabInfo({ tabId: candidateId }).catch(() => null);
+        const isNestedBack = !!(
+          (info && info.isSubtab) ||
+          (origParentTabId && candidateId === origParentTabId)
+        );
+        if (!isNestedBack) {
+          promotedTabId = candidateId;
+          break;
+        }
+        // Salesforce nested it back under the parent workspace despite overrideNavRules:
+        // if more attempts remain, close this nested subtab and try the next payload form
+        if (i < attempts.length - 1 && info && info.isSubtab) {
+          await closeAndWait(candidateId);
+        } else {
+          fallbackNestedTabId = candidateId;
+        }
+      }
+
+      if (promotedTabId) {
+        await activateWorkspaceAndSubtab(ws, promotedTabId, null);
+        showToast('↳ Promoted subtab to workspace tab');
+        return;
+      }
+
+      if (fallbackNestedTabId) {
+        const info = await ws.getTabInfo({ tabId: fallbackNestedTabId }).catch(() => null);
+        if (info && info.isSubtab && info.parentTabId) {
+          await activateWorkspaceAndSubtab(ws, info.parentTabId, fallbackNestedTabId);
+        } else {
+          await activateWorkspaceAndSubtab(ws, fallbackNestedTabId, null);
+        }
+        showToast('Salesforce Navigation Rules kept tab in parent workspace');
+        return;
+      }
+
+      // Final fallback: native Aura navigation
+      if (window.$A && typeof window.$A.get === 'function') {
+        if (target.url) {
           const urlEvt = window.$A.get('e.force:navigateToURL');
           if (urlEvt) {
-            urlEvt.setParams({ url: cleanUrl });
+            urlEvt.setParams({ url: target.url });
             urlEvt.fire();
             showToast('↳ Promoted subtab to workspace tab');
             return;
           }
         }
-        if (subInfo.recordId) {
+        if (target.recordId) {
           const navEvt = window.$A.get('e.force:navigateToSObject');
           if (navEvt) {
-            navEvt.setParams({ recordId: subInfo.recordId, slideDevName: 'detail' });
+            navEvt.setParams({ recordId: target.recordId, slideDevName: 'detail' });
             navEvt.fire();
             showToast('↳ Promoted subtab to workspace tab');
             return;
@@ -3734,12 +3826,7 @@
         }
       }
 
-      if (newTabId) {
-        await activateWorkspaceAndSubtab(ws, newTabId, null);
-        showToast('↳ Promoted subtab to workspace tab');
-      } else {
-        showToast('Could not promote subtab');
-      }
+      showToast('Could not promote subtab');
     } catch (err) {
       console.error('[Salesforce Enhancer] Failed to promote subtab:', err);
       showToast('Could not promote subtab');
@@ -13406,5 +13493,5 @@
     setInterval(refreshInspectorMods, 850);
     setTimeout(refreshInspectorMods, 400);
 
-  console.log('[Salesforce Enhancer v1.4.1] Ready — Modular shortcuts, Quick Views, composable .sfe.json plugins, developer themes & loading animations.');
+  console.log('[Salesforce Enhancer v1.4.2] Ready — Modular shortcuts, Quick Views, composable .sfe.json plugins, developer themes & loading animations.');
 })();
