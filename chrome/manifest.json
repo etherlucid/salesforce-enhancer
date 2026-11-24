@@ -3,7 +3,7 @@
   "name": "Salesforce Enhancer",
   "version": "1.4.2",
   "version_name": "1.4.2",
-  "description": "Salesforce Lightning productivity: Console subtabs & tab drag-and-drop, Link Interceptor, Quick Views, composable .sfe.json plugins, themes, and loading animations.",
+  "description": "Salesforce Lightning tools: Console subtabs & tab shortcuts, Link Interceptor, Quick Views, custom .sfe.json plugins, and themes.",
   "options_ui": {
     "page": "uploader.html",
     "open_in_tab": true
