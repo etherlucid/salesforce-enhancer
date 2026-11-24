@@ -74,7 +74,7 @@
   }
 
   const DEFAULT_SETTINGS = {
-    version: '1.4.2',
+    version: '1.4.3',
     modules: {
       subtabs: true,
       quickViews: true,

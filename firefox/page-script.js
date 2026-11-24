@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Salesforce Enhancer
 // @namespace    https://etherlucid.local/
-// @version      1.4.2
+// @version      1.4.3
 // @description  Salesforce productivity: subtabs & tab drag-and-drop, Quick Views list bookmarking, declarative Inspector Mods, developer themes, and custom animations.
 // @match        https://*.lightning.force.com/*
 // @match        https://*.salesforce.com/*
@@ -263,7 +263,7 @@
   }
 
   const DEFAULT_SETTINGS = {
-    version: '1.4.2',
+    version: '1.4.3',
     modules: {
       subtabs: true,
       quickViews: true,
@@ -304,7 +304,7 @@
     const keybinds = normalizeKeybinds(raw.subtabs && raw.subtabs.keybinds);
 
     const res = {
-      version: '1.4.2',
+      version: '1.4.3',
       modules: {
         subtabs: raw.modules ? raw.modules.subtabs !== false : true,
         quickViews: raw.modules ? raw.modules.quickViews !== false : true,
@@ -409,7 +409,33 @@
   let isInternalWorkspaceCall = false;
 
   const SF_ID_REGEX = /^[a-zA-Z0-9]{15,18}$/;
+  const SF_CHECKSUM_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ012345';
   const RECORD_URL_REGEX = /\/lightning\/r\/(?:[a-zA-Z0-9_]+\/)?([a-zA-Z0-9]{15,18})(?:\/view|$|\?|#)/;
+
+  /**
+   * Strict Salesforce 15-char / 18-char Record ID validation.
+   * Verifies the 3-char uppercase bitmask checksum on 18-char IDs so random 18-char
+   * hex hashes / LWC DOM keys (like "e749965136cc4d4d9f") are never mistaken for records.
+   */
+  function isValidSalesforceId(str) {
+    if (typeof str !== 'string') return false;
+    const s = str.trim();
+    if (s.length === 15) {
+      return /^[a-zA-Z0-9]{5}00[a-zA-Z0-9]{8}$/.test(s);
+    }
+    if (s.length !== 18) return false;
+    if (!/^[a-zA-Z0-9]{15}[A-Z0-5]{3}$/.test(s)) return false;
+    let suffix = '';
+    for (let i = 0; i < 3; i++) {
+      let flags = 0;
+      for (let j = 0; j < 5; j++) {
+        const c = s.charCodeAt(i * 5 + j);
+        if (c >= 65 && c <= 90) flags |= 1 << j;
+      }
+      suffix += SF_CHECKSUM_CHARS[flags];
+    }
+    return s.slice(15) === suffix;
+  }
 
   function isAllowedSalesforceOrigin(origin) {
     if (!origin || typeof origin !== 'string') return false;
@@ -1040,35 +1066,47 @@
         clickedInsideInteractiveControl = true;
       }
 
-      // 1. Direct record ID on any data-* or value attribute
-      const idAttrs = [
-        'data-recordid',
-        'data-record-id',
-        'data-id',
-        'data-target-id',
-        'data-value',
-        'data-key',
-        'value'
-      ];
-      for (const attr of idAttrs) {
+      // 1. Direct record ID on explicit record attributes (or generic data-* attributes on interactive elements only)
+      const explicitRecordAttrs = ['data-recordid', 'data-record-id', 'data-target-id'];
+      for (const attr of explicitRecordAttrs) {
         const val = node.getAttribute ? node.getAttribute(attr) : null;
-        if (val && typeof val === 'string' && SF_ID_REGEX.test(val.trim())) {
+        if (val && typeof val === 'string' && isValidSalesforceId(val)) {
           return { recordId: val.trim() };
+        }
+      }
+
+      const role = node.getAttribute ? (node.getAttribute('role') || '').toLowerCase() : '';
+      const isInteractiveEl =
+        tag === 'A' ||
+        tag === 'BUTTON' ||
+        role === 'link' ||
+        role === 'option' ||
+        role === 'menuitem' ||
+        tag.includes('LOOKUP') ||
+        tag.includes('OUTPUT-FIELD');
+
+      if (isInteractiveEl) {
+        for (const attr of ['data-id', 'data-value', 'data-key', 'value']) {
+          const val = node.getAttribute ? node.getAttribute(attr) : null;
+          if (val && typeof val === 'string' && isValidSalesforceId(val)) {
+            return { recordId: val.trim() };
+          }
         }
       }
 
       const targetSel = (node.dataset && node.dataset.targetSelectionName) || (node.getAttribute ? node.getAttribute('data-target-selection-name') : null);
       if (targetSel && typeof targetSel === 'string') {
         const m = targetSel.match(/([a-zA-Z0-9]{15,18})/);
-        if (m && SF_ID_REGEX.test(m[1])) {
+        if (m && isValidSalesforceId(m[1])) {
           return { recordId: m[1] };
         }
       }
 
       if (node.dataset) {
-        for (const key of ['recordid', 'recordId', 'id', 'targetId', 'value']) {
+        const dsKeys = isInteractiveEl ? ['recordid', 'recordId', 'targetId', 'id', 'value'] : ['recordid', 'recordId', 'targetId'];
+        for (const key of dsKeys) {
           const val = node.dataset[key];
-          if (val && typeof val === 'string' && SF_ID_REGEX.test(val.trim())) {
+          if (val && typeof val === 'string' && isValidSalesforceId(val)) {
             return { recordId: val.trim() };
           }
         }
@@ -1109,18 +1147,18 @@
         }
 
         const classicMatch = pathToCheck.match(/^\/([a-zA-Z0-9]{15,18})(?:\/view|$|\?|#|\/|$)/);
-        if (classicMatch && classicMatch[1]) {
+        if (classicMatch && classicMatch[1] && isValidSalesforceId(classicMatch[1])) {
           return { recordId: classicMatch[1], url: trimmed };
         }
 
         const sObjMatch = (pathToCheck + hashToCheck).match(/\/sObject\/([a-zA-Z0-9]{15,18})(?:\/view|$|\?|#|\/|$)/i);
-        if (sObjMatch && sObjMatch[1]) {
+        if (sObjMatch && sObjMatch[1] && isValidSalesforceId(sObjMatch[1])) {
           return { recordId: sObjMatch[1], url: trimmed };
         }
 
         if (parsed && parsed.searchParams) {
           const idParam = parsed.searchParams.get('id') || parsed.searchParams.get('recordId');
-          if (idParam && SF_ID_REGEX.test(idParam)) {
+          if (idParam && isValidSalesforceId(idParam)) {
             return { recordId: idParam, url: trimmed };
           }
         }
@@ -1133,7 +1171,7 @@
 
       // 3. lightning-datatable row key
       const rowKey = node.getAttribute ? node.getAttribute('data-row-key-value') : null;
-      if (!rowKeyCandidate && rowKey && SF_ID_REGEX.test(rowKey)) {
+      if (!rowKeyCandidate && rowKey && isValidSalesforceId(rowKey)) {
         rowKeyCandidate = rowKey;
       }
     }
@@ -1762,9 +1800,19 @@
     }, delay);
   }
 
+  let lastMouseDownPos = null;
+
   window.addEventListener(
     'mousedown',
     (event) => {
+      if (event.button === 0) {
+        lastMouseDownPos = {
+          x: event.clientX,
+          y: event.clientY,
+          hadModifier: !!(event.altKey || event.metaKey || event.ctrlKey),
+          at: Date.now()
+        };
+      }
       const _modSettings = getEnhancerSettings();
       if (_modSettings.modules && _modSettings.modules.subtabs === false) return;
       if (!isConsoleAppActive()) return;
@@ -1773,13 +1821,12 @@
 
       if ((isAlt || isCmdOrCtrl) && event.button === 0) {
         snapshotTabState();
-        event.preventDefault();
-        try {
-          window.getSelection()?.removeAllRanges();
-        } catch (_) {}
-
         const target = extractTargetFromEvent(event);
         if (target) {
+          event.preventDefault();
+          try {
+            window.getSelection()?.removeAllRanges();
+          } catch (_) {}
           event.stopPropagation();
         }
       } else if (event.button === 0) {
@@ -1802,11 +1849,27 @@
 
       if (!isAlt && !isCmdOrCtrl) return;
 
+      // Ignore drag-selections (e.g. selecting text in an article and pressing Cmd slightly before releasing mouse)
+      if (lastMouseDownPos && Date.now() - lastMouseDownPos.at < 10000) {
+        const dx = Math.abs(event.clientX - lastMouseDownPos.x);
+        const dy = Math.abs(event.clientY - lastMouseDownPos.y);
+        if (dx > 6 || dy > 6 || (!lastMouseDownPos.hadModifier && isCmdOrCtrl)) {
+          return;
+        }
+      }
       try {
-        window.getSelection()?.removeAllRanges();
+        const sel = window.getSelection ? window.getSelection() : null;
+        if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) {
+          return;
+        }
       } catch (_) {}
 
       const target = extractTargetFromEvent(event);
+      if (target) {
+        try {
+          window.getSelection()?.removeAllRanges();
+        } catch (_) {}
+      }
 
       // --- Scenario A: Alt / Option is held -> Open as SUBTAB ---
       if (isAlt && !isCmdOrCtrl) {
@@ -13493,5 +13556,5 @@
     setInterval(refreshInspectorMods, 850);
     setTimeout(refreshInspectorMods, 400);
 
-  console.log('[Salesforce Enhancer v1.4.2] Ready — Modular shortcuts, Quick Views, composable .sfe.json plugins, developer themes & loading animations.');
+  console.log('[Salesforce Enhancer v1.4.3] Ready — Modular shortcuts, Quick Views, composable .sfe.json plugins, developer themes & loading animations.');
 })();

@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Salesforce Enhancer",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "Salesforce Lightning tools: Console subtabs & tab shortcuts, Link Interceptor, Quick Views, custom .sfe.json plugins, and themes.",
   "options_ui": {
     "page": "uploader.html",
